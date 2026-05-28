@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forma — Refined Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family:'DM Sans', system-ui, sans-serif; }
+  body {
+    background: #E6E3DC;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+    background-image: radial-gradient(circle at 30% 20%, #EFEBE0, transparent 60%),
+                      radial-gradient(circle at 70% 80%, #DCD7CD, transparent 60%),
+                      #E6E3DC;
+  }
+  body[data-theme="dark"] {
+    background-image: radial-gradient(circle at 30% 20%, #1A1A20, transparent 60%),
+                      radial-gradient(circle at 70% 80%, #0A0A0C, transparent 60%),
+                      #111114;
+  }
+  .stage { display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .phone-frame {
+    width: 390px; height: 820px;
+    border-radius: 48px;
+    background: #1C1917;
+    padding: 8px;
+    box-shadow:
+      0 30px 80px rgba(0,0,0,.20),
+      0 8px 24px rgba(0,0,0,.10),
+      inset 0 0 0 1px rgba(255,255,255,.04);
+    position: relative;
+  }
+  body[data-theme="dark"] .phone-frame {
+    background: #000;
+    box-shadow:
+      0 30px 100px rgba(212,165,116,.08),
+      0 8px 24px rgba(0,0,0,.5),
+      inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .phone-inner {
+    width:100%; height:100%; border-radius:42px; overflow:hidden; position:relative;
+  }
+  /* Notch */
+  .phone-notch {
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    width:110px; height:28px; background:#000; border-radius:18px;
+    z-index:50;
+  }
+  .phone-scroll::-webkit-scrollbar { width:0; height:0; }
+  .screen-anim {
+    width:100%; height:100%;
+  }
+  .label { color:#6B6560; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+           font-family:'JetBrains Mono', monospace; }
+  body[data-theme="dark"] .label { color:#8A8893; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="home-refined.jsx"></script>
+<script type="text/babel" src="screen-gym.jsx"></script>
+<script type="text/babel" src="screen-gym-plan.jsx"></script>
+<script type="text/babel" src="screen-library.jsx"></script>
+<script type="text/babel" src="screen-onboarding.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "light",
+  "accent": "#BE5A38",
+  "showOnboarding": false
+}/*EDITMODE-END*/;
+
+// Two demo profiles so we can flip between them via Tweaks
+const DEMO_PROFILES = {
+  sam:  { name:'Sam',  age:31, sex:'female', tracksCycle:true,  height:168, weight:64.2, goal:'strength', connected:['strava','oura'], splitDays:3 },
+  alex: { name:'Alex', age:34, sex:'male',   tracksCycle:false, height:180, weight:78,   goal:'muscle',   connected:['strava','mfp'],  splitDays:4 },
+};
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [screen, setScreen] = React.useState('home');
+  const [profile, setProfile] = React.useState(DEMO_PROFILES.sam);
+  // When showOnboarding flag is true, profile is reset & onboarding shows
+  const [onboardingActive, setOnboardingActive] = React.useState(false);
+  React.useEffect(() => {
+    if (tweaks.showOnboarding && !onboardingActive) setOnboardingActive(true);
+  }, [tweaks.showOnboarding]);  // eslint-disable-line
+
+  // The user's plan — split frequency + today index + per-day overrides
+  const [plan, setPlan] = React.useState({
+    splitDays: profile.splitDays || 3,
+    todayIdx: 0,
+    overrides: {},
+  });
+  // Keep plan.splitDays in sync if profile changes via demo toggle
+  React.useEffect(() => {
+    setPlan(p => ({ ...p, splitDays: profile.splitDays }));
+  }, [profile.splitDays]);
+
+  const [editingDayId, setEditingDayId] = React.useState(null);
+  const [editingDayIdx, setEditingDayIdx] = React.useState(null);  // 0-6 day-of-week
+  // Per-day-of-week list of non-gym activities. Demo data:
+  const [activities, setActivities] = React.useState({
+    0: [{ id:'a1', type:'run',  label:'Run',  emoji:'🏃', duration:32, time:'07:15', source:'Strava' }],
+    3: [{ id:'a2', type:'yoga', label:'Yoga', emoji:'🧘', duration:60, time:'18:30', source:'Manual' }],
+    5: [{ id:'a3', type:'hike', label:'Hike', emoji:'⛰️', duration:120, time:'10:00', source:'Strava' }],
+  });
+
+  // Session state — lives at App level so it persists across navigation
+  const [session, setSession] = React.useState({
+    active: false,
+    paused: false,
+    elapsed: 0,
+    workout: 'Push day',
+    queue: null,
+  });
+  const [lastSession, setLastSession] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!session.active || session.paused) return;
+    const id = setInterval(() => {
+      setSession(s => ({ ...s, elapsed: s.elapsed + 1 }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [session.active, session.paused]);
+
+  const startSession = () => {
+    const split = SPLITS[plan.splitDays];
+    const today = split.days[plan.todayIdx % split.days.length];
+    setSession(s => ({
+      ...s,
+      active: true,
+      paused: false,
+      elapsed: 12 * 60 + 34,
+      workout: today.name + ' day',
+      queue: null,
+    }));
+    setScreen('gym-session');
+  };
+  const finishSession = (final) => {
+    setLastSession({ ...session, ...final, endedAt: Date.now() });
+    setScreen('gym-summary');
+  };
+  const closeSummary = () => {
+    setSession({ active: false, paused: false, elapsed: 0, workout: 'Push day', queue: null });
+    setScreen('home');
+  };
+
+  // Bottom-nav routing
+  const navigate = (target) => {
+    if (target === 'gym') {
+      setScreen(session.active ? 'gym-session' : 'gym-hub');
+    } else {
+      setScreen(target);
+    }
+  };
+
+  const completeOnboarding = (newProfile) => {
+    setProfile(newProfile);
+    setPlan(p => ({ ...p, splitDays: newProfile.splitDays, todayIdx: 0 }));
+    setOnboardingActive(false);
+    setTweak('showOnboarding', false);
+    setScreen('home');
+  };
+
+  React.useEffect(() => {
+    document.body.setAttribute('data-theme', tweaks.theme);
+  }, [tweaks.theme]);
+
+  const renderScreen = (s) => {
+    if (onboardingActive)
+      return <OnboardingScreen width={374} height={804} theme={tweaks.theme}
+               onComplete={completeOnboarding}
+               initial={{ name:'', age:30, sex:'', tracksCycle:null, height:168, weight:65, goal:'', connected:[], splitDays:3 }}/>;
+    if (s === 'home')
+      return <RefinedHome width={374} height={804} theme={tweaks.theme}
+               profile={profile}
+               onNav={navigate}
+               onStartSession={startSession}
+               activeSession={session.active ? session : null}
+               onResumeSession={() => setScreen('gym-session')}/>;
+    if (s === 'gym-hub')
+      return <GymHubScreen width={374} height={804} theme={tweaks.theme}
+               plan={plan}
+               todayIdx={plan.todayIdx}
+               dayOfWeek={1}
+               activities={activities}
+               activeSession={session.active ? session : null}
+               tracksCycle={profile.tracksCycle}
+               onNav={navigate}
+               onStartSession={startSession}
+               onResumeSession={() => setScreen('gym-session')}
+               onChangeSplit={() => setScreen('gym-split')}
+               onEditDay={(dayId) => { setEditingDayId(dayId); setScreen('gym-edit'); }}
+               onSelectDay={(i) => { setPlan(p => ({ ...p, todayIdx: i })); }}
+               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }}
+               onBrowseLibrary={() => setScreen('gym-library')}
+             />;
+    if (s === 'gym-split')
+      return <SplitPickerScreen width={374} height={804} theme={tweaks.theme}
+               plan={plan}
+               tracksCycle={profile.tracksCycle}
+               onBack={() => setScreen('gym-hub')}
+               onSave={(d) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0 })); setScreen('gym-hub'); }}
+               onNav={navigate}/>;
+    if (s === 'gym-edit') {
+      const split = SPLITS[plan.splitDays];
+      const fallbackId = split.days[0].id;
+      return <SessionEditorScreen width={374} height={804} theme={tweaks.theme}
+               plan={plan}
+               dayId={editingDayId || fallbackId}
+               tracksCycle={profile.tracksCycle}
+               onBack={() => setScreen('gym-hub')}
+               onSave={(updatedDay) => {
+                 setPlan(p => ({ ...p, overrides: { ...p.overrides, [updatedDay.id]: updatedDay } }));
+                 setScreen('gym-hub');
+               }}
+               onNav={navigate}/>;
+    }
+    if (s === 'gym-day')
+      return <DayActivitiesScreen width={374} height={804} theme={tweaks.theme}
+               plan={plan}
+               dayIdx={editingDayIdx ?? 1}
+               activities={activities}
+               tracksCycle={profile.tracksCycle}
+               onBack={() => setScreen('gym-hub')}
+               onSave={(idx, list) => setActivities(a => ({ ...a, [idx]: list }))}
+               onEditGym={(dayId) => { setEditingDayId(dayId); setScreen('gym-edit'); }}
+               onNav={navigate}/>;
+    if (s === 'gym-library')
+      return <ExerciseLibraryScreen width={374} height={804} theme={tweaks.theme}
+               tracksCycle={profile.tracksCycle}
+               onBack={() => setScreen('gym-hub')}
+               onNav={navigate}/>;
+    if (s === 'gym-session' || s === 'gym')
+      return <GymSessionScreen width={374} height={804} theme={tweaks.theme}
+               session={session} setSession={setSession}
+               tracksCycle={profile.tracksCycle}
+               onNav={navigate}
+               onExit={() => setScreen(session.active ? 'home' : 'gym-hub')}
+               onComplete={finishSession}/>;
+    if (s === 'gym-summary')
+      return <GymSummaryScreen width={374} height={804} theme={tweaks.theme}
+               session={lastSession}
+               tracksCycle={profile.tracksCycle}
+               onDone={closeSummary}
+               onNav={navigate}/>;
+    return <PlaceholderScreen width={374} height={804} theme={tweaks.theme}
+             screen={s} onNav={navigate} tracksCycle={profile.tracksCycle}/>;
+  };
+
+  return (
+    <>
+      <div className="stage">
+        <div className="phone-frame">
+          <div className="phone-notch"/>
+          <div className="phone-inner">
+            <div key={onboardingActive ? 'onboarding' : screen} className="screen-anim">
+              {renderScreen(screen)}
+            </div>
+          </div>
+        </div>
+        <div className="label">Forma · {onboardingActive ? 'ONBOARDING' : (screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase())} · {profile.name.toUpperCase()} · {tweaks.theme === 'dark' ? 'Dark' : 'Light'}</div>
+      </div>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Demo profile">
+          <TweakRadio
+            label="User"
+            value={profile.name === 'Sam' ? 'sam' : 'alex'}
+            options={[
+              { value: 'sam',  label: 'Sam · F · cycle' },
+              { value: 'alex', label: 'Alex · M · no cycle' },
+            ]}
+            onChange={(v) => setProfile(DEMO_PROFILES[v])}
+          />
+          <TweakButton label="Restart onboarding"
+            onClick={() => { setOnboardingActive(true); setScreen('home'); }}/>
+        </TweakSection>
+        <TweakSection label="Theme">
+          <TweakRadio
+            label="Mode"
+            value={tweaks.theme}
+            options={[
+              { value: 'light', label: 'Light' },
+              { value: 'dark',  label: 'Dark'  },
+            ]}
+            onChange={(v) => setTweak('theme', v)}
+          />
+        </TweakSection>
+        <TweakSection label="Navigate">
+          <TweakSelect
+            label="Screen"
+            value={onboardingActive ? 'onboarding' : screen}
+            options={[
+              { value: 'onboarding',   label: 'Onboarding' },
+              { value: 'home',         label: 'Home' },
+              { value: 'gym-hub',      label: 'Gym · Hub' },
+              { value: 'gym-split',    label: 'Gym · Split picker' },
+              { value: 'gym-edit',     label: 'Gym · Session editor' },
+              { value: 'gym-day',      label: 'Gym · Day activities' },
+              { value: 'gym-library',  label: 'Gym · Exercise library' },
+              { value: 'gym-session',  label: 'Gym · In session' },
+              { value: 'gym-summary',  label: 'Gym · Summary' },
+              { value: 'food',         label: 'Food (stub)' },
+              { value: 'cycle',        label: 'Cycle (stub)' },
+            ]}
+            onChange={(v) => {
+              if (v === 'onboarding') { setOnboardingActive(true); }
+              else { setOnboardingActive(false); setScreen(v); }
+            }}
+          />
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
