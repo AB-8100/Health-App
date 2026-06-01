@@ -293,8 +293,12 @@ function App() {
                dayId={resolvedDayId}
                tracksCycle={profile.tracksCycle}
                onBack={() => setScreen('gym-hub')}
-               onSave={(updatedDay) => {
-                 setPlan(p => ({ ...p, overrides: { ...p.overrides, [updatedDay.id]: updatedDay } }));
+               onSave={(updatedDay, newSchedule) => {
+                 setPlan(p => ({
+                   ...p,
+                   overrides: { ...p.overrides, [updatedDay.id]: updatedDay },
+                   ...(newSchedule ? { scheduleOverride: newSchedule } : {}),
+                 }));
                  setScreen('gym-hub');
                }}
                onNav={navigate} />;
