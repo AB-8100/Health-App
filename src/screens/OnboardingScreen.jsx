@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { SPLITS } from './GymPlanScreens';
 const IMPORT_SOURCES = [
   { id:'strava',   name:'Strava',         scope:'Runs · Rides · Workouts', color:'#FC5200', glyph:'S', cycleOnly:false },
   { id:'mfp',      name:'MyFitnessPal',   scope:'Meals · Macros · Calories', color:'#0072CE', glyph:'M', cycleOnly:false },

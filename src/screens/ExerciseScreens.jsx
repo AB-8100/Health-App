@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
+import { EX_LIB } from './GymPlanScreens';
 const EX_TYPE_COLORS = {
   compound:  ['#C2410C', '#7C2D12'],   // warm rust
   accessory: ['#B45309', '#78350F'],   // amber-brown
@@ -14,7 +15,7 @@ const EX_TYPE_COLORS = {
 // Here: striped colored card with serif initial + DEMO tag,
 // which makes the placeholder honest (per design-system guidance).
 function ExerciseImage({ exerciseId, size = 56, radius, label = false, theme = 'light' }) {
-  const ex = (window.EX_LIB || {})[exerciseId];
+  const ex = (EX_LIB)[exerciseId];
   if (!ex) {
     return (
       <div style={{
@@ -119,7 +120,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
   const filtered = React.useMemo(() => {
     const q = search.toLowerCase();
     const muscleSpec = MUSCLE_GROUPS.find(g => g.id === muscleFilter);
-    return Object.entries(window.EX_LIB || {})
+    return Object.entries(EX_LIB)
       .map(([id, ex]) => ({ id, ...ex }))
       .filter(ex => {
         if (typeFilter !== 'all' && ex.type !== typeFilter) return false;
@@ -135,7 +136,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
   // Grouped count per muscle group (for filter chip badges)
   const muscleCounts = React.useMemo(() => {
     const counts = {};
-    Object.values(window.EX_LIB || {}).forEach(ex => {
+    Object.values(EX_LIB).forEach(ex => {
       MUSCLE_GROUPS.forEach(g => {
         if (g.id === 'all') return;
         if (g.matches.some(s => ex.muscle === s)) counts[g.id] = (counts[g.id] || 0) + 1;
@@ -144,8 +145,8 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
     return counts;
   }, []);
 
-  const totalCount = Object.keys(window.EX_LIB || {}).length;
-  const selectedEx = selected ? { id: selected, ...(window.EX_LIB || {})[selected] } : null;
+  const totalCount = Object.keys(EX_LIB).length;
+  const selectedEx = selected ? { id: selected, ...(EX_LIB)[selected] } : null;
 
   return (
     <div style={{
@@ -352,7 +353,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
                 Similar exercises
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:5, marginBottom:14 }}>
-                {Object.entries(window.EX_LIB || {})
+                {Object.entries(EX_LIB)
                   .filter(([id, ex]) =>
                     id !== selectedEx.id && ex.type === selectedEx.type && ex.muscle === selectedEx.muscle
                   )
@@ -374,7 +375,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
                       <span style={{ fontSize:14, color:t.text3 }}>›</span>
                     </button>
                   ))}
-                {Object.entries(window.EX_LIB || {})
+                {Object.entries(EX_LIB)
                   .filter(([id, ex]) =>
                     id !== selectedEx.id && ex.type === selectedEx.type && ex.muscle === selectedEx.muscle
                   ).length === 0 && (

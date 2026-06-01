@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { PulseDot, StackedRings, AnimatedNumber, BottomNav } from '../components/SharedUI';
+import { SPLITS, EX_LIB } from './GymPlanScreens';
 
 // ────────────────────────────────────────────────────────────
 // Today's focus — rotates between workout / nutrition / self-care
@@ -116,7 +117,7 @@ function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStar
   const titleStyle = { fontFamily:t.serif, fontSize:25, lineHeight:1.12, color:t.text, fontStyle:'normal', letterSpacing:'-.01em' };
   const accentEm = { color: t.accent, fontStyle:'normal' };
 
-  const planSplit = plan && window.SPLITS && window.SPLITS[plan.splitDays];
+  const planSplit = plan && SPLITS && SPLITS[plan.splitDays];
   const todayPlanDay = planSplit ? planSplit.days[(plan.todayIdx || 0) % planSplit.days.length] : null;
   const planExerciseIds = todayPlanDay
     ? [...(todayPlanDay.compound || []), ...(todayPlanDay.accessory || [])]
@@ -522,7 +523,7 @@ function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStar
           </div>
           <div style={{ marginBottom:0 }}>
             {planExerciseIds.slice(0, 3).map((id, i) => {
-              const ex = window.EX_LIB && window.EX_LIB[id];
+              const ex = EX_LIB && EX_LIB[id];
               if (!ex) return null;
               return (
                 <div key={i} style={{
