@@ -2472,14 +2472,18 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        onReorderSchedule,
                        tracksCycle = true }) {
   const t = themes[theme];
-  const split = SPLITS[plan.splitDays];
+  const split = SPLITS[plan.splitDays] || SPLITS[3];
   const totalDays = split.days.length;
-  const today = split.days[todayIdx % totalDays];
+  const today = split.days[(todayIdx || 0) % totalDays] || split.days[0];
   const todayExercises = SECTION_ORDER.flatMap(sec => (today[sec] || []).map(id => ({ id, sec })));
   const [draggingSlot, setDraggingSlot] = React.useState(null);
 
-  // Use plan.scheduleOverride if present, else use split.schedule
-  const schedule = plan.scheduleOverride || split.schedule;
+  // Use plan.scheduleOverride only if all its day IDs still exist in the current split.
+  // A stale override (from a previous split) would contain unknown IDs, crashing dayInfo.name access.
+  const splitDayIds = new Set(split.days.map(d => d.id));
+  const scheduleOverrideIsValid = plan.scheduleOverride &&
+    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
+  const schedule = scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule;
 
   return (
     <div style={{
@@ -2539,8 +2543,8 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             {WEEK_DAYS.map((dayLetter, i) => {
               const slot = schedule[i];
               const isToday = i === dayOfWeek;
-              const isRest = slot === '—';
-              const dayInfo = !isRest ? split.days.find(d => d.id === slot) : null;
+              const dayInfo = slot !== '—' ? split.days.find(d => d.id === slot) : null;
+              const isRest = slot === '—' || !dayInfo;
               const dayActs = activities[i] || [];
               // Compute this day's date for the current week (Mon = 0)
               const now = new Date();
@@ -2991,14 +2995,17 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
 function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
                               plan, dayId, onBack, onSave, onNav, tracksCycle = true }) {
   const t = themes[theme];
-  const split = SPLITS[plan.splitDays];
-  if (!dayId || !split) return null;
-  const originalDay = (plan.overrides && plan.overrides[dayId]) || split.days.find(d => d.id === dayId) || split.days[0];
+  const split = SPLITS[plan.splitDays] || SPLITS[3];
+  const originalDay = dayId && split
+    ? ((plan.overrides && plan.overrides[dayId]) || split.days.find(d => d.id === dayId) || split.days[0])
+    : (split ? split.days[0] : null);
 
-  // Local working copy
+  // Hooks must always be called unconditionally — early return comes after them.
   const [day, setDay] = React.useState(originalDay);
-  const [addingTo, setAddingTo] = React.useState(null);    // section being added to
+  const [addingTo, setAddingTo] = React.useState(null);
   const [searchQ, setSearchQ] = React.useState('');
+
+  if (!dayId || !split || !day) return null;
 
   const totalEx = SECTION_ORDER.reduce((n, sec) => n + (day[sec]||[]).length, 0);
 
@@ -6394,8 +6401,23 @@ function App() {
   const startSession = () => {
     const split = SPLITS[plan.splitDays] || SPLITS[3];
     if (!split || !split.days || !split.days.length) return;
-    const today = split.days[(plan.todayIdx || 0) % split.days.length];
-    setSession(s => ({ ...s, active: true, paused: false, elapsed: 0, workout: today.name + ' day', queue: null }));
+    const todayBase = split.days[(plan.todayIdx || 0) % split.days.length];
+    const today = (plan.overrides && plan.overrides[todayBase.id]) || todayBase;
+    const SECTION_ORDER_LOCAL = ['compound','accessory','core','mobility'];
+    const queue = SECTION_ORDER_LOCAL.flatMap(sec => (today[sec] || []).map(id => {
+      const ex = (window.EX_LIB || {})[id] || {};
+      const targetSets = 3;
+      return {
+        id, name: ex.name || id, muscle: ex.muscle || '',
+        targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
+        sets: Array.from({ length: targetSets }, () => ({ w: null, r: null, done: false })),
+      };
+    }));
+    setSession(s => ({
+      ...s, active: true, paused: false, elapsed: 0, exIdx: 0,
+      workout: today.name + ' day',
+      queue: queue.length ? queue : null,
+    }));
     setScreen('gym-session');
   };
   const finishSession = (final) => {
@@ -6501,7 +6523,7 @@ function App() {
                plan={plan}
                tracksCycle={profile.tracksCycle}
                onBack={() => setScreen('gym-hub')}
-               onSave={(d) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0 })); setScreen('gym-hub'); }}
+               onSave={(d) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0, scheduleOverride: null })); setScreen('gym-hub'); }}
                onNav={navigate} />;
     if (s === 'gym-edit') {
       const split = SPLITS[plan.splitDays] || SPLITS[3];
