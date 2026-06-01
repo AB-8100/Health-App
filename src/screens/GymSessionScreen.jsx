@@ -101,6 +101,10 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
     setShowEndConfirm(false);
     if (onComplete) onComplete({ queue, elapsed, workout: session.workout });
   };
+  const discardSession = () => {
+    setShowEndConfirm(false);
+    if (onExit) onExit();
+  };
   const jumpToExercise = (i) => setSession(s => ({ ...s, exIdx: i }));
 
   return (
@@ -438,19 +442,24 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
               End workout early?
             </div>
             <div style={{ fontSize:12, color:t.text2, marginBottom:16, lineHeight:1.5 }}>
-              You've logged <strong style={{ color:t.text }}>{totalDone} of {totalSets} sets</strong> ({fmt(elapsed)} elapsed). Your progress will be saved.
+              You've logged <strong style={{ color:t.text }}>{totalDone} of {totalSets} sets</strong> ({fmt(elapsed)} elapsed).
             </div>
-            <div style={{ display:'flex', gap:8 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button onClick={finishSession} style={{
+                width:'100%', padding:'13px', borderRadius:11,
+                background:t.accent, color:t.accentText,
+                border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer'
+              }}>Save session</button>
+              <button onClick={discardSession} style={{
+                width:'100%', padding:'13px', borderRadius:11,
+                background:'transparent', color:'#BE3B2E',
+                border:`1px solid #BE3B2E`, fontFamily:t.sans, fontSize:13, fontWeight:500, cursor:'pointer'
+              }}>Don't save</button>
               <button onClick={() => setShowEndConfirm(false)} style={{
-                flex:1, padding:'12px', borderRadius:11, background:'transparent',
-                border:`1px solid ${t.border2}`, color:t.text,
+                width:'100%', padding:'12px', borderRadius:11, background:'transparent',
+                border:`1px solid ${t.border2}`, color:t.text2,
                 fontFamily:t.sans, fontSize:13, fontWeight:500, cursor:'pointer'
               }}>Keep going</button>
-              <button onClick={finishSession} style={{
-                flex:1, padding:'12px', borderRadius:11,
-                background:'#BE3B2E', color:'#fff',
-                border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer'
-              }}>End & save</button>
             </div>
           </div>
         </div>
