@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { BottomNav } from '../components/SharedUI';
 const EX_LIB = {
   // Compounds
   bench:       { name:'Bench press',          muscle:'Chest',         type:'compound' },
