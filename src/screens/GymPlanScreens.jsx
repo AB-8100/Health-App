@@ -742,12 +742,24 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
     ? ((plan.overrides && plan.overrides[dayId]) || split.days.find(d => d.id === dayId) || split.days[0])
     : (split ? split.days[0] : null);
 
+  // Compute the effective schedule
+  const splitDayIds = split ? new Set(split.days.map(d => d.id)) : new Set();
+  const scheduleOverrideIsValid = plan.scheduleOverride &&
+    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
+  const baseSchedule = split
+    ? (scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule)
+    : Array(7).fill('—');
+  const initialSlotIdx = baseSchedule.findIndex(slot => slot === dayId);
+
   // Hooks must always be called unconditionally — early return comes after them.
   const [day, setDay] = React.useState(originalDay);
   const [addingTo, setAddingTo] = React.useState(null);
   const [searchQ, setSearchQ] = React.useState('');
+  const [assignedSlotIdx, setAssignedSlotIdx] = React.useState(initialSlotIdx);
 
   if (!dayId || !split || !day) return null;
+
+  const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
   const totalEx = SECTION_ORDER.reduce((n, sec) => n + (day[sec]||[]).length, 0);
 
@@ -805,7 +817,16 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
       <ScreenHeader theme={theme} title={`${day.name} day`} sub="Edit session"
         onBack={onBack}
         right={
-          <button onClick={() => onSave({ ...day })} style={{
+          <button onClick={() => {
+            let newSchedule = null;
+            if (assignedSlotIdx !== initialSlotIdx) {
+              newSchedule = [...baseSchedule];
+              const displaced = assignedSlotIdx >= 0 ? newSchedule[assignedSlotIdx] : '—';
+              if (initialSlotIdx >= 0) newSchedule[initialSlotIdx] = (displaced !== '—' && displaced !== dayId) ? displaced : '—';
+              if (assignedSlotIdx >= 0) newSchedule[assignedSlotIdx] = dayId;
+            }
+            onSave({ ...day }, newSchedule);
+          }} style={{
             padding:'6px 12px', borderRadius:8, background:t.accent, color:t.accentText,
             border:'none', fontFamily:t.sans, fontSize:11, fontWeight:600, cursor:'pointer'
           }}>Save</button>
@@ -813,6 +834,42 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
       />
 
       <div style={{ flex:1, overflowY:'auto', padding:'14px 18px 16px' }} className="phone-scroll">
+
+        {/* Day assignment picker */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:12
+        }}>
+          <div style={{ fontSize:10, letterSpacing:'.14em', textTransform:'uppercase', color:t.text3, fontWeight:600, marginBottom:8 }}>
+            Scheduled day
+          </div>
+          <div style={{ display:'flex', gap:5 }}>
+            {DAY_LABELS.map((label, i) => {
+              const isSelected = assignedSlotIdx === i;
+              const isOccupied = baseSchedule[i] !== '—' && baseSchedule[i] !== dayId;
+              return (
+                <button key={i} onClick={() => setAssignedSlotIdx(i)} style={{
+                  flex:1, padding:'7px 0', borderRadius:8, cursor:'pointer', fontSize:10, fontWeight:600,
+                  fontFamily:t.sans, border: isSelected ? 'none' : `1px solid ${t.border}`,
+                  background: isSelected ? t.accent : isOccupied ? t.surface2 : t.bg,
+                  color: isSelected ? t.accentText : isOccupied ? t.text3 : t.text,
+                }}>
+                  {label}
+                  {isOccupied && !isSelected && (
+                    <div style={{ fontSize:7, color:t.text3, marginTop:1 }}>swap</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {assignedSlotIdx !== initialSlotIdx && assignedSlotIdx >= 0 && (
+            <div style={{ fontSize:10, color:t.accent, marginTop:7 }}>
+              {initialSlotIdx >= 0
+                ? `Moving from ${DAY_LABELS[initialSlotIdx]} → ${DAY_LABELS[assignedSlotIdx]}${baseSchedule[assignedSlotIdx] !== '—' ? ` (swaps with ${baseSchedule[assignedSlotIdx]})` : ''}`
+                : `Assigned to ${DAY_LABELS[assignedSlotIdx]}`}
+            </div>
+          )}
+        </div>
 
         <div style={{
           fontSize:11, color:t.text2, marginBottom:14, lineHeight:1.5
