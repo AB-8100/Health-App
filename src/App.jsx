@@ -280,7 +280,7 @@ function App() {
                plan={plan}
                tracksCycle={profile.tracksCycle}
                onBack={() => setScreen('gym-hub')}
-               onSave={(d) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0, scheduleOverride: null })); setScreen('gym-hub'); }}
+               onSave={(d, schedule) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0, scheduleOverride: schedule || null })); setScreen('gym-hub'); }}
                onNav={navigate} />;
     if (s === 'gym-edit') {
       const split = SPLITS[plan.splitDays] || SPLITS[3];

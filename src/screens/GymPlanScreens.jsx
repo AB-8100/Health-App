@@ -584,6 +584,42 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
   const [selected, setSelected] = React.useState(plan.splitDays);
   const split = SPLITS[selected];
 
+  // Editable schedule — initialise from plan override if valid, else default
+  const initSchedule = () => {
+    const s = SPLITS[plan.splitDays];
+    if (!s) return SPLITS[3].schedule.slice();
+    const ids = new Set(s.days.map(d => d.id));
+    const valid = plan.scheduleOverride && plan.scheduleOverride.every(slot => slot === '—' || ids.has(slot));
+    return valid ? [...plan.scheduleOverride] : [...s.schedule];
+  };
+  const [customSchedule, setCustomSchedule] = React.useState(initSchedule);
+  const [movingIdx, setMovingIdx] = React.useState(null); // slot index currently selected for move
+
+  // Reset schedule when user picks a different day count
+  React.useEffect(() => {
+    setCustomSchedule([...SPLITS[selected].schedule]);
+    setMovingIdx(null);
+  }, [selected]);
+
+  const handleSlotTap = (i) => {
+    const slot = customSchedule[i];
+    if (movingIdx === null) {
+      // Nothing selected yet — only allow selecting a session slot
+      if (slot !== '—') setMovingIdx(i);
+    } else if (movingIdx === i) {
+      // Tap same slot to deselect
+      setMovingIdx(null);
+    } else {
+      // Move/swap
+      const next = [...customSchedule];
+      const moving = next[movingIdx];
+      next[movingIdx] = next[i]; // could be '—' or another session
+      next[i] = moving;
+      setCustomSchedule(next);
+      setMovingIdx(null);
+    }
+  };
+
   return (
     <div style={{
       width, height, background:t.bg, fontFamily:t.sans, color:t.text,
@@ -602,7 +638,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
       <ScreenHeader theme={theme} title="Choose split" sub="Gym week"
         onBack={onBack}
         right={
-          <button onClick={() => onSave(selected)} style={{
+          <button onClick={() => onSave(selected, customSchedule)} style={{
             padding:'6px 12px', borderRadius:8, background:t.accent, color:t.accentText,
             border:'none', fontFamily:t.sans, fontSize:11, fontWeight:600, cursor:'pointer'
           }}>Save</button>
@@ -651,36 +687,50 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
             {split.description}
           </div>
 
-          {/* Weekly schedule */}
+          {/* Weekly schedule — interactive */}
           <div style={{
-            fontSize:9.5, letterSpacing:'.16em', textTransform:'uppercase',
-            color:t.text3, marginBottom:7, fontWeight:500
+            display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:7
           }}>
-            Weekly schedule
+            <div style={{
+              fontSize:9.5, letterSpacing:'.16em', textTransform:'uppercase',
+              color:t.text3, fontWeight:500
+            }}>
+              Weekly schedule
+            </div>
+            {movingIdx === null
+              ? <div style={{ fontSize:9, color:t.text3 }}>Tap a session to move it</div>
+              : <div style={{ fontSize:9, color:t.accent }}>Tap a slot to place it</div>
+            }
           </div>
           <div style={{
             display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:5, marginBottom:14
           }}>
             {WEEK_DAYS.map((dayLetter, i) => {
-              const slot = split.schedule[i];
+              const slot = customSchedule[i];
               const isRest = slot === '—';
               const dayInfo = !isRest ? split.days.find(d => d.id === slot) : null;
+              const isMoving = movingIdx === i;
+              const isTarget = movingIdx !== null && movingIdx !== i;
               return (
-                <div key={i} style={{
-                  display:'flex', flexDirection:'column', alignItems:'center', gap:4
+                <button key={i} onClick={() => handleSlotTap(i)} style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                  background:'transparent', border:'none', cursor: isRest && movingIdx === null ? 'default' : 'pointer',
+                  padding:0
                 }}>
-                  <div style={{ fontSize:9.5, color:t.text3 }}>{dayLetter}</div>
+                  <div style={{ fontSize:9.5, color: isMoving ? t.accent : t.text3 }}>{dayLetter}</div>
                   <div style={{
                     width:'100%', aspectRatio:'1', borderRadius:7,
-                    background: isRest ? t.surface2 : t.accent+'18',
-                    border: `1px solid ${isRest ? t.border : t.accent+'40'}`,
-                    color: isRest ? t.text3 : t.accent,
+                    background: isMoving ? t.accent : isRest ? (isTarget ? t.accent+'22' : t.surface2) : t.accent+'18',
+                    border: isMoving ? `2px solid ${t.accent}` : isTarget && isRest ? `1.5px dashed ${t.accent}60` : `1px solid ${isRest ? t.border : t.accent+'40'}`,
+                    color: isMoving ? t.accentText : isRest ? t.text3 : t.accent,
                     display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:11, fontWeight:600
+                    fontSize:11, fontWeight:600,
+                    transform: isMoving ? 'scale(1.1)' : 'scale(1)',
+                    transition:'transform 0.15s, background 0.15s',
                   }}>
-                    {isRest ? '·' : dayInfo.name.charAt(0)}
+                    {isRest ? (isTarget ? '+' : '·') : dayInfo ? dayInfo.name.charAt(0) : '?'}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -718,7 +768,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
           })}
         </div>
 
-        <button onClick={() => onSave(selected)} style={{
+        <button onClick={() => onSave(selected, customSchedule)} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background:t.accent, color:t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer'
