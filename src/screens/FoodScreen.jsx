@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { BottomNav } from '../components/SharedUI';
 function foodGetWeekStart(date) {
   const d = new Date(date);
   const day = d.getDay();

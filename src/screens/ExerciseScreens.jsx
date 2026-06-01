@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { BottomNav } from '../components/SharedUI';
 const EX_TYPE_COLORS = {
   compound:  ['#C2410C', '#7C2D12'],   // warm rust
   accessory: ['#B45309', '#78350F'],   // amber-brown

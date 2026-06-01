@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { PulseDot, StackedRings, AnimatedNumber, BottomNav } from '../components/SharedUI';
 
 // ────────────────────────────────────────────────────────────
 // Today's focus — rotates between workout / nutrition / self-care
