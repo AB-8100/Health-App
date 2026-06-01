@@ -192,7 +192,7 @@ function App() {
 
   const closeSummary = () => {
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
-    setScreen('home');
+    setScreen('gym-hub');
   };
 
   const deleteSession = (id) => setCompletedSessions(prev => {
@@ -346,7 +346,7 @@ function App() {
                session={session} setSession={setSession}
                tracksCycle={profile.tracksCycle}
                onNav={navigate}
-               onExit={() => setScreen(session.active ? 'home' : 'gym-hub')}
+               onExit={() => { setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null }); setScreen('gym-hub'); }}
                onComplete={finishSession} />;
     if (s === 'gym-summary')
       return <GymSummaryScreen width={374} height={804} theme={tweaks.theme}
