@@ -241,7 +241,4 @@ function Sparkline({ data, color = "#16A34A", width = 60, height = 22, strokeWid
   document.head.appendChild(s);
 })();
 
-export {
-  COACH_NUDGES, RINGS_DATA, TODAY_SESSION, WEEK_NUDGES, QUICK_LOG,
-  AnimatedNumber, Ring, StackedRings, Bar, PulseDot, BottomNav, Sparkline,
-};
+export { AnimatedNumber, StackedRings, PulseDot, BottomNav };
