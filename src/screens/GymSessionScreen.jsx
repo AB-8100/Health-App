@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { PulseDot, BottomNav } from '../components/SharedUI';
+import { ExerciseImage } from './ExerciseScreens';
 const GYM_QUEUE = [
   {
     id: 'bench',
