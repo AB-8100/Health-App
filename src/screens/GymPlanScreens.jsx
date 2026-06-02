@@ -207,6 +207,118 @@ function ScreenHeader({ theme, title, sub, onBack, right }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Edit a completed session's sets inline
+function EditSessionSheet({ theme, session, onClose, onSave }) {
+  const t = themes[theme];
+  const [queue, setQueue] = React.useState(
+    (session.queue || []).map(ex => ({
+      ...ex,
+      sets: (ex.sets || []).map(s => ({ ...s })),
+    }))
+  );
+
+  const updateSet = (ei, si, field, val) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: ex.sets.map((s, ss) => ss !== si ? s : { ...s, [field]: val === '' ? '' : Number(val) })
+    })
+  );
+
+  const addSet = (ei) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: [...ex.sets, { ...(ex.sets[ex.sets.length - 1] || { w:0, r:0 }), done: true }]
+    })
+  );
+
+  const removeSet = (ei, si) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: ex.sets.filter((_, ss) => ss !== si)
+    })
+  );
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
+      display:'flex', alignItems:'flex-end', zIndex:60
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', background:t.surface,
+        borderTopLeftRadius:22, borderTopRightRadius:22,
+        padding:'16px 20px 28px', maxHeight:'90%',
+        display:'flex', flexDirection:'column', overflow:'hidden'
+      }}>
+        <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, flexShrink:0 }}>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>Edit session</div>
+          <button onClick={onClose} style={{
+            padding:'4px 10px', borderRadius:7, background:'transparent',
+            border:`1px solid ${t.border}`, color:t.text2,
+            fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+          }}>Cancel</button>
+        </div>
+        <div style={{ fontSize:11, color:t.text3, marginBottom:12, flexShrink:0 }}>
+          {session.workout} · {new Date(session.date).toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' })}
+        </div>
+
+        <div style={{ overflowY:'auto', flex:1 }}>
+          {queue.map((ex, ei) => (
+            <div key={ex.id || ei} style={{
+              background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
+              padding:'12px 14px', marginBottom:10
+            }}>
+              <div style={{ fontSize:13, color:t.text, fontWeight:500, marginBottom:10 }}>{ex.name}</div>
+              {/* Set rows */}
+              <div style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 28px', gap:6, alignItems:'center', marginBottom:6 }}>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>#</div>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>Weight (kg)</div>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>Reps</div>
+                <div/>
+              </div>
+              {ex.sets.map((s, si) => (
+                <div key={si} style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 28px', gap:6, alignItems:'center', marginBottom:5 }}>
+                  <div style={{ fontSize:11, color:t.text3, textAlign:'center' }}>{si + 1}</div>
+                  <input type="number" value={s.w ?? ''} onChange={e => updateSet(ei, si, 'w', e.target.value)}
+                    style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${t.border}`,
+                      background:t.surface, fontFamily:t.mono, fontSize:13, color:t.text,
+                      outline:'none', width:'100%', boxSizing:'border-box' }}
+                  />
+                  <input type="number" value={s.r ?? ''} onChange={e => updateSet(ei, si, 'r', e.target.value)}
+                    style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${t.border}`,
+                      background:t.surface, fontFamily:t.mono, fontSize:13, color:t.text,
+                      outline:'none', width:'100%', boxSizing:'border-box' }}
+                  />
+                  <button onClick={() => removeSet(ei, si)} style={{
+                    width:28, height:28, borderRadius:7, background:'transparent',
+                    border:`1px solid ${t.border}`, color:'#BE3B2E',
+                    cursor:'pointer', fontSize:14, fontFamily:t.sans,
+                    display:'flex', alignItems:'center', justifyContent:'center'
+                  }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => addSet(ei)} style={{
+                width:'100%', marginTop:4, padding:'6px', borderRadius:8,
+                background:'transparent', border:`1.5px dashed ${t.border2}`,
+                color:t.text3, fontSize:11, cursor:'pointer', fontFamily:t.sans
+              }}>+ Add set</button>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={() => { onSave({ ...session, queue }); onClose(); }} style={{
+          marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
+          fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+          background:t.accent, color:t.accentText, flexShrink:0
+        }}>
+          Save changes
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Import exercise history from pasted Excel rows
 function ImportHistorySheet({ theme, onClose, onImport }) {
   const t = themes[theme];
@@ -217,6 +329,9 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
   const [parsedRows, setParsedRows] = React.useState([]);
   const [colMap, setColMap]     = React.useState({ date:0, weight:1, reps:2 });
   const [hasHeader, setHasHeader] = React.useState(false);
+  // format: 'rows' = one row per date (original), 'cols' = dates across top, one row per exercise
+  const [format, setFormat]     = React.useState('cols');
+  const [defaultReps, setDefaultReps] = React.useState('5');
 
   const exOptions = React.useMemo(() => {
     const q = searchQ.toLowerCase();
@@ -293,6 +408,28 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
   const numCols  = parsedRows[0]?.length || 0;
 
   const previewRows = React.useMemo(() => {
+    if (format === 'cols') {
+      // Row 0 = dates across columns; Row 1 = weights (optionally "80x5" for weight×reps)
+      if (parsedRows.length < 2) return [];
+      const dateRow = parsedRows[0];
+      // Find the first data row (skip rows that look like exercise name labels)
+      const valueRow = parsedRows.find((r, i) => i > 0 && r.some(c => /\d/.test(c))) || [];
+      // Skip leading label cell (first cell often contains exercise name)
+      const startIdx = parseDate(dateRow[0]) ? 0 : 1;
+      const results = [];
+      for (let i = startIdx; i < dateRow.length; i++) {
+        const date = parseDate(dateRow[i]);
+        if (!date) continue;
+        const cell = (valueRow[i] || '').trim();
+        // Support "80x5" / "80X5" / "80*5" weight×reps format
+        const wxr = cell.match(/^(\d+\.?\d*)\s*[xX\*×]\s*(\d+)$/);
+        const weight = wxr ? parseFloat(wxr[1]) : parseFloat(cell.replace(/[^0-9.]/g, '')) || 0;
+        const reps   = wxr ? parseInt(wxr[2], 10) : (parseInt(defaultReps, 10) || 5);
+        if (weight > 0) results.push({ date, weight, reps });
+      }
+      return results;
+    }
+    // Rows mode: each row = one date's data
     return dataRows.map(row => {
       const dateStr = row[colMap.date] || '';
       const weight  = parseFloat((row[colMap.weight] || '').replace(/[^0-9.]/g, '')) || 0;
@@ -300,7 +437,7 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
       const date    = parseDate(dateStr);
       return { dateStr, weight, reps, date };
     }).filter(r => r.date && r.weight > 0);
-  }, [dataRows, colMap]);
+  }, [parsedRows, dataRows, colMap, format, defaultReps]);
 
   const handleImport = () => {
     if (!exercise || !previewRows.length) return;
@@ -380,25 +517,62 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
           </>
         ) : (
           <>
+            {/* Format toggle */}
+            <div style={{ display:'flex', gap:5, marginBottom:10, flexShrink:0 }}>
+              {[
+                { id:'cols', label:'Dates across top' },
+                { id:'rows', label:'Date per row' },
+              ].map(f => (
+                <button key={f.id} onClick={() => setFormat(f.id)} style={{
+                  flex:1, padding:'7px 0', borderRadius:8, cursor:'pointer',
+                  fontFamily:t.sans, fontSize:11, fontWeight:500,
+                  background: format === f.id ? t.accent : t.surface2,
+                  color: format === f.id ? t.accentText : t.text2,
+                  border: `1px solid ${format === f.id ? t.accent : t.border}`
+                }}>{f.label}</button>
+              ))}
+            </div>
+
+            {/* Format hint */}
             <div style={{
               fontSize:10, color:t.text3, marginBottom:8, fontFamily:t.mono,
-              padding:'6px 10px', borderRadius:7, background:t.surface2, flexShrink:0
+              padding:'6px 10px', borderRadius:7, background:t.surface2, flexShrink:0,
+              lineHeight:1.5
             }}>
-              Copy rows from Excel (Ctrl+C) and paste below. Tab-separated columns.
+              {format === 'cols'
+                ? 'Copy the dates row + your exercise row from Excel and paste below'
+                : 'Each row = one session: Date · Weight · Reps (tab-separated)'}
             </div>
+
             <textarea autoFocus value={rawText} onChange={e => handleTextChange(e.target.value)}
-              placeholder={'01/01/2025\t80\t5\n08/01/2025\t82.5\t5\n15/01/2025\t85\t4'}
+              placeholder={format === 'cols'
+                ? '01 Jan\t08 Jan\t15 Jan\t22 Jan\nBench\t80\t82.5\t85\t87.5'
+                : '01/01/2025\t80\t5\n08/01/2025\t82.5\t5\n15/01/2025\t85\t4'}
               style={{
-                width:'100%', minHeight:100, padding:'10px 12px', borderRadius:10,
+                width:'100%', minHeight:90, padding:'10px 12px', borderRadius:10,
                 border:`1px solid ${t.border}`, background:t.surface2,
                 fontFamily:t.mono, fontSize:11.5, color:t.text, outline:'none',
                 resize:'vertical', boxSizing:'border-box', marginBottom:10, flexShrink:0
               }}
             />
 
-            {parsedRows.length > 0 && numCols > 0 && (
+            {/* Cols mode: default reps input */}
+            {format === 'cols' && parsedRows.length > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, flexShrink:0 }}>
+                <div style={{ fontSize:11, color:t.text2 }}>Default reps per set:</div>
+                <input type="number" value={defaultReps} onChange={e => setDefaultReps(e.target.value)}
+                  style={{
+                    width:60, padding:'6px 10px', borderRadius:8, border:`1px solid ${t.border}`,
+                    background:t.surface2, fontFamily:t.mono, fontSize:13, color:t.text, outline:'none'
+                  }}
+                />
+                <div style={{ fontSize:10, color:t.text3 }}>(overridden if cell is "80×5" format)</div>
+              </div>
+            )}
+
+            {/* Rows mode: column role pickers */}
+            {format === 'rows' && parsedRows.length > 0 && numCols > 0 && (
               <div style={{ flexShrink:0 }}>
-                {/* Column role pickers */}
                 <div style={{ fontSize:10, color:t.text3, marginBottom:6 }}>
                   Assign column roles — {numCols} column{numCols > 1 ? 's' : ''} detected:
                 </div>
@@ -415,7 +589,6 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
                             const nr = e.target.value;
                             setColMap(prev => {
                               const next = { ...prev };
-                              // Remove i from any existing role
                               Object.keys(next).forEach(k => { if (next[k] === i) next[k] = -1; });
                               if (nr !== 'ignore') next[nr] = i;
                               return next;
@@ -570,7 +743,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        onNav, onStartSession, onResumeSession,
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
-                       onReorderSchedule, onImportSessions,
+                       onReorderSchedule, onImportSessions, onEditSession,
                        tracksCycle = true }) {
   const t = themes[theme];
   const split = SPLITS[plan.splitDays] || SPLITS[3];
@@ -586,6 +759,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [draggingSlot, setDraggingSlot] = React.useState(null);
   const [drillExercise, setDrillExercise] = React.useState(null);
   const [showImport, setShowImport] = React.useState(false);
+  const [editingSession, setEditingSession] = React.useState(null);
 
   // Resolve the viewed day's scheduled session
   const viewSlot = schedule[viewDayIdx];
@@ -1139,11 +1313,18 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                             </div>
                           );
                         })}
-                        <button onClick={() => onViewSummary && onViewSummary(s)} style={{
-                          marginTop:6, padding:'5px 10px', borderRadius:7,
-                          background:'transparent', border:`1px solid ${t.border}`,
-                          color:t.text3, fontSize:10.5, cursor:'pointer', fontFamily:t.sans
-                        }}>View summary ›</button>
+                        <div style={{ display:'flex', gap:6, marginTop:6 }}>
+                          <button onClick={() => onViewSummary && onViewSummary(s)} style={{
+                            flex:1, padding:'5px 10px', borderRadius:7,
+                            background:'transparent', border:`1px solid ${t.border}`,
+                            color:t.text3, fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+                          }}>View summary ›</button>
+                          <button onClick={() => setEditingSession(s)} style={{
+                            flex:1, padding:'5px 10px', borderRadius:7,
+                            background:'transparent', border:`1px solid ${t.border}`,
+                            color:t.accent, fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+                          }}>✎ Edit</button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1221,6 +1402,15 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           theme={theme}
           onClose={() => setShowImport(false)}
           onImport={(sessions) => onImportSessions && onImportSessions(sessions)}
+        />
+      )}
+
+      {editingSession && (
+        <EditSessionSheet
+          theme={theme}
+          session={editingSession}
+          onClose={() => setEditingSession(null)}
+          onSave={(updated) => { onEditSession && onEditSession(updated); setEditingSession(null); }}
         />
       )}
     </div>
