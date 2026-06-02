@@ -81,6 +81,7 @@ function App() {
   const [lastSession, setLastSession]             = React.useState(null);
   const [completedSessions, setCompletedSessions] = React.useState([]);
   const [foodLog, setFoodLog]                     = React.useState({});
+  const [customFoods, setCustomFoods]             = React.useState([]);
 
   React.useEffect(() => {
     const saved = loadFromCache();
@@ -96,12 +97,13 @@ function App() {
     if (data.completedSessions) setCompletedSessions(data.completedSessions);
     if (data.foodLog)           setFoodLog(data.foodLog);
     if (data.activities)        setActivities(data.activities);
+    if (data.customFoods)       setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
 
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
-    completedSessions, foodLog, activities,
+    completedSessions, foodLog, activities, customFoods,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -109,7 +111,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveLocal(snapshot);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
@@ -141,6 +143,7 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
+    setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(true);
     setScreen('gym-hub');
@@ -212,6 +215,12 @@ function App() {
   const updateFood = (dateKey, entries) => setFoodLog(prev => {
     const next = { ...prev, [dateKey]: { entries } };
     setTimeout(() => scheduleSave({ foodLog: next }), 0);
+    return next;
+  });
+
+  const saveCustomFood = (food) => setCustomFoods(prev => {
+    const next = [...prev, food];
+    setTimeout(() => scheduleSave({ customFoods: next }), 0);
     return next;
   });
 
@@ -332,7 +341,9 @@ function App() {
                plan={plan}
                activities={activities}
                completedSessions={completedSessions}
+               customFoods={customFoods}
                onUpdateFood={updateFood}
+               onSaveCustomFood={saveCustomFood}
                onNav={navigate}
                tracksCycle={profile.tracksCycle} />;
     if (s === 'about-me')
