@@ -67,7 +67,7 @@ function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   const [authState, setAuthState] = React.useState('loading');
-  const [screen, setScreen]               = React.useState('home');
+  const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
@@ -143,7 +143,7 @@ function App() {
     setActivities({});
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(true);
-    setScreen('home');
+    setScreen('gym-hub');
   };
 
   React.useEffect(() => {
@@ -229,7 +229,7 @@ function App() {
                   completedSessions: [], foodLog: {}, activities: {},
                   savedAt: new Date().toISOString() });
     setOnboarding(false);
-    setScreen('home');
+    setScreen('gym-hub');
   };
 
   if (authState === 'loading') {
@@ -342,7 +342,7 @@ function App() {
                plan={plan}
                onSaveProfile={(p) => setProfile(prev => ({ ...prev, ...p }))}
                onSaveSettings={(s) => setUserSettings(prev => ({ ...prev, ...s }))}
-               onBack={() => setScreen('home')}
+               onBack={() => setScreen('gym-hub')}
                onNav={navigate}
                onSignOut={resetProfile}
                tracksCycle={profile.tracksCycle} />;
