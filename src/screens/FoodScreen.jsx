@@ -189,6 +189,30 @@ function MacroBar({ consumed, target, color, label, unit = 'g', theme }) {
   );
 }
 
+// ─── Shared food-row button used in both local + OFF search results ──────────
+function FoodRow({ food, t, theme, onClick }) {
+  const macroStr = `${food.cal} kcal · P ${food.p}g · C ${food.c}g · F ${food.f}g`;
+  const sub = food.brand
+    ? `${food.brand} · ${macroStr}`
+    : `${food.cat} · ${macroStr}`;
+  return (
+    <button onClick={onClick} style={{
+      width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+      padding:'10px 12px', borderRadius:10, textAlign:'left',
+      background:'transparent', border:`1px solid ${t.border}`, marginBottom:5,
+      cursor:'pointer', fontFamily:t.sans
+    }}>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, color:t.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {food.name}
+        </div>
+        <div style={{ fontSize:10, color:t.text3, marginTop:2 }}>{sub}</div>
+      </div>
+      <span style={{ fontSize:14, color:t.text3, flexShrink:0, marginLeft:8 }}>›</span>
+    </button>
+  );
+}
+
 // ─── Main FoodScreen ──────────────────────────────────────────────────────────
 function FoodScreen({
   width = 390, height = 820, theme = 'light',
@@ -213,6 +237,9 @@ function FoodScreen({
   const [customCarb, setCustomCarb] = React.useState('');
   const [customFat,  setCustomFat]  = React.useState('');
   const [showCustom, setShowCustom] = React.useState(false);
+  const [offResults,  setOffResults]  = React.useState([]);
+  const [offLoading,  setOffLoading]  = React.useState(false);
+  const offTimerRef = React.useRef(null);
   const [showWeekly, setShowWeekly] = React.useState(false);
 
   const today    = new Date();
@@ -270,6 +297,48 @@ function FoodScreen({
     if (!search.trim()) return FOOD_DB.slice(0, 16);
     const q = search.toLowerCase();
     return FOOD_DB.filter(f => f.name.toLowerCase().includes(q) || f.cat.toLowerCase().includes(q));
+  }, [search]);
+
+  // Open Food Facts live search — debounced 600ms, fires when ≥2 chars typed
+  React.useEffect(() => {
+    if (offTimerRef.current) clearTimeout(offTimerRef.current);
+    if (!search.trim() || search.trim().length < 2) {
+      setOffResults([]);
+      setOffLoading(false);
+      return;
+    }
+    setOffLoading(true);
+    offTimerRef.current = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(search.trim());
+        const res = await fetch(
+          `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${q}&json=1&page_size=10`,
+          { headers: { 'User-Agent': 'FormaHealthApp/1.0' } }
+        );
+        if (!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        const mapped = (data.products || [])
+          .filter(p => p.product_name && p.nutriments?.['energy-kcal_100g'] != null)
+          .slice(0, 8)
+          .map(p => ({
+            id:       `off_${p.code || p._id}`,
+            name:     p.product_name,
+            brand:    p.brands || '',
+            cat:      'Open Food Facts',
+            cal:      Math.round(p.nutriments['energy-kcal_100g']    || 0),
+            p:        Math.round((p.nutriments.proteins_100g          || 0) * 10) / 10,
+            c:        Math.round((p.nutriments.carbohydrates_100g     || 0) * 10) / 10,
+            f:        Math.round((p.nutriments.fat_100g               || 0) * 10) / 10,
+            defaultG: 100,
+          }));
+        setOffResults(mapped);
+      } catch {
+        setOffResults([]);
+      } finally {
+        setOffLoading(false);
+      }
+    }, 600);
+    return () => { if (offTimerRef.current) clearTimeout(offTimerRef.current); };
   }, [search]);
 
   // Calculate nutrition for currently entered grams
@@ -742,7 +811,10 @@ function FoodScreen({
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                     <div>
                       <div style={{ fontSize:14, color:t.text, fontWeight:500 }}>{selected.name}</div>
-                      <div style={{ fontSize:10.5, color:t.text3 }}>{selected.cat} · {selected.cal} kcal per 100g</div>
+                      <div style={{ fontSize:10.5, color:t.text3 }}>
+                        {selected.brand ? selected.brand + ' · ' : selected.cat + ' · '}
+                        {selected.cal} kcal · P {selected.p}g · C {selected.c}g · F {selected.f}g per 100g
+                      </div>
                     </div>
                     <button onClick={() => { setSelected(null); setGrams(''); }} style={{
                       width:24, height:24, borderRadius:6, background:'transparent',
@@ -828,23 +900,51 @@ function FoodScreen({
                 </div>
 
                 <div style={{ overflowY:'auto', flex:1 }}>
-                  {filteredDB.map((food, i) => (
-                    <button key={food.id} onClick={() => { setSelected(food); setGrams(String(food.defaultG)); }} style={{
-                      width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
-                      padding:'10px 12px', borderRadius:10, textAlign:'left',
-                      background: i % 2 === 0 ? t.surface2 : 'transparent',
-                      border:`1px solid ${t.border}`, marginBottom:5,
-                      cursor:'pointer', fontFamily:t.sans
-                    }}>
-                      <div>
-                        <div style={{ fontSize:13, color:t.text }}>{food.name}</div>
-                        <div style={{ fontSize:10, color:t.text3, marginTop:2 }}>
-                          {food.cat} · {food.cal} kcal · {food.p}g protein per 100g
-                        </div>
+
+                  {/* ── Local food library ── */}
+                  {filteredDB.length > 0 && (
+                    <>
+                      {search.trim().length >= 2 && (
+                        <div style={{
+                          fontSize:9.5, letterSpacing:'.12em', textTransform:'uppercase',
+                          color:t.text3, padding:'4px 4px 6px', fontWeight:500
+                        }}>Common foods</div>
+                      )}
+                      {filteredDB.map(food => (
+                        <FoodRow key={food.id} food={food} theme={theme} t={t}
+                          onClick={() => { setSelected(food); setGrams(String(food.defaultG)); }}/>
+                      ))}
+                    </>
+                  )}
+
+                  {/* ── Open Food Facts results ── */}
+                  {search.trim().length >= 2 && (
+                    <div style={{ marginTop: filteredDB.length ? 10 : 0 }}>
+                      <div style={{
+                        fontSize:9.5, letterSpacing:'.12em', textTransform:'uppercase',
+                        color:t.text3, padding:'4px 4px 6px', fontWeight:500,
+                        display:'flex', alignItems:'center', gap:6
+                      }}>
+                        Open Food Facts
+                        {offLoading && (
+                          <div style={{
+                            width:10, height:10, border:`1.5px solid ${t.accent}`,
+                            borderTopColor:'transparent', borderRadius:'50%',
+                            animation:'spin 0.7s linear infinite', flexShrink:0
+                          }}/>
+                        )}
                       </div>
-                      <span style={{ fontSize:14, color:t.text3 }}>›</span>
-                    </button>
-                  ))}
+                      {offResults.map(food => (
+                        <FoodRow key={food.id} food={food} theme={theme} t={t}
+                          onClick={() => { setSelected(food); setGrams(String(food.defaultG)); }}/>
+                      ))}
+                      {!offLoading && offResults.length === 0 && (
+                        <div style={{ fontSize:11, color:t.text3, padding:'6px 4px' }}>
+                          {search.trim().length >= 2 ? 'No results yet — keep typing…' : ''}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
