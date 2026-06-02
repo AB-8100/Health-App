@@ -1129,11 +1129,17 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
   const [time, setTime] = React.useState('07:00');
   const [deleteModal, setDeleteModal] = React.useState(null); // item id being deleted
 
-  // Check if this day has a planned gym session in the split
+  // Resolve the active schedule — respects plan.scheduleOverride when valid
   const split = SPLITS[plan.splitDays];
-  const scheduledSlot = split?.schedule[dayIdx];
-  const scheduledDay = scheduledSlot && scheduledSlot !== '—'
+  const splitDayIds = new Set((split?.days || []).map(d => d.id));
+  const scheduleOverrideIsValid = plan.scheduleOverride &&
+    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
+  const activeSchedule = (scheduleOverrideIsValid ? plan.scheduleOverride : split?.schedule) || [];
+  const scheduledSlot = activeSchedule[dayIdx];
+  const baseDay = scheduledSlot && scheduledSlot !== '—'
     ? split.days.find(d => d.id === scheduledSlot) : null;
+  // Also apply per-day exercise overrides the user may have saved
+  const scheduledDay = baseDay ? (plan.overrides?.[baseDay.id] || baseDay) : null;
 
   const recommendation = getGymRecommendation(plan, dayIdx);
 

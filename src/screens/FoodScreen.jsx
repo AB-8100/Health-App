@@ -32,54 +32,101 @@ const MEALS = [
 // Each entry: { id, name, category, cal, p (protein), c (carbs), f (fat) }
 // Values are per 100g. defaultGrams is the suggested starting portion.
 const FOOD_DB = [
-  // Protein sources
-  { id:'chicken_breast', name:'Chicken breast',    cat:'Protein',    cal:165, p:31,  c:0,   f:3.6, defaultG:150 },
-  { id:'salmon',         name:'Salmon fillet',     cat:'Protein',    cal:208, p:20,  c:0,   f:13,  defaultG:150 },
-  { id:'tuna_tin',       name:'Tuna (tinned)',      cat:'Protein',    cal:116, p:26,  c:0,   f:1,   defaultG:120 },
-  { id:'eggs',           name:'Eggs (whole)',       cat:'Protein',    cal:155, p:13,  c:1.1, f:11,  defaultG:120 },
-  { id:'egg_whites',     name:'Egg whites',         cat:'Protein',    cal:52,  p:11,  c:0.7, f:0.2, defaultG:100 },
-  { id:'beef_mince',     name:'Beef mince (5% fat)',cat:'Protein',    cal:137, p:21,  c:0,   f:5,   defaultG:150 },
-  { id:'turkey',         name:'Turkey breast',      cat:'Protein',    cal:157, p:30,  c:0,   f:3,   defaultG:150 },
-  { id:'cod',            name:'Cod fillet',         cat:'Protein',    cal:82,  p:18,  c:0,   f:0.7, defaultG:180 },
-  { id:'shrimp',         name:'Shrimp/prawns',      cat:'Protein',    cal:85,  p:18,  c:0.9, f:0.9, defaultG:120 },
-  // Dairy / eggs
-  { id:'greek_yoghurt',  name:'Greek yoghurt',      cat:'Dairy',      cal:59,  p:10,  c:3.6, f:0.4, defaultG:170 },
-  { id:'cottage_cheese', name:'Cottage cheese',     cat:'Dairy',      cal:98,  p:11,  c:3.4, f:4.3, defaultG:150 },
-  { id:'milk_whole',     name:'Whole milk',         cat:'Dairy',      cal:61,  p:3.2, c:4.8, f:3.3, defaultG:200 },
-  { id:'cheddar',        name:'Cheddar cheese',     cat:'Dairy',      cal:403, p:25,  c:1.3, f:33,  defaultG:30  },
-  // Grains / carbs
-  { id:'oats',           name:'Oats (dry)',         cat:'Grains',     cal:389, p:17,  c:66,  f:7,   defaultG:80  },
-  { id:'rice_white',     name:'White rice (cooked)',cat:'Grains',     cal:130, p:2.7, c:28,  f:0.3, defaultG:200 },
-  { id:'rice_brown',     name:'Brown rice (cooked)',cat:'Grains',     cal:112, p:2.6, c:24,  f:0.9, defaultG:200 },
-  { id:'pasta',          name:'Pasta (cooked)',     cat:'Grains',     cal:131, p:5,   c:25,  f:1.1, defaultG:200 },
-  { id:'bread_wb',       name:'Wholegrain bread',   cat:'Grains',     cal:247, p:10,  c:41,  f:4.2, defaultG:60  },
-  { id:'wrap',           name:'Tortilla wrap',      cat:'Grains',     cal:303, p:7.5, c:49,  f:7.2, defaultG:50  },
-  { id:'sweet_potato',   name:'Sweet potato',       cat:'Grains',     cal:86,  p:1.6, c:20,  f:0.1, defaultG:200 },
-  { id:'quinoa',         name:'Quinoa (cooked)',    cat:'Grains',     cal:120, p:4.4, c:21,  f:1.9, defaultG:185 },
-  // Vegetables
-  { id:'broccoli',       name:'Broccoli',           cat:'Veg',        cal:34,  p:2.8, c:6.6, f:0.4, defaultG:200 },
-  { id:'spinach',        name:'Spinach',            cat:'Veg',        cal:23,  p:2.9, c:3.6, f:0.4, defaultG:100 },
-  { id:'tomato',         name:'Tomatoes',           cat:'Veg',        cal:18,  p:0.9, c:3.9, f:0.2, defaultG:150 },
-  { id:'cucumber',       name:'Cucumber',           cat:'Veg',        cal:15,  p:0.6, c:3.6, f:0.1, defaultG:150 },
-  { id:'mixed_salad',    name:'Mixed salad',        cat:'Veg',        cal:15,  p:1.2, c:2.2, f:0.3, defaultG:100 },
-  { id:'avocado',        name:'Avocado',            cat:'Veg',        cal:160, p:2,   c:9,   f:15,  defaultG:80  },
-  // Fruits
-  { id:'banana',         name:'Banana',             cat:'Fruit',      cal:89,  p:1.1, c:23,  f:0.3, defaultG:120 },
-  { id:'apple',          name:'Apple',              cat:'Fruit',      cal:52,  p:0.3, c:14,  f:0.2, defaultG:180 },
-  { id:'blueberries',    name:'Blueberries',        cat:'Fruit',      cal:57,  p:0.7, c:14,  f:0.3, defaultG:100 },
-  { id:'strawberries',   name:'Strawberries',       cat:'Fruit',      cal:32,  p:0.7, c:7.7, f:0.3, defaultG:150 },
-  { id:'orange',         name:'Orange',             cat:'Fruit',      cal:47,  p:0.9, c:12,  f:0.1, defaultG:150 },
-  // Snacks / fats
-  { id:'almonds',        name:'Almonds',            cat:'Snacks',     cal:579, p:21,  c:22,  f:50,  defaultG:30  },
-  { id:'peanut_butter',  name:'Peanut butter',      cat:'Snacks',     cal:588, p:25,  c:20,  f:50,  defaultG:30  },
-  { id:'dark_choc',      name:'Dark chocolate 85%', cat:'Snacks',     cal:598, p:8,   c:22,  f:43,  defaultG:25  },
-  { id:'rice_cake',      name:'Rice cakes',         cat:'Snacks',     cal:387, p:7.5, c:81,  f:2.9, defaultG:30  },
-  { id:'hummus',         name:'Hummus',             cat:'Snacks',     cal:166, p:7.9, c:14,  f:9.6, defaultG:80  },
-  // Drinks
-  { id:'protein_shake',  name:'Protein shake (whey)',cat:'Drinks',   cal:121, p:24,  c:3,   f:1.5, defaultG:35  },
-  { id:'oat_milk',       name:'Oat milk',           cat:'Drinks',    cal:45,  p:1,   c:6.5, f:1.5, defaultG:250 },
-  { id:'coffee_black',   name:'Black coffee',       cat:'Drinks',    cal:2,   p:0.3, c:0,   f:0,   defaultG:240 },
-  { id:'orange_juice',   name:'Orange juice',       cat:'Drinks',    cal:45,  p:0.7, c:10,  f:0.2, defaultG:200 },
+  // ── Protein sources ──────────────────────────────────────────────────────────
+  { id:'chicken_breast', name:'Chicken breast',      cat:'Protein', cal:165, p:31,  c:0,   f:3.6, defaultG:150 },
+  { id:'salmon',         name:'Salmon fillet',        cat:'Protein', cal:208, p:20,  c:0,   f:13,  defaultG:150 },
+  { id:'tuna_tin',       name:'Tuna (tinned)',         cat:'Protein', cal:116, p:26,  c:0,   f:1,   defaultG:120 },
+  { id:'eggs',           name:'Eggs (whole)',          cat:'Protein', cal:155, p:13,  c:1.1, f:11,  defaultG:120 },
+  { id:'egg_whites',     name:'Egg whites',            cat:'Protein', cal:52,  p:11,  c:0.7, f:0.2, defaultG:100 },
+  { id:'beef_mince',     name:'Beef mince (5% fat)',   cat:'Protein', cal:137, p:21,  c:0,   f:5,   defaultG:150 },
+  { id:'beef_steak',     name:'Beef steak (sirloin)',  cat:'Protein', cal:207, p:26,  c:0,   f:11,  defaultG:200 },
+  { id:'turkey',         name:'Turkey breast',         cat:'Protein', cal:157, p:30,  c:0,   f:3,   defaultG:150 },
+  { id:'cod',            name:'Cod fillet',            cat:'Protein', cal:82,  p:18,  c:0,   f:0.7, defaultG:180 },
+  { id:'shrimp',         name:'Shrimp / prawns',       cat:'Protein', cal:85,  p:18,  c:0.9, f:0.9, defaultG:120 },
+  { id:'pork_loin',      name:'Pork tenderloin',       cat:'Protein', cal:143, p:26,  c:0,   f:3.5, defaultG:150 },
+  { id:'ham_deli',       name:'Ham (deli sliced)',      cat:'Protein', cal:107, p:17,  c:1.5, f:3.5, defaultG:80  },
+  { id:'mackerel',       name:'Mackerel fillet',       cat:'Protein', cal:205, p:19,  c:0,   f:14,  defaultG:130 },
+  { id:'sardines',       name:'Sardines (tinned)',      cat:'Protein', cal:208, p:25,  c:0,   f:11,  defaultG:90  },
+  // ── Dairy ────────────────────────────────────────────────────────────────────
+  { id:'greek_yoghurt',  name:'Greek yoghurt (0%)',    cat:'Dairy',   cal:59,  p:10,  c:3.6, f:0.4, defaultG:170 },
+  { id:'yoghurt_full',   name:'Natural yoghurt',       cat:'Dairy',   cal:61,  p:3.5, c:4.7, f:3.3, defaultG:150 },
+  { id:'cottage_cheese', name:'Cottage cheese',        cat:'Dairy',   cal:98,  p:11,  c:3.4, f:4.3, defaultG:150 },
+  { id:'cream_cheese',   name:'Cream cheese',          cat:'Dairy',   cal:342, p:5.9, c:4.1, f:34,  defaultG:30  },
+  { id:'milk_whole',     name:'Whole milk',            cat:'Dairy',   cal:61,  p:3.2, c:4.8, f:3.3, defaultG:200 },
+  { id:'milk_semi',      name:'Semi-skimmed milk',     cat:'Dairy',   cal:46,  p:3.4, c:4.8, f:1.6, defaultG:200 },
+  { id:'milk_skim',      name:'Skimmed milk',          cat:'Dairy',   cal:34,  p:3.4, c:5,   f:0.2, defaultG:200 },
+  { id:'cheddar',        name:'Cheddar cheese',        cat:'Dairy',   cal:403, p:25,  c:1.3, f:33,  defaultG:30  },
+  { id:'mozzarella',     name:'Mozzarella',            cat:'Dairy',   cal:280, p:17,  c:2.2, f:22,  defaultG:50  },
+  { id:'parmesan',       name:'Parmesan',              cat:'Dairy',   cal:431, p:38,  c:4.1, f:29,  defaultG:20  },
+  { id:'butter',         name:'Butter',                cat:'Dairy',   cal:717, p:0.9, c:0.1, f:81,  defaultG:10  },
+  { id:'sour_cream',     name:'Sour cream',            cat:'Dairy',   cal:193, p:2.4, c:4.6, f:19,  defaultG:30  },
+  // ── Grains / carbs ───────────────────────────────────────────────────────────
+  { id:'oats',           name:'Oats (dry)',            cat:'Grains',  cal:389, p:17,  c:66,  f:7,   defaultG:80  },
+  { id:'granola',        name:'Granola',               cat:'Grains',  cal:471, p:10,  c:64,  f:19,  defaultG:60  },
+  { id:'rice_white',     name:'White rice (cooked)',   cat:'Grains',  cal:130, p:2.7, c:28,  f:0.3, defaultG:200 },
+  { id:'rice_brown',     name:'Brown rice (cooked)',   cat:'Grains',  cal:112, p:2.6, c:24,  f:0.9, defaultG:200 },
+  { id:'pasta',          name:'Pasta (cooked)',        cat:'Grains',  cal:131, p:5,   c:25,  f:1.1, defaultG:200 },
+  { id:'bread_white',    name:'White bread',           cat:'Grains',  cal:265, p:9,   c:49,  f:3.2, defaultG:60  },
+  { id:'bread_wb',       name:'Wholegrain bread',      cat:'Grains',  cal:247, p:10,  c:41,  f:4.2, defaultG:60  },
+  { id:'bagel',          name:'Bagel (plain)',         cat:'Grains',  cal:270, p:11,  c:53,  f:1.7, defaultG:105 },
+  { id:'pitta',          name:'Pitta bread',           cat:'Grains',  cal:262, p:9.1, c:53,  f:1.3, defaultG:60  },
+  { id:'wrap',           name:'Tortilla wrap',         cat:'Grains',  cal:303, p:7.5, c:49,  f:7.2, defaultG:50  },
+  { id:'sweet_potato',   name:'Sweet potato',          cat:'Grains',  cal:86,  p:1.6, c:20,  f:0.1, defaultG:200 },
+  { id:'potato',         name:'Potato (boiled)',       cat:'Grains',  cal:77,  p:1.8, c:17,  f:0.1, defaultG:200 },
+  { id:'quinoa',         name:'Quinoa (cooked)',       cat:'Grains',  cal:120, p:4.4, c:21,  f:1.9, defaultG:185 },
+  { id:'couscous',       name:'Couscous (cooked)',     cat:'Grains',  cal:112, p:3.8, c:23,  f:0.2, defaultG:180 },
+  // ── Vegetables ───────────────────────────────────────────────────────────────
+  { id:'broccoli',       name:'Broccoli',              cat:'Veg',     cal:34,  p:2.8, c:6.6, f:0.4, defaultG:200 },
+  { id:'spinach',        name:'Spinach',               cat:'Veg',     cal:23,  p:2.9, c:3.6, f:0.4, defaultG:100 },
+  { id:'tomato',         name:'Tomatoes',              cat:'Veg',     cal:18,  p:0.9, c:3.9, f:0.2, defaultG:150 },
+  { id:'cucumber',       name:'Cucumber',              cat:'Veg',     cal:15,  p:0.6, c:3.6, f:0.1, defaultG:150 },
+  { id:'mixed_salad',    name:'Mixed salad leaves',    cat:'Veg',     cal:15,  p:1.2, c:2.2, f:0.3, defaultG:100 },
+  { id:'avocado',        name:'Avocado',               cat:'Veg',     cal:160, p:2,   c:9,   f:15,  defaultG:80  },
+  { id:'carrots',        name:'Carrots',               cat:'Veg',     cal:41,  p:0.9, c:10,  f:0.2, defaultG:150 },
+  { id:'bell_pepper',    name:'Bell pepper',           cat:'Veg',     cal:31,  p:1,   c:6,   f:0.3, defaultG:150 },
+  { id:'onion',          name:'Onion',                 cat:'Veg',     cal:40,  p:1.1, c:9.3, f:0.1, defaultG:80  },
+  { id:'corn',           name:'Sweetcorn (tinned)',    cat:'Veg',     cal:86,  p:3.2, c:17,  f:1.3, defaultG:100 },
+  { id:'edamame',        name:'Edamame (shelled)',     cat:'Veg',     cal:121, p:11,  c:8.9, f:5.2, defaultG:100 },
+  { id:'mushrooms',      name:'Mushrooms',             cat:'Veg',     cal:22,  p:3.1, c:3.3, f:0.3, defaultG:100 },
+  { id:'courgette',      name:'Courgette / zucchini',  cat:'Veg',     cal:17,  p:1.2, c:3.1, f:0.3, defaultG:150 },
+  // ── Legumes ───────────────────────────────────────────────────────────────────
+  { id:'lentils',        name:'Lentils (cooked)',      cat:'Legumes', cal:116, p:9,   c:20,  f:0.4, defaultG:150 },
+  { id:'chickpeas',      name:'Chickpeas (tinned)',    cat:'Legumes', cal:139, p:7.3, c:22,  f:2.6, defaultG:150 },
+  { id:'black_beans',    name:'Black beans (tinned)',  cat:'Legumes', cal:132, p:8.9, c:24,  f:0.5, defaultG:150 },
+  { id:'kidney_beans',   name:'Kidney beans (tinned)', cat:'Legumes', cal:127, p:8.7, c:22,  f:0.5, defaultG:150 },
+  // ── Fruits ───────────────────────────────────────────────────────────────────
+  { id:'banana',         name:'Banana',               cat:'Fruit',   cal:89,  p:1.1, c:23,  f:0.3, defaultG:120 },
+  { id:'apple',          name:'Apple',                cat:'Fruit',   cal:52,  p:0.3, c:14,  f:0.2, defaultG:180 },
+  { id:'blueberries',    name:'Blueberries',          cat:'Fruit',   cal:57,  p:0.7, c:14,  f:0.3, defaultG:100 },
+  { id:'strawberries',   name:'Strawberries',         cat:'Fruit',   cal:32,  p:0.7, c:7.7, f:0.3, defaultG:150 },
+  { id:'orange',         name:'Orange',               cat:'Fruit',   cal:47,  p:0.9, c:12,  f:0.1, defaultG:150 },
+  { id:'mango',          name:'Mango',                cat:'Fruit',   cal:60,  p:0.8, c:15,  f:0.4, defaultG:150 },
+  { id:'grapes',         name:'Grapes',               cat:'Fruit',   cal:69,  p:0.7, c:18,  f:0.2, defaultG:120 },
+  { id:'kiwi',           name:'Kiwi',                 cat:'Fruit',   cal:61,  p:1.1, c:15,  f:0.5, defaultG:80  },
+  { id:'pineapple',      name:'Pineapple',            cat:'Fruit',   cal:50,  p:0.5, c:13,  f:0.1, defaultG:150 },
+  { id:'watermelon',     name:'Watermelon',           cat:'Fruit',   cal:30,  p:0.6, c:7.6, f:0.2, defaultG:200 },
+  // ── Snacks / fats ────────────────────────────────────────────────────────────
+  { id:'almonds',        name:'Almonds',              cat:'Snacks',  cal:579, p:21,  c:22,  f:50,  defaultG:30  },
+  { id:'cashews',        name:'Cashews',              cat:'Snacks',  cal:553, p:18,  c:33,  f:44,  defaultG:30  },
+  { id:'walnuts',        name:'Walnuts',              cat:'Snacks',  cal:654, p:15,  c:14,  f:65,  defaultG:30  },
+  { id:'mixed_nuts',     name:'Mixed nuts',           cat:'Snacks',  cal:607, p:18,  c:21,  f:54,  defaultG:30  },
+  { id:'peanuts',        name:'Peanuts',              cat:'Snacks',  cal:567, p:26,  c:16,  f:49,  defaultG:30  },
+  { id:'peanut_butter',  name:'Peanut butter',        cat:'Snacks',  cal:588, p:25,  c:20,  f:50,  defaultG:30  },
+  { id:'almond_butter',  name:'Almond butter',        cat:'Snacks',  cal:614, p:21,  c:19,  f:56,  defaultG:30  },
+  { id:'dark_choc',      name:'Dark chocolate 85%',   cat:'Snacks',  cal:598, p:8,   c:22,  f:43,  defaultG:25  },
+  { id:'rice_cake',      name:'Rice cakes',           cat:'Snacks',  cal:387, p:7.5, c:81,  f:2.9, defaultG:30  },
+  { id:'popcorn',        name:'Popcorn (plain)',       cat:'Snacks',  cal:387, p:13,  c:78,  f:4.5, defaultG:25  },
+  { id:'hummus',         name:'Hummus',               cat:'Snacks',  cal:166, p:7.9, c:14,  f:9.6, defaultG:80  },
+  { id:'protein_bar',    name:'Protein bar (generic)', cat:'Snacks', cal:350, p:20,  c:38,  f:9,   defaultG:55  },
+  { id:'olive_oil',      name:'Olive oil',            cat:'Snacks',  cal:884, p:0,   c:0,   f:100, defaultG:10  },
+  // ── Drinks ───────────────────────────────────────────────────────────────────
+  { id:'protein_shake',  name:'Protein shake (whey)', cat:'Drinks',  cal:121, p:24,  c:3,   f:1.5, defaultG:35  },
+  { id:'oat_milk',       name:'Oat milk',             cat:'Drinks',  cal:45,  p:1,   c:6.5, f:1.5, defaultG:250 },
+  { id:'almond_milk',    name:'Almond milk (unsweet)', cat:'Drinks', cal:15,  p:0.6, c:0.5, f:1.2, defaultG:250 },
+  { id:'coffee_black',   name:'Black coffee',         cat:'Drinks',  cal:2,   p:0.3, c:0,   f:0,   defaultG:240 },
+  { id:'orange_juice',   name:'Orange juice',         cat:'Drinks',  cal:45,  p:0.7, c:10,  f:0.2, defaultG:200 },
+  { id:'green_tea',      name:'Green tea',            cat:'Drinks',  cal:1,   p:0,   c:0.2, f:0,   defaultG:240 },
+  { id:'coconut_water',  name:'Coconut water',        cat:'Drinks',  cal:19,  p:0.7, c:3.7, f:0.2, defaultG:250 },
 ];
 
 // ─── Macro ring component ──────────────────────────────────────────────────────
@@ -163,6 +210,8 @@ function FoodScreen({
   const [customName, setCustomName] = React.useState('');
   const [customCal,  setCustomCal]  = React.useState('');
   const [customProt, setCustomProt] = React.useState('');
+  const [customCarb, setCustomCarb] = React.useState('');
+  const [customFat,  setCustomFat]  = React.useState('');
   const [showCustom, setShowCustom] = React.useState(false);
   const [showWeekly, setShowWeekly] = React.useState(false);
 
@@ -261,8 +310,8 @@ function FoodScreen({
       grams: 0,
       calories: cal,
       protein:  Number(customProt) || 0,
-      carbs:    0,
-      fat:      0,
+      carbs:    Number(customCarb) || 0,
+      fat:      Number(customFat)  || 0,
     };
     const updated = [...entries, entry];
     if (onUpdateFood) onUpdateFood(vKey, updated);
@@ -276,7 +325,8 @@ function FoodScreen({
 
   const resetSheet = () => {
     setAddMeal(null); setSearch(''); setSelected(null); setGrams('');
-    setCustomName(''); setCustomCal(''); setCustomProt(''); setShowCustom(false);
+    setCustomName(''); setCustomCal(''); setCustomProt('');
+    setCustomCarb(''); setCustomFat(''); setShowCustom(false);
   };
 
   const navigateDay = (delta) => {
@@ -632,23 +682,45 @@ function FoodScreen({
                   style={{ padding:'10px 12px', borderRadius:10, border:`1px solid ${t.border}`,
                     background:t.surface2, fontFamily:t.sans, fontSize:13, color:t.text, outline:'none' }}
                 />
-                <div style={{ display:'flex', gap:8 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Calories (kcal)*</div>
-                    <input value={customCal} type="number"
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <div>
+                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Calories (kcal) *</div>
+                    <input value={customCal} type="number" placeholder="e.g. 450"
                       onChange={(e) => setCustomCal(e.target.value)}
                       style={{ width:'100%', padding:'10px 12px', borderRadius:10,
                         border:`1px solid ${t.border}`, background:t.surface2,
-                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text, outline:'none' }}
+                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text,
+                        outline:'none', boxSizing:'border-box' }}
                     />
                   </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Protein (g, optional)</div>
-                    <input value={customProt} type="number"
+                  <div>
+                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Protein (g)</div>
+                    <input value={customProt} type="number" placeholder="optional"
                       onChange={(e) => setCustomProt(e.target.value)}
                       style={{ width:'100%', padding:'10px 12px', borderRadius:10,
                         border:`1px solid ${t.border}`, background:t.surface2,
-                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text, outline:'none' }}
+                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text,
+                        outline:'none', boxSizing:'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Carbs (g)</div>
+                    <input value={customCarb} type="number" placeholder="optional"
+                      onChange={(e) => setCustomCarb(e.target.value)}
+                      style={{ width:'100%', padding:'10px 12px', borderRadius:10,
+                        border:`1px solid ${t.border}`, background:t.surface2,
+                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text,
+                        outline:'none', boxSizing:'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize:10, color:t.text3, marginBottom:4 }}>Fat (g)</div>
+                    <input value={customFat} type="number" placeholder="optional"
+                      onChange={(e) => setCustomFat(e.target.value)}
+                      style={{ width:'100%', padding:'10px 12px', borderRadius:10,
+                        border:`1px solid ${t.border}`, background:t.surface2,
+                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text,
+                        outline:'none', boxSizing:'border-box' }}
                     />
                   </div>
                 </div>
