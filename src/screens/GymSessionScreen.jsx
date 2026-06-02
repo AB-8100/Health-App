@@ -12,25 +12,30 @@ const GYM_QUEUE = [
     targetWeight: 57.5,
     isPR: true,
     lastWeek: '55kg × 10',
+    unilateral: false,
     sets: [],  // seeded fresh on session start
   },
-  { id: 'ohp',      name: 'Overhead press',   muscle: 'Shoulders',  targetSets: 4, targetWeight: 37.5, targetReps: 9,  lastWeek: '37.5 × 8',  sets: [] },
-  { id: 'incline',  name: 'Incline DB press', muscle: 'Upper chest',targetSets: 3, targetWeight: 26,   targetReps: 10, lastWeek: '24 × 12',   sets: [] },
-  { id: 'lateral',  name: 'Lateral raises',   muscle: 'Shoulders',  targetSets: 3, targetWeight: 12,   targetReps: 15, lastWeek: '12 × 15',   sets: [] },
-  { id: 'tricep',   name: 'Tricep pushdown',  muscle: 'Triceps',    targetSets: 3, targetWeight: 45,   targetReps: 12, lastWeek: '45 × 12',   sets: [] },
-  { id: 'skulls',   name: 'Skull crushers',   muscle: 'Triceps',    targetSets: 3, targetWeight: 22.5, targetReps: 12, lastWeek: '22.5 × 12', sets: [] },
+  { id: 'ohp',      name: 'Overhead press',   muscle: 'Shoulders',  targetSets: 4, targetWeight: 37.5, targetReps: 9,  lastWeek: '37.5 × 8',  unilateral: false, sets: [] },
+  { id: 'incline',  name: 'Incline DB press', muscle: 'Upper chest',targetSets: 3, targetWeight: 26,   targetReps: 10, lastWeek: '24 × 12',   unilateral: false, sets: [] },
+  { id: 'lateral',  name: 'Lateral raises',   muscle: 'Shoulders',  targetSets: 3, targetWeight: 12,   targetReps: 15, lastWeek: '12 × 15',   unilateral: true,  sets: [] },
+  { id: 'tricep',   name: 'Tricep pushdown',  muscle: 'Triceps',    targetSets: 3, targetWeight: 45,   targetReps: 12, lastWeek: '45 × 12',   unilateral: false, sets: [] },
+  { id: 'skulls',   name: 'Skull crushers',   muscle: 'Triceps',    targetSets: 3, targetWeight: 22.5, targetReps: 12, lastWeek: '22.5 × 12', unilateral: false, sets: [] },
 ];
+
+function blankSet(unilateral) {
+  return unilateral
+    ? { wR: null, rR: null, wL: null, rL: null, done: false }
+    : { w: null, r: null, done: false };
+}
 
 function GymSessionScreen({ width = 390, height = 820, theme = 'light', session, setSession, onNav, onExit, onComplete, tracksCycle = true }) {
   const t = themes[theme];
 
-  // Seed all exercises with blank sets on session start.
-  // This ensures the user enters their own reps — nothing is pre-filled.
   React.useEffect(() => {
     if (!session.queue) {
       const seeded = GYM_QUEUE.map(ex => ({
         ...ex,
-        sets: Array.from({ length: ex.targetSets }, () => ({ w: null, r: null, done: false }))
+        sets: Array.from({ length: ex.targetSets }, () => blankSet(ex.unilateral))
       }));
       setSession(s => ({ ...s, queue: seeded, exIdx: 0 }));
     }
@@ -41,11 +46,13 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
   const elapsed = session.elapsed || 0;
   const paused  = session.paused  || false;
 
-  // Local UI state only
-  const [restSec, setRestSec] = React.useState(0);
+  const [restSec, setRestSec]         = React.useState(0);
   const [showEndConfirm, setShowEndConfirm] = React.useState(false);
+  const [editingSetIdx, setEditingSetIdx]   = React.useState(null);
 
-  // rest countdown (local — resets on nav, that's OK)
+  // Clear edit mode when exercise changes
+  React.useEffect(() => { setEditingSetIdx(null); }, [exIdx]);
+
   React.useEffect(() => {
     if (restSec <= 0 || paused) return;
     const id = setInterval(() => setRestSec(s => Math.max(0, s - 1)), 1000);
@@ -59,33 +66,43 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
   const totalSets = queue.reduce((n,e) => n + e.targetSets, 0);
   const allDone = totalDone >= totalSets;
 
-  const updateSet = (i, field, value) => {
+  const updateSet = (exI, i, field, value) => {
     const next = queue.slice();
-    const sets = next[exIdx].sets.slice();
+    const sets = next[exI].sets.slice();
     sets[i] = { ...sets[i], [field]: value };
-    next[exIdx] = { ...next[exIdx], sets };
+    next[exI] = { ...next[exI], sets };
     setSession(s => ({ ...s, queue: next }));
   };
+
   const logSet = () => {
     if (curSetIdx < 0) return;
     const next = queue.slice();
     const sets = next[exIdx].sets.slice();
     const s = sets[curSetIdx];
-    sets[curSetIdx] = {
-      w: s.w ?? cur.targetWeight,
-      r: s.r ?? cur.targetReps,
-      done: true,
-    };
+    if (cur.unilateral) {
+      sets[curSetIdx] = {
+        wR: s.wR ?? cur.targetWeight,
+        rR: s.rR ?? cur.targetReps,
+        wL: s.wL ?? cur.targetWeight,
+        rL: s.rL ?? cur.targetReps,
+        done: true,
+      };
+    } else {
+      sets[curSetIdx] = {
+        w: s.w ?? cur.targetWeight,
+        r: s.r ?? cur.targetReps,
+        done: true,
+      };
+    }
     next[exIdx] = { ...next[exIdx], sets };
     setSession(sn => ({ ...sn, queue: next }));
     setRestSec(90);
+    setEditingSetIdx(null);
 
-    // Auto-advance to next exercise if this was the last set
     if (curSetIdx === sets.length - 1) {
       for (let i = exIdx + 1; i < next.length; i++) {
-        // Auto-seed missing sets
         if (!next[i].sets || next[i].sets.length === 0) {
-          const seeded = Array.from({ length: next[i].targetSets }, () => ({ w: null, r: null, done: false }));
+          const seeded = Array.from({ length: next[i].targetSets }, () => blankSet(next[i].unilateral));
           next[i] = { ...next[i], sets: seeded };
         }
         if ((next[i].sets || []).some(s => !s.done)) {
@@ -96,6 +113,11 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
       }
     }
   };
+
+  const saveEditedSet = (i) => {
+    setEditingSetIdx(null);
+  };
+
   const togglePause = () => setSession(s => ({ ...s, paused: !s.paused }));
   const finishSession = () => {
     setShowEndConfirm(false);
@@ -129,11 +151,8 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
         padding:'2px 14px 12px', borderBottom:`1px solid ${t.border}`,
         background: t.bg, gap:8
       }}>
-        <button onClick={() => {
-          // If mid-session, show confirm sheet rather than silently leaving.
-          if (session.active) { setShowEndConfirm(true); }
-          else { onExit && onExit(); }
-        }} style={{
+        {/* Back = minimise: keeps session running, just navigates away */}
+        <button onClick={() => onNav && onNav('gym-hub')} title="Minimise session" style={{
           width:32, height:32, borderRadius:9, background:'transparent',
           border:`1px solid ${t.border}`, color:t.text, cursor:'pointer',
           display:'flex', alignItems:'center', justifyContent:'center', fontSize:14,
@@ -207,7 +226,7 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
               Workout
             </div>
             <div style={{ fontFamily:t.serif, fontSize:24, lineHeight:1, color:t.text }}>
-              Push day
+              {session.workout || 'Push day'}
             </div>
           </div>
           <div style={{ fontSize:10.5, color:t.text3, letterSpacing:'.06em' }}>
@@ -238,7 +257,15 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
                 {cur.name}
               </div>
               <div style={{ fontSize:11.5, color:t.text2, marginTop:3 }}>
-                {cur.muscle} · Last week: {cur.lastWeek}
+                {cur.muscle}
+                {cur.unilateral && (
+                  <span style={{
+                    marginLeft:6, fontSize:9.5, fontWeight:600, letterSpacing:'.06em',
+                    color:t.accent, background:t.accent+'18', border:`1px solid ${t.accent}30`,
+                    borderRadius:5, padding:'2px 5px'
+                  }}>Unilateral</span>
+                )}
+                {' · Last week: '}{cur.lastWeek}
               </div>
             </div>
             {cur.isPR && (
@@ -262,18 +289,23 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
         }}>
           {/* header row */}
           <div style={{
-            display:'grid', gridTemplateColumns:'40px 1fr 1fr 40px', gap:0,
+            display:'grid',
+            gridTemplateColumns: cur.unilateral ? '40px 1fr 1fr 40px' : '40px 1fr 1fr 40px',
+            gap:0,
             padding:'10px 16px 8px',
             fontSize:9.5, letterSpacing:'.12em', color:t.text3, textTransform:'uppercase',
             borderBottom:`1px solid ${t.border}`
           }}>
             <span>Set</span>
-            <span style={{ textAlign:'center' }}>Weight</span>
-            <span style={{ textAlign:'center' }}>Reps</span>
+            <span style={{ textAlign:'center' }}>{cur.unilateral ? 'Right' : 'Weight'}</span>
+            <span style={{ textAlign:'center' }}>{cur.unilateral ? 'Left' : 'Reps'}</span>
             <span></span>
           </div>
+
           {(cur.sets||[]).map((s,i) => {
             const isCurrent = i === curSetIdx;
+            const isEditing = s.done && i === editingSetIdx;
+
             return (
               <div key={i} style={{
                 display:'grid', gridTemplateColumns:'40px 1fr 1fr 40px', gap:0,
@@ -289,51 +321,127 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
                   {i+1}
                 </div>
 
-                {/* Weight cell */}
+                {/* Weight / Right side */}
                 <div style={{ display:'flex', justifyContent:'center' }}>
-                  {s.done ? (
-                    <span style={{ fontFamily:t.mono, fontSize:14, color:t.text2 }}>
-                      {s.w}<span style={{ fontSize:10, color:t.text3 }}>kg</span>
-                    </span>
-                  ) : isCurrent ? (
-                    <NumberInput
-                      value={s.w ?? cur.targetWeight}
-                      onChange={(v) => updateSet(i, 'w', v)}
-                      step={2.5} suffix="kg" theme={theme}
-                    />
+                  {cur.unilateral ? (
+                    s.done && !isEditing ? (
+                      <span style={{ fontFamily:t.mono, fontSize:13, color:t.text2, textAlign:'center' }}>
+                        {s.wR}<span style={{ fontSize:10, color:t.text3 }}>kg</span>
+                        <span style={{ fontSize:10, color:t.text3 }}> ×{s.rR}</span>
+                      </span>
+                    ) : (isCurrent || isEditing) ? (
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                        <NumberInput
+                          value={s.wR ?? cur.targetWeight}
+                          onChange={(v) => updateSet(exIdx, i, 'wR', v)}
+                          step={2.5} suffix="kg" theme={theme}
+                        />
+                        <NumberInput
+                          value={s.rR ?? cur.targetReps}
+                          onChange={(v) => updateSet(exIdx, i, 'rR', v)}
+                          step={1} prefix="×" theme={theme}
+                        />
+                      </div>
+                    ) : (
+                      <span style={{ fontSize:12, color:t.text3, textAlign:'center' }}>
+                        {cur.targetWeight}<span style={{ fontSize:10 }}>kg</span>
+                        <span style={{ fontSize:10 }}> ×{cur.targetReps}</span>
+                      </span>
+                    )
                   ) : (
-                    <span style={{ fontSize:13, color:t.text3 }}>
-                      {cur.targetWeight}<span style={{ fontSize:10 }}>kg</span>
-                    </span>
+                    s.done && !isEditing ? (
+                      <span style={{ fontFamily:t.mono, fontSize:14, color:t.text2 }}>
+                        {s.w}<span style={{ fontSize:10, color:t.text3 }}>kg</span>
+                      </span>
+                    ) : (isCurrent || isEditing) ? (
+                      <NumberInput
+                        value={s.w ?? cur.targetWeight}
+                        onChange={(v) => updateSet(exIdx, i, 'w', v)}
+                        step={2.5} suffix="kg" theme={theme}
+                      />
+                    ) : (
+                      <span style={{ fontSize:13, color:t.text3 }}>
+                        {cur.targetWeight}<span style={{ fontSize:10 }}>kg</span>
+                      </span>
+                    )
                   )}
                 </div>
 
-                {/* Reps cell */}
+                {/* Reps / Left side */}
                 <div style={{ display:'flex', justifyContent:'center' }}>
-                  {s.done ? (
-                    <span style={{ fontFamily:t.mono, fontSize:14, color:t.text2 }}>
-                      ×{s.r}
-                    </span>
-                  ) : isCurrent ? (
-                    <NumberInput
-                      value={s.r ?? cur.targetReps}
-                      onChange={(v) => updateSet(i, 'r', v)}
-                      step={1} prefix="×" theme={theme}
-                    />
+                  {cur.unilateral ? (
+                    s.done && !isEditing ? (
+                      <span style={{ fontFamily:t.mono, fontSize:13, color:t.text2, textAlign:'center' }}>
+                        {s.wL}<span style={{ fontSize:10, color:t.text3 }}>kg</span>
+                        <span style={{ fontSize:10, color:t.text3 }}> ×{s.rL}</span>
+                      </span>
+                    ) : (isCurrent || isEditing) ? (
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                        <NumberInput
+                          value={s.wL ?? cur.targetWeight}
+                          onChange={(v) => updateSet(exIdx, i, 'wL', v)}
+                          step={2.5} suffix="kg" theme={theme}
+                        />
+                        <NumberInput
+                          value={s.rL ?? cur.targetReps}
+                          onChange={(v) => updateSet(exIdx, i, 'rL', v)}
+                          step={1} prefix="×" theme={theme}
+                        />
+                      </div>
+                    ) : (
+                      <span style={{ fontSize:12, color:t.text3, textAlign:'center' }}>
+                        {cur.targetWeight}<span style={{ fontSize:10 }}>kg</span>
+                        <span style={{ fontSize:10 }}> ×{cur.targetReps}</span>
+                      </span>
+                    )
                   ) : (
-                    <span style={{ fontSize:13, color:t.text3 }}>
-                      ×{cur.targetReps}
-                    </span>
+                    s.done && !isEditing ? (
+                      <span style={{ fontFamily:t.mono, fontSize:14, color:t.text2 }}>
+                        ×{s.r}
+                      </span>
+                    ) : (isCurrent || isEditing) ? (
+                      <NumberInput
+                        value={s.r ?? cur.targetReps}
+                        onChange={(v) => updateSet(exIdx, i, 'r', v)}
+                        step={1} prefix="×" theme={theme}
+                      />
+                    ) : (
+                      <span style={{ fontSize:13, color:t.text3 }}>
+                        ×{cur.targetReps}
+                      </span>
+                    )
                   )}
                 </div>
 
-                <div style={{ textAlign:'center' }}>
-                  {s.done ? (
-                    <span style={{
-                      width:22, height:22, display:'inline-flex', alignItems:'center',
-                      justifyContent:'center', borderRadius:'50%',
-                      background:t.green+'20', color:t.green, fontSize:13
-                    }}>✓</span>
+                {/* Status / action */}
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center' }}>
+                  {isEditing ? (
+                    <button
+                      onClick={() => saveEditedSet(i)}
+                      title="Save edit"
+                      style={{
+                        width:26, height:26, borderRadius:'50%',
+                        background:t.green+'20', color:t.green,
+                        border:`1px solid ${t.green}40`,
+                        cursor:'pointer', fontSize:13, display:'flex',
+                        alignItems:'center', justifyContent:'center'
+                      }}>✓</button>
+                  ) : s.done ? (
+                    <button
+                      onClick={() => setEditingSetIdx(i)}
+                      title="Edit this set"
+                      style={{
+                        width:26, height:26, borderRadius:'50%',
+                        background:t.green+'20', color:t.green,
+                        border:`1px solid ${t.green}40`,
+                        cursor:'pointer', fontSize:11, display:'flex',
+                        alignItems:'center', justifyContent:'center',
+                        padding:0
+                      }}>
+                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8.5 1.5 L10.5 3.5 L4 10 L1.5 10.5 L2 8 Z"/>
+                      </svg>
+                    </button>
                   ) : isCurrent ? (
                     <span style={{
                       width:8, height:8, borderRadius:'50%', background:t.accent,
@@ -353,7 +461,7 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
           })}
         </div>
 
-        {/* Rest timer (visible when active) */}
+        {/* Rest timer */}
         {restSec > 0 && (
           <div style={{
             background:theme==='dark' ? t.surface : '#FFF6F0',
@@ -411,7 +519,12 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
           }}>
             <ExerciseImage exerciseId={e.id} size={34} radius={8} theme={theme}/>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:12.5, color:t.text }}>{e.name}</div>
+              <div style={{ fontSize:12.5, color:t.text }}>
+                {e.name}
+                {e.unilateral && (
+                  <span style={{ marginLeft:5, fontSize:9, color:t.accent, fontWeight:600 }}>R/L</span>
+                )}
+              </div>
               <div style={{ fontSize:10, color:t.text3 }}>{e.muscle} · {e.targetSets} sets</div>
             </div>
             <div style={{ fontFamily:t.mono, fontSize:11, color:t.text2 }}>
@@ -468,29 +581,66 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
   );
 }
 
-// Inline numeric stepper for set logging
+// Numeric stepper — tap the value to type directly, or use +/- buttons
 function NumberInput({ value, onChange, step = 1, prefix = '', suffix = '', theme = 'light' }) {
   const t = themes[theme];
+  const [isTyping, setIsTyping] = React.useState(false);
+  const [draft, setDraft]       = React.useState('');
+
+  const startTyping = () => {
+    setDraft(String(value));
+    setIsTyping(true);
+  };
+
+  const commitTyping = () => {
+    const parsed = parseFloat(draft);
+    if (!isNaN(parsed) && parsed >= 0) onChange(parsed);
+    setIsTyping(false);
+  };
+
   return (
     <div style={{
       display:'inline-flex', alignItems:'center',
       background:t.bg, border:`1px solid ${t.border2}`, borderRadius:8,
       overflow:'hidden'
     }}>
-      <button onClick={() => onChange(Number((value - step).toFixed(2)))} style={{
-        width:24, height:28, background:'transparent', border:'none',
-        color:t.text2, fontSize:14, cursor:'pointer', fontFamily:t.sans
-      }}>−</button>
-      <span style={{
-        minWidth:42, textAlign:'center', fontFamily:t.mono, fontSize:13,
-        color:t.text, fontVariantNumeric:'tabular-nums'
-      }}>
-        {prefix}{value}<span style={{ fontSize:9, color:t.text3 }}>{suffix}</span>
-      </span>
-      <button onClick={() => onChange(Number((value + step).toFixed(2)))} style={{
-        width:24, height:28, background:'transparent', border:'none',
-        color:t.text2, fontSize:14, cursor:'pointer', fontFamily:t.sans
-      }}>+</button>
+      <button
+        onClick={() => onChange(Number((value - step).toFixed(2)))}
+        style={{ width:24, height:28, background:'transparent', border:'none', color:t.text2, fontSize:14, cursor:'pointer', fontFamily:t.sans }}
+      >−</button>
+
+      {isTyping ? (
+        <input
+          type="number"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commitTyping}
+          onKeyDown={e => { if (e.key === 'Enter') { commitTyping(); } }}
+          autoFocus
+          style={{
+            width:46, textAlign:'center', fontFamily:t.mono, fontSize:13, color:t.text,
+            background:'transparent', border:'none', outline:'none',
+            fontVariantNumeric:'tabular-nums', MozAppearance:'textfield'
+          }}
+        />
+      ) : (
+        <span
+          onClick={startTyping}
+          title="Tap to type"
+          style={{
+            minWidth:42, textAlign:'center', fontFamily:t.mono, fontSize:13,
+            color:t.text, fontVariantNumeric:'tabular-nums',
+            cursor:'text', userSelect:'none', padding:'0 2px'
+          }}
+        >
+          {prefix}{value}<span style={{ fontSize:9, color:t.text3 }}>{suffix}</span>
+        </span>
+      )}
+
+      <button
+        onClick={() => onChange(Number((value + step).toFixed(2)))}
+        style={{ width:24, height:28, background:'transparent', border:'none', color:t.text2, fontSize:14, cursor:'pointer', fontFamily:t.sans }}
+      >+</button>
     </div>
   );
 }
@@ -550,14 +700,14 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
   const elapsed = session?.elapsed || 0;
   const workout = session?.workout || 'Push day';
 
-  // compute stats
   const exercisesDone = queue.filter(e => (e.sets||[]).some(s => s.done));
   const setsDone = queue.reduce((n,e) => n + (e.sets||[]).filter(s=>s.done).length, 0);
   const totalSets = queue.reduce((n,e) => n + e.targetSets, 0);
   const totalVolume = queue.reduce((sum, e) => {
-    return sum + (e.sets||[])
-      .filter(s => s.done)
-      .reduce((v, s) => v + ((s.w || 0) * (s.r || 0)), 0);
+    return sum + (e.sets||[]).filter(s => s.done).reduce((v, s) => {
+      if (e.unilateral) return v + ((s.wR||0)*(s.rR||0)) + ((s.wL||0)*(s.rL||0));
+      return v + ((s.w||0)*(s.r||0));
+    }, 0);
   }, 0);
   const prHits = queue.filter(e => e.isPR && (e.sets||[]).some(s => s.done)).length;
   const completionPct = totalSets ? Math.round((setsDone/totalSets) * 100) : 0;
@@ -646,9 +796,10 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
           {queue.map((e, i) => {
             const doneSets = (e.sets||[]).filter(s => s.done);
             const best = doneSets.reduce((b, s) => {
-              if (!b) return s;
-              if ((s.w || 0) > (b.w || 0)) return s;
-              if ((s.w || 0) === (b.w || 0) && (s.r || 0) > (b.r || 0)) return s;
+              const w = e.unilateral ? Math.max(s.wR||0, s.wL||0) : (s.w||0);
+              const r = e.unilateral ? (s.rR||0) : (s.r||0);
+              if (!b) return { w, r };
+              if (w > b.w || (w === b.w && r > b.r)) return { w, r };
               return b;
             }, null);
             const isDone = doneSets.length > 0;
@@ -673,10 +824,11 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
                     fontSize:13, color:t.text, display:'flex', alignItems:'center', gap:6
                   }}>
                     {e.name}
+                    {e.unilateral && isDone && (
+                      <span style={{ fontSize:9, color:t.accent, fontWeight:600, letterSpacing:'.04em' }}>R/L</span>
+                    )}
                     {e.isPR && isDone && (
-                      <span style={{
-                        fontSize:9, color:t.accent, fontWeight:600, letterSpacing:'.04em'
-                      }}>★ PR</span>
+                      <span style={{ fontSize:9, color:t.accent, fontWeight:600, letterSpacing:'.04em' }}>★ PR</span>
                     )}
                   </div>
                   <div style={{ fontSize:10.5, color:t.text3 }}>

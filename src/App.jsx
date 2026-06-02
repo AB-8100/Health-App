@@ -165,10 +165,16 @@ function App() {
     const queue = SECTION_ORDER_LOCAL.flatMap(sec => (today[sec] || []).map(id => {
       const ex = EX_LIB[id] || {};
       const targetSets = 3;
+      const unilateral = ex.unilateral || false;
       return {
         id, name: ex.name || id, muscle: ex.muscle || '',
         targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
-        sets: Array.from({ length: targetSets }, () => ({ w: null, r: null, done: false })),
+        unilateral,
+        sets: Array.from({ length: targetSets }, () =>
+          unilateral
+            ? { wR: null, rR: null, wL: null, rL: null, done: false }
+            : { w: null, r: null, done: false }
+        ),
       };
     }));
     setSession(s => ({
