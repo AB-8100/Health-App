@@ -207,6 +207,66 @@ function ScreenHeader({ theme, title, sub, onBack, right }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Mobility suggestions per muscle group (for rest day cards)
+const MOBILITY_BY_MUSCLE = {
+  'Chest':          ['catcow','thoracic','childpose'],
+  'Upper chest':    ['catcow','thoracic'],
+  'Lower chest':    ['catcow','thoracic'],
+  'Shoulders':      ['thoracic','catcow'],
+  'Front delts':    ['thoracic'],
+  'Rear delts':     ['thoracic','catcow'],
+  'Triceps':        ['thoracic'],
+  'Biceps':         ['thoracic'],
+  'Lats/Biceps':    ['thoracic','catcow','childpose'],
+  'Upper back':     ['catcow','thoracic','childpose'],
+  'Mid back':       ['catcow','childpose'],
+  'Full back':      ['catcow','thoracic','childpose'],
+  'Back/Biceps':    ['catcow','thoracic'],
+  'Brachialis':     ['thoracic'],
+  'Quads':          ['hipopen','pigeon'],
+  'Quads/Glutes':   ['hipopen','pigeon','hamstring'],
+  'Hamstrings':     ['hamstring','pigeon'],
+  'Glutes':         ['pigeon','hipopen'],
+  'Glutes/hips':    ['pigeon','hipopen'],
+  'Calves':         ['ankleroll','hamstring'],
+  'Core':           ['catcow','deadbug'],
+  'Abs':            ['catcow'],
+  'Lower abs':      ['catcow','hipopen'],
+  'Anti-rotation':  ['catcow'],
+  'Obliques':       ['catcow','thoracic'],
+  'Deep core':      ['catcow'],
+};
+
+function getMobilityForMuscles(muscleStr) {
+  if (!muscleStr) return [];
+  const muscles = muscleStr.split(' · ');
+  const ids = new Set();
+  muscles.forEach(m => {
+    (MOBILITY_BY_MUSCLE[m] || []).forEach(id => ids.add(id));
+  });
+  return [...ids].slice(0, 4);
+}
+
+// ────────────────────────────────────────────────────────────
+// Weekly sessions tracker — grouped by ISO week from completedSessions
+function getISOWeekKey(date) {
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getFullYear()}-W${String(week).padStart(2,'0')}`;
+}
+
+function getWeekLabel(isoKey) {
+  const [year, w] = isoKey.split('-W');
+  const jan4 = new Date(Number(year), 0, 4);
+  const weekStart = new Date(jan4);
+  weekStart.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1) + (Number(w) - 1) * 7);
+  return weekStart.toLocaleDateString('en', { day:'numeric', month:'short' });
+}
+
+// ────────────────────────────────────────────────────────────
 // Gym Hub — the Gym tab landing page
 function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
@@ -218,17 +278,69 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        tracksCycle = true }) {
   const t = themes[theme];
   const split = SPLITS[plan.splitDays] || SPLITS[3];
-  const totalDays = split.days.length;
-  const today = split.days[(todayIdx || 0) % totalDays] || split.days[0];
-  const todayExercises = SECTION_ORDER.flatMap(sec => (today[sec] || []).map(id => ({ id, sec })));
-  const [draggingSlot, setDraggingSlot] = React.useState(null);
 
   // Use plan.scheduleOverride only if all its day IDs still exist in the current split.
-  // A stale override (from a previous split) would contain unknown IDs, crashing dayInfo.name access.
   const splitDayIds = new Set(split.days.map(d => d.id));
   const scheduleOverrideIsValid = plan.scheduleOverride &&
     plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
   const schedule = scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule;
+
+  // viewDayIdx: which day the exercise focus card shows (defaults to today's day of week)
+  const [viewDayIdx, setViewDayIdx] = React.useState(dayOfWeek);
+  const [draggingSlot, setDraggingSlot] = React.useState(null);
+  const [drillExercise, setDrillExercise] = React.useState(null); // exercise id for drill-down sheet
+
+  // Resolve the viewed day's scheduled session
+  const viewSlot = schedule[viewDayIdx];
+  const viewBaseDay = viewSlot && viewSlot !== '—' ? split.days.find(d => d.id === viewSlot) : null;
+  const viewDay = viewBaseDay ? (plan.overrides?.[viewBaseDay.id] || viewBaseDay) : null;
+  const isViewRest = !viewDay;
+
+  // For rest day: show mobility based on previous day's muscles
+  const prevSlot = schedule[(viewDayIdx + 6) % 7];
+  const prevBaseDay = prevSlot && prevSlot !== '—' ? split.days.find(d => d.id === prevSlot) : null;
+  const prevDay = prevBaseDay ? (plan.overrides?.[prevBaseDay.id] || prevBaseDay) : null;
+  const restMobilityIds = isViewRest ? getMobilityForMuscles(prevDay?.muscles || '') : [];
+
+  const viewExercises = viewDay ? SECTION_ORDER.flatMap(sec => (viewDay[sec] || []).map(id => ({ id, sec }))) : [];
+
+  // Weekly tracker data: group completedSessions by ISO week
+  const weekMap = React.useMemo(() => {
+    const map = {};
+    completedSessions.forEach(s => {
+      const key = getISOWeekKey(s.date);
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    });
+    return map;
+  }, [completedSessions]);
+
+  const currentWeekKey = getISOWeekKey(new Date());
+  const allWeekKeys = [...new Set([...Object.keys(weekMap), currentWeekKey])].sort();
+
+  // Per-exercise progress across all sessions
+  const exerciseHistory = React.useMemo(() => {
+    const hist = {};
+    completedSessions.forEach(s => {
+      (s.queue || []).forEach(ex => {
+        if (!hist[ex.id]) hist[ex.id] = { name: ex.name, sessions: [] };
+        const doneSets = (ex.sets || []).filter(st => st.done);
+        if (doneSets.length) {
+          const maxW = Math.max(...doneSets.map(st => {
+            if (ex.unilateral) return Math.max(st.wR || 0, st.wL || 0);
+            return st.w || 0;
+          }));
+          hist[ex.id].sessions.push({ date: s.date, maxW, sets: doneSets.length });
+        }
+      });
+    });
+    return hist;
+  }, [completedSessions]);
+
+  // Build set of exercise IDs in drill week
+  const drillWeekSessions = drillExercise && drillExercise.startsWith('week:')
+    ? weekMap[drillExercise.replace('week:', '')] || []
+    : null;
 
   return (
     <div style={{
@@ -281,17 +393,15 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             }}>Change ›</button>
           </div>
 
-          {/* Weekly grid */}
-          <div style={{
-            display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:5
-          }}>
+          {/* Weekly grid — clicking selects day for focus card */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:5 }}>
             {WEEK_DAYS.map((dayLetter, i) => {
               const slot = schedule[i];
               const isToday = i === dayOfWeek;
+              const isSelected = i === viewDayIdx;
               const dayInfo = slot !== '—' ? split.days.find(d => d.id === slot) : null;
               const isRest = slot === '—' || !dayInfo;
               const dayActs = activities[i] || [];
-              // Compute this day's date for the current week (Mon = 0)
               const now = new Date();
               const mondayOffset = now.getDay() === 0 ? -6 : 1 - now.getDay();
               const dayDate = new Date(now);
@@ -305,7 +415,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               const isDragging = draggingSlot === i;
               return (
                 <div key={i}
-                  onClick={(e) => { e.stopPropagation(); onTapDay && onTapDay(i); }}
+                  onClick={(e) => { e.stopPropagation(); setViewDayIdx(i); }}
                   draggable={!isRest}
                   onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDraggingSlot(i); }}
                   onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
@@ -322,11 +432,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                   onDragEnd={() => setDraggingSlot(null)}
                   style={{
                     display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-                    cursor: isRest ? 'pointer' : 'grab', padding:'2px 0',
+                    cursor:'pointer', padding:'2px 0',
                     opacity: isDragging ? 0.4 : 1
                   }}>
                   <div style={{
-                    fontSize:9.5, color: isToday ? t.accent : t.text3, fontWeight:500
+                    fontSize:9.5, color: isToday ? t.accent : t.text3, fontWeight: isToday ? 600 : 500
                   }}>
                     {dayLetter}
                   </div>
@@ -338,18 +448,20 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                       : isRest
                         ? t.surface2
                         : (isToday ? t.accent : (t.accent + '20')),
-                    border: hasCompleted
-                      ? '1.5px solid #0070CC'
-                      : isToday ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+                    border: isSelected
+                      ? `2px solid ${t.accent}`
+                      : hasCompleted
+                        ? '1.5px solid #0070CC'
+                        : isToday ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
                     color: hasCompleted
                       ? '#fff'
                       : isToday ? t.accentText : (isRest ? t.text3 : t.accent),
                     display:'flex', alignItems:'center', justifyContent:'center',
                     fontSize:11, fontWeight:600, fontFamily:t.mono,
-                    transition:'background .2s'
+                    transition:'background .2s',
+                    boxShadow: isSelected ? `0 0 0 3px ${t.accent}25` : 'none',
                   }}>
                     {hasCompleted ? '✓' : isRest ? (dayActs.length ? '+' : '·') : dayInfo.name.charAt(0)}
-                    {/* Activity dot indicator */}
                     {dayActs.length > 0 && !hasCompleted && (
                       <span style={{
                         position:'absolute', top:-3, right:-3,
@@ -369,113 +481,192 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             background: t.surface2, border:`1px dashed ${t.border2}`,
             fontSize:10, color:t.text3, textAlign:'center', letterSpacing:'.02em'
           }}>
-            Tap any day to log a run, swim, yoga or other activity
+            Tap a day to see its session · drag to reorder
           </div>
         </div>
 
-        {/* Today's session — large card */}
-        <div style={{
-          background:t.surface, border:`1.5px solid ${t.accent}50`, borderRadius:20,
-          padding:'16px 18px 14px', marginBottom:14,
-          boxShadow: theme==='dark' ? `0 0 20px ${t.accent}15` : `0 4px 14px ${t.accent}10`,
-        }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{
-                fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
-                color:t.accent, marginBottom:3, fontWeight:600
-              }}>
-                Today · {todayExercises.length} exercises
+        {/* Day focus card — shows selected day's exercises or rest day advice */}
+        {isViewRest ? (
+          <div style={{
+            background:t.surface, border:`1px solid ${t.border}`, borderRadius:20,
+            padding:'16px 18px 14px', marginBottom:14
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+              <div>
+                <div style={{
+                  fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
+                  color:t.text3, marginBottom:3, fontWeight:600
+                }}>
+                  {WEEK_DAYS[viewDayIdx]} · Rest day
+                </div>
+                <div style={{ fontFamily:t.serif, fontSize:22, lineHeight:1.05, color:t.text }}>
+                  Recovery day
+                </div>
               </div>
-              <div style={{ fontFamily:t.serif, fontSize:26, lineHeight:1.05, color:t.text }}>
-                {today.name} day
+              <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                padding:'6px 10px', borderRadius:8,
+                background:'transparent', border:`1px solid ${t.border2}`,
+                color:t.text2, fontSize:10.5, cursor:'pointer', fontFamily:t.sans,
+              }}>+ Log activity</button>
+            </div>
+            <div style={{
+              padding:'10px 12px', borderRadius:10,
+              background: '#15803D18', border:'1px solid #15803D30',
+              marginBottom: restMobilityIds.length ? 12 : 0
+            }}>
+              <div style={{ fontSize:11.5, color:'#15803D', fontWeight:600, marginBottom:4 }}>
+                Rest day tip
               </div>
-              <div style={{ fontSize:11.5, color:t.text2, marginTop:3 }}>
-                {today.muscles}
+              <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.55 }}>
+                {prevDay
+                  ? `You trained ${prevDay.name.toLowerCase()} yesterday. Light mobility work helps flush out soreness and keeps joints healthy.`
+                  : 'Mobility and stretching on rest days improves recovery and reduces injury risk.'}
               </div>
             </div>
-            <button onClick={() => onEditDay(today.id)} style={{
-              padding:'6px 10px', borderRadius:8,
-              background:'transparent', border:`1px solid ${t.border2}`,
-              color:t.text2, fontSize:10.5, cursor:'pointer', fontFamily:t.sans,
-              display:'flex', alignItems:'center', gap:4
-            }}>
-              ✎ Edit
-            </button>
-          </div>
-
-          {/* Sections preview */}
-          <div style={{ marginBottom:12 }}>
-            {SECTION_ORDER.map(sec => {
-              const exs = today[sec] || [];
-              if (!exs.length) return null;
-              const meta = SECTION_META[sec];
-              return (
-                <div key={sec} style={{
-                  display:'flex', alignItems:'baseline', gap:8, padding:'7px 0',
-                  borderTop:`1px solid ${t.border}`
+            {restMobilityIds.length > 0 && (
+              <div>
+                <div style={{
+                  fontSize:9.5, letterSpacing:'.14em', textTransform:'uppercase',
+                  color:t.text3, marginBottom:7, fontWeight:500
                 }}>
-                  <div style={{
-                    fontSize:9, letterSpacing:'.16em', color:meta.color,
-                    textTransform:'uppercase', fontWeight:600,
-                    minWidth:64
-                  }}>
-                    {meta.label}
-                  </div>
-                  <div style={{ flex:1, fontSize:11.5, color:t.text2, lineHeight:1.45 }}>
-                    {exs.map(id => EX_LIB[id]?.name || id).join(' · ')}
-                  </div>
+                  Suggested movements
                 </div>
-              );
-            })}
+                {restMobilityIds.map(id => {
+                  const ex = EX_LIB[id];
+                  if (!ex) return null;
+                  return (
+                    <div key={id} style={{
+                      display:'flex', alignItems:'center', gap:9, padding:'7px 0',
+                      borderTop:`1px solid ${t.border}`
+                    }}>
+                      <div style={{
+                        width:28, height:28, borderRadius:7, flexShrink:0,
+                        background:'#15803D18', color:'#15803D',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        fontSize:12
+                      }}>◈</div>
+                      <div>
+                        <div style={{ fontSize:12.5, color:t.text }}>{ex.name}</div>
+                        <div style={{ fontSize:10, color:t.text3 }}>{ex.muscle}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-
-          {(() => {
-            const todayCompleted = completedSessions.find(s => {
-              const sd = new Date(s.date);
-              const today = new Date();
-              return sd.toDateString() === today.toDateString();
-            });
-            if (todayCompleted) {
-              return (
-                <div style={{ display:'flex', gap:7 }}>
-                  <button onClick={() => onViewSummary && onViewSummary(todayCompleted)} style={{
-                    flex:1, padding:'12px', borderRadius:11,
-                    background:t.green+'18', color:t.green,
-                    border:`1.5px solid ${t.green}40`,
-                    fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer'
-                  }}>
-                    ✓ Session complete — view summary
-                  </button>
-                  <button onClick={() => onDeleteSession && onDeleteSession(todayCompleted.id)} style={{
-                    width:44, height:44, borderRadius:11, background:'transparent',
-                    border:`1px solid ${t.border}`, color:'#BE3B2E',
-                    cursor:'pointer', fontSize:13, fontFamily:t.sans,
-                    display:'flex', alignItems:'center', justifyContent:'center'
-                  }}>×</button>
+        ) : (
+          <div style={{
+            background:t.surface, border:`1.5px solid ${t.accent}50`, borderRadius:20,
+            padding:'16px 18px 14px', marginBottom:14,
+            boxShadow: theme==='dark' ? `0 0 20px ${t.accent}15` : `0 4px 14px ${t.accent}10`,
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{
+                  fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
+                  color:t.accent, marginBottom:3, fontWeight:600
+                }}>
+                  {WEEK_DAYS[viewDayIdx]} · {viewExercises.length} exercises
                 </div>
-              );
-            }
-            if (activeSession) {
+                <div style={{ fontFamily:t.serif, fontSize:26, lineHeight:1.05, color:t.text }}>
+                  {viewDay.name} day
+                </div>
+                <div style={{ fontSize:11.5, color:t.text2, marginTop:3 }}>
+                  {viewDay.muscles}
+                </div>
+              </div>
+              <button onClick={() => onEditDay(viewDay.id)} style={{
+                padding:'6px 10px', borderRadius:8,
+                background:'transparent', border:`1px solid ${t.border2}`,
+                color:t.text2, fontSize:10.5, cursor:'pointer', fontFamily:t.sans,
+                display:'flex', alignItems:'center', gap:4
+              }}>
+                ✎ Edit
+              </button>
+            </div>
+
+            {/* Sections preview */}
+            <div style={{ marginBottom:12 }}>
+              {SECTION_ORDER.map(sec => {
+                const exs = viewDay[sec] || [];
+                if (!exs.length) return null;
+                const meta = SECTION_META[sec];
+                return (
+                  <div key={sec} style={{
+                    display:'flex', alignItems:'baseline', gap:8, padding:'7px 0',
+                    borderTop:`1px solid ${t.border}`
+                  }}>
+                    <div style={{
+                      fontSize:9, letterSpacing:'.16em', color:meta.color,
+                      textTransform:'uppercase', fontWeight:600,
+                      minWidth:64
+                    }}>
+                      {meta.label}
+                    </div>
+                    <div style={{ flex:1, fontSize:11.5, color:t.text2, lineHeight:1.45 }}>
+                      {exs.map(id => EX_LIB[id]?.name || id).join(' · ')}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Action buttons — only show Start/Resume for today's session */}
+            {viewDayIdx === dayOfWeek ? (() => {
+              const todayCompleted = completedSessions.find(s => {
+                const sd = new Date(s.date);
+                const now = new Date();
+                return sd.toDateString() === now.toDateString();
+              });
+              if (todayCompleted) {
+                return (
+                  <div style={{ display:'flex', gap:7 }}>
+                    <button onClick={() => onViewSummary && onViewSummary(todayCompleted)} style={{
+                      flex:1, padding:'12px', borderRadius:11,
+                      background:t.green+'18', color:t.green,
+                      border:`1.5px solid ${t.green}40`,
+                      fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer'
+                    }}>
+                      ✓ Session complete — view summary
+                    </button>
+                    <button onClick={() => onDeleteSession && onDeleteSession(todayCompleted.id)} style={{
+                      width:44, height:44, borderRadius:11, background:'transparent',
+                      border:`1px solid ${t.border}`, color:'#BE3B2E',
+                      cursor:'pointer', fontSize:13, fontFamily:t.sans,
+                      display:'flex', alignItems:'center', justifyContent:'center'
+                    }}>×</button>
+                  </div>
+                );
+              }
+              if (activeSession) {
+                return (
+                  <button onClick={onResumeSession} style={{
+                    width:'100%', padding:'12px', borderRadius:11,
+                    background:t.accent, color:t.accentText,
+                    border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:6
+                  }}>Resume session →</button>
+                );
+              }
               return (
-                <button onClick={onResumeSession} style={{
+                <button onClick={onStartSession} style={{
                   width:'100%', padding:'12px', borderRadius:11,
                   background:t.accent, color:t.accentText,
                   border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
                   display:'flex', alignItems:'center', justifyContent:'center', gap:6
-                }}>Resume session →</button>
+                }}>Start session →</button>
               );
-            }
-            return (
-              <button onClick={onStartSession} style={{
-                width:'100%', padding:'12px', borderRadius:11,
-                background:t.accent, color:t.accentText,
-                border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+            })() : (
+              <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                width:'100%', padding:'11px', borderRadius:11,
+                background:'transparent', border:`1px solid ${t.border2}`,
+                color:t.text2, fontFamily:t.sans, fontSize:12.5, cursor:'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6
-              }}>Start session →</button>
-            );
-          })()}
-        </div>
+              }}>View day activities ›</button>
+            )}
+          </div>
+        )}
 
         {/* Sunday planning nudge */}
         {dayOfWeek === 6 && (
@@ -495,59 +686,12 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             }}>Review</button>
           </div>
         )}
-        {/* Other days in this split */}
-        <div style={{
-          fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
-          color:t.text3, marginBottom:8, padding:'0 4px'
-        }}>
-          All sessions in {split.name}
-        </div>
-        {split.days.map((d, i) => {
-          const isToday = i === todayIdx;
-          const totalEx =
-            (d.compound||[]).length + (d.accessory||[]).length +
-            (d.core||[]).length + (d.mobility||[]).length;
-          return (
-            <div key={d.id} onClick={() => onSelectDay(i)} style={{
-              display:'flex', alignItems:'center', gap:11, padding:'11px 14px',
-              background:t.surface, border:`1px solid ${isToday ? t.accent+'70' : t.border}`,
-              borderRadius:13, marginBottom:6, cursor:'pointer'
-            }}>
-              <div style={{
-                width:34, height:34, borderRadius:9,
-                background: isToday ? t.accent : t.surface2,
-                color: isToday ? t.accentText : t.text2,
-                display:'flex', alignItems:'center', justifyContent:'center',
-                fontFamily:t.serif, fontSize:14, flexShrink:0
-              }}>
-                {d.name.charAt(0)}
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{
-                  fontSize:13, color:t.text, fontWeight:500,
-                  display:'flex', alignItems:'center', gap:6
-                }}>
-                  {d.name}
-                  {isToday && <span style={{
-                    fontSize:9, padding:'1px 6px', borderRadius:4,
-                    background:t.accent+'18', color:t.accent,
-                    fontWeight:600, letterSpacing:'.05em', textTransform:'uppercase'
-                  }}>Today</span>}
-                </div>
-                <div style={{ fontSize:10.5, color:t.text3 }}>
-                  {d.muscles} · {totalEx} exercises
-                </div>
-              </div>
-              <span style={{ fontSize:16, color:t.text3 }}>›</span>
-            </div>
-          );
-        })}
 
         {/* Browse exercise library */}
         <button onClick={onBrowseLibrary} style={{
           width:'100%', display:'flex', alignItems:'center', gap:11, padding:'12px 14px',
           background:'transparent', border:`1.5px dashed ${t.border2}`,
-          borderRadius:13, marginTop:10, cursor:'pointer', fontFamily:t.sans
+          borderRadius:13, marginBottom:16, cursor:'pointer', fontFamily:t.sans
         }}>
           <div style={{
             width:34, height:34, borderRadius:9,
@@ -567,11 +711,199 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               Browse exercise library
             </div>
             <div style={{ fontSize:10.5, color:t.text3, marginTop:1 }}>
-              All {Object.keys(window.EX_LIB || {}).length} exercises · search by muscle or type
+              Search by muscle or type
             </div>
           </div>
           <span style={{ fontSize:16, color:t.text3 }}>›</span>
         </button>
+
+        {/* ── Weekly progress tracker ── */}
+        <div style={{
+          fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
+          color:t.text3, marginBottom:10, padding:'0 2px'
+        }}>
+          Week-by-week progress
+        </div>
+
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+          padding:'14px 16px', marginBottom:14
+        }}>
+          {allWeekKeys.length === 0 || (allWeekKeys.length === 1 && !weekMap[allWeekKeys[0]]?.length) ? (
+            <div style={{ textAlign:'center', padding:'20px 0', color:t.text3, fontSize:12 }}>
+              No sessions logged yet.{'\n'}Complete a session to see your progress.
+            </div>
+          ) : (
+            <>
+              {/* Bar chart — one bar per week */}
+              <div style={{ display:'flex', alignItems:'flex-end', gap:6, marginBottom:12, minHeight:52 }}>
+                {allWeekKeys.map(wk => {
+                  const sessions = weekMap[wk] || [];
+                  const count = sessions.length;
+                  const isCurrent = wk === currentWeekKey;
+                  const maxCount = Math.max(...allWeekKeys.map(k => (weekMap[k]||[]).length), 1);
+                  const barH = count === 0 ? 4 : Math.max(14, Math.round((count / maxCount) * 44));
+                  return (
+                    <div key={wk} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                      <div style={{
+                        fontSize:9, color:t.text3, fontFamily:'monospace',
+                        fontVariantNumeric:'tabular-nums'
+                      }}>{count || ''}</div>
+                      <div
+                        onClick={() => setDrillExercise(d => d === 'week:'+wk ? null : 'week:'+wk)}
+                        style={{
+                          width:'100%', height:barH, borderRadius:4,
+                          background: isCurrent ? t.accent : (count === 0 ? t.border : t.accent+'55'),
+                          cursor: count > 0 ? 'pointer' : 'default',
+                          transition:'height .3s',
+                          border: drillExercise === 'week:'+wk ? `1.5px solid ${t.accent}` : 'none',
+                        }}
+                      />
+                      <div style={{
+                        fontSize:8.5, color: isCurrent ? t.accent : t.text3,
+                        fontWeight: isCurrent ? 600 : 400, textAlign:'center', lineHeight:1.2
+                      }}>
+                        {getWeekLabel(wk)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Drill-down: sessions in selected week */}
+              {drillExercise && drillExercise.startsWith('week:') && (() => {
+                const wk = drillExercise.replace('week:','');
+                const sessions = weekMap[wk] || [];
+                if (!sessions.length) return null;
+                // Collect unique exercises in this week
+                const exMap = {};
+                sessions.forEach(s => {
+                  (s.queue || []).forEach(ex => {
+                    if (!exMap[ex.id]) exMap[ex.id] = { name: ex.name, sessions: [] };
+                    const doneSets = (ex.sets||[]).filter(st => st.done);
+                    if (doneSets.length) exMap[ex.id].sessions.push({ date: s.date, doneSets });
+                  });
+                });
+                return (
+                  <div style={{
+                    borderTop:`1px solid ${t.border}`, paddingTop:10, marginTop:2
+                  }}>
+                    <div style={{
+                      fontSize:10, letterSpacing:'.12em', textTransform:'uppercase',
+                      color:t.text3, marginBottom:8
+                    }}>
+                      {getWeekLabel(wk)} · {sessions.length} session{sessions.length>1?'s':''}
+                    </div>
+                    {sessions.map(s => (
+                      <div key={s.id} style={{
+                        padding:'8px 10px', borderRadius:10, marginBottom:6,
+                        background:t.surface2, border:`1px solid ${t.border}`
+                      }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
+                          <div style={{ fontSize:12.5, color:t.text, fontWeight:500 }}>
+                            {s.workout || 'Session'}
+                          </div>
+                          <div style={{ fontSize:10, color:t.text3 }}>
+                            {new Date(s.date).toLocaleDateString('en', { weekday:'short', day:'numeric', month:'short' })}
+                            {s.elapsed ? ` · ${Math.floor(s.elapsed/60)}m` : ''}
+                          </div>
+                        </div>
+                        {(s.queue||[]).filter(ex => (ex.sets||[]).some(st=>st.done)).map(ex => {
+                          const doneSets = ex.sets.filter(st=>st.done);
+                          const topW = Math.max(...doneSets.map(st =>
+                            ex.unilateral ? Math.max(st.wR||0, st.wL||0) : st.w||0
+                          ));
+                          return (
+                            <div key={ex.id} style={{
+                              display:'flex', justifyContent:'space-between',
+                              padding:'3px 0', fontSize:11, color:t.text2
+                            }}>
+                              <span
+                                onClick={() => setDrillExercise(d => d === 'ex:'+ex.id ? 'week:'+wk : 'ex:'+ex.id)}
+                                style={{ cursor:'pointer', color: drillExercise === 'ex:'+ex.id ? t.accent : t.text2,
+                                  textDecoration: 'underline', textDecorationColor: t.border2 }}
+                              >
+                                {ex.name}
+                              </span>
+                              <span style={{ color:t.text3 }}>
+                                {doneSets.length}×{topW > 0 ? topW+'kg' : (doneSets[0]?.r||0)+' reps'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <button onClick={() => onViewSummary && onViewSummary(s)} style={{
+                          marginTop:6, padding:'5px 10px', borderRadius:7,
+                          background:'transparent', border:`1px solid ${t.border}`,
+                          color:t.text3, fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+                        }}>View summary ›</button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Drill-down: individual exercise progress over time */}
+              {drillExercise && drillExercise.startsWith('ex:') && (() => {
+                const exId = drillExercise.replace('ex:','');
+                const hist = exerciseHistory[exId];
+                if (!hist || hist.sessions.length < 1) return null;
+                const sorted = [...hist.sessions].sort((a,b) => new Date(a.date) - new Date(b.date));
+                const maxW = Math.max(...sorted.map(s => s.maxW), 1);
+                return (
+                  <div style={{
+                    borderTop:`1px solid ${t.border}`, paddingTop:10, marginTop:4
+                  }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                      <div style={{
+                        fontSize:12, color:t.text, fontWeight:500
+                      }}>
+                        {hist.name} — all time
+                      </div>
+                      <button onClick={() => setDrillExercise(null)} style={{
+                        padding:'3px 8px', borderRadius:6, background:'transparent',
+                        border:`1px solid ${t.border}`, color:t.text3,
+                        fontSize:10, cursor:'pointer', fontFamily:t.sans
+                      }}>Close ×</button>
+                    </div>
+                    {/* Mini bar chart of top weight per session */}
+                    <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:40, marginBottom:8 }}>
+                      {sorted.map((s, idx) => {
+                        const barH = s.maxW > 0 ? Math.max(4, Math.round((s.maxW/maxW)*36)) : 4;
+                        const isLast = idx === sorted.length - 1;
+                        return (
+                          <div key={idx} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                            <div style={{ fontSize:8, color:t.text3 }}>{s.maxW > 0 ? s.maxW+'kg' : ''}</div>
+                            <div style={{
+                              width:'100%', height:barH, borderRadius:3,
+                              background: isLast ? t.accent : t.accent+'55'
+                            }}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:t.text3, marginBottom:8 }}>
+                      <span>{new Date(sorted[0].date).toLocaleDateString('en',{day:'numeric',month:'short'})}</span>
+                      <span>{new Date(sorted[sorted.length-1].date).toLocaleDateString('en',{day:'numeric',month:'short'})}</span>
+                    </div>
+                    {sorted.length > 1 && (() => {
+                      const first = sorted[0].maxW, last = sorted[sorted.length-1].maxW;
+                      const diff = last - first;
+                      return diff !== 0 ? (
+                        <div style={{
+                          fontSize:11, color: diff > 0 ? t.green : '#BE3B2E',
+                          fontWeight:500
+                        }}>
+                          {diff > 0 ? '↑' : '↓'} {Math.abs(diff)}kg over {sorted.length} sessions
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+
       </div>
 
       <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>

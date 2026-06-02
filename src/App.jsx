@@ -67,7 +67,7 @@ function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   const [authState, setAuthState] = React.useState('loading');
-  const [screen, setScreen]               = React.useState('home');
+  const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
@@ -81,6 +81,7 @@ function App() {
   const [lastSession, setLastSession]             = React.useState(null);
   const [completedSessions, setCompletedSessions] = React.useState([]);
   const [foodLog, setFoodLog]                     = React.useState({});
+  const [customFoods, setCustomFoods]             = React.useState([]);
 
   React.useEffect(() => {
     const saved = loadFromCache();
@@ -96,12 +97,13 @@ function App() {
     if (data.completedSessions) setCompletedSessions(data.completedSessions);
     if (data.foodLog)           setFoodLog(data.foodLog);
     if (data.activities)        setActivities(data.activities);
+    if (data.customFoods)       setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
 
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
-    completedSessions, foodLog, activities,
+    completedSessions, foodLog, activities, customFoods,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -109,7 +111,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveLocal(snapshot);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
@@ -141,9 +143,10 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
+    setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(true);
-    setScreen('home');
+    setScreen('gym-hub');
   };
 
   React.useEffect(() => {
@@ -215,6 +218,12 @@ function App() {
     return next;
   });
 
+  const saveCustomFood = (food) => setCustomFoods(prev => {
+    const next = [...prev, food];
+    setTimeout(() => scheduleSave({ customFoods: next }), 0);
+    return next;
+  });
+
   const navigate = (target) => {
     if (target === 'gym') setScreen(session.active ? 'gym-session' : 'gym-hub');
     else setScreen(target);
@@ -229,7 +238,7 @@ function App() {
                   completedSessions: [], foodLog: {}, activities: {},
                   savedAt: new Date().toISOString() });
     setOnboarding(false);
-    setScreen('home');
+    setScreen('gym-hub');
   };
 
   if (authState === 'loading') {
@@ -332,7 +341,9 @@ function App() {
                plan={plan}
                activities={activities}
                completedSessions={completedSessions}
+               customFoods={customFoods}
                onUpdateFood={updateFood}
+               onSaveCustomFood={saveCustomFood}
                onNav={navigate}
                tracksCycle={profile.tracksCycle} />;
     if (s === 'about-me')
@@ -342,7 +353,7 @@ function App() {
                plan={plan}
                onSaveProfile={(p) => setProfile(prev => ({ ...prev, ...p }))}
                onSaveSettings={(s) => setUserSettings(prev => ({ ...prev, ...s }))}
-               onBack={() => setScreen('home')}
+               onBack={() => setScreen('gym-hub')}
                onNav={navigate}
                onSignOut={resetProfile}
                tracksCycle={profile.tracksCycle} />;

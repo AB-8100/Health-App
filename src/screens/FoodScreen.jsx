@@ -218,7 +218,9 @@ function FoodScreen({
   width = 390, height = 820, theme = 'light',
   foodLog = {}, userSettings = {}, plan = {}, activities = {},
   completedSessions = [],
+  customFoods = [],
   onUpdateFood,
+  onSaveCustomFood,
   onNav, tracksCycle = true,
 }) {
   const t = themes[theme];
@@ -292,12 +294,19 @@ function FoodScreen({
              isToday: k === foodDateKey(today), isFuture: d > today };
   });
 
-  // Food DB search
+  // Built-in food DB search
   const filteredDB = React.useMemo(() => {
     if (!search.trim()) return FOOD_DB.slice(0, 16);
     const q = search.toLowerCase();
     return FOOD_DB.filter(f => f.name.toLowerCase().includes(q) || f.cat.toLowerCase().includes(q));
   }, [search]);
+
+  // User's saved custom foods search
+  const filteredCustom = React.useMemo(() => {
+    if (!search.trim()) return customFoods;
+    const q = search.toLowerCase();
+    return customFoods.filter(f => f.name.toLowerCase().includes(q));
+  }, [search, customFoods]);
 
   // Open Food Facts live search — debounced 600ms, fires when ≥2 chars typed
   React.useEffect(() => {
@@ -312,25 +321,35 @@ function FoodScreen({
       try {
         const q = encodeURIComponent(search.trim());
         const res = await fetch(
-          `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${q}&json=1&page_size=10`,
-          { headers: { 'User-Agent': 'FormaHealthApp/1.0' } }
+          `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${q}&json=1&page_size=20&lc=en`
         );
         if (!res.ok) throw new Error('Network error');
         const data = await res.json();
         const mapped = (data.products || [])
-          .filter(p => p.product_name && p.nutriments?.['energy-kcal_100g'] != null)
-          .slice(0, 8)
-          .map(p => ({
-            id:       `off_${p.code || p._id}`,
-            name:     p.product_name,
-            brand:    p.brands || '',
-            cat:      'Open Food Facts',
-            cal:      Math.round(p.nutriments['energy-kcal_100g']    || 0),
-            p:        Math.round((p.nutriments.proteins_100g          || 0) * 10) / 10,
-            c:        Math.round((p.nutriments.carbohydrates_100g     || 0) * 10) / 10,
-            f:        Math.round((p.nutriments.fat_100g               || 0) * 10) / 10,
-            defaultG: 100,
-          }));
+          .map(p => {
+            if (!p.product_name) return null;
+            const nt = p.nutriments || {};
+            // Accept kcal_100g directly, or derive from kJ (÷4.184)
+            const kcal = nt['energy-kcal_100g'] != null
+              ? Math.round(nt['energy-kcal_100g'])
+              : nt['energy_100g'] != null
+                ? Math.round(nt['energy_100g'] / 4.184)
+                : null;
+            if (kcal == null) return null;
+            return {
+              id:       `off_${p.code || p._id}`,
+              name:     p.product_name,
+              brand:    p.brands || '',
+              cat:      'Open Food Facts',
+              cal:      kcal,
+              p:        Math.round((nt.proteins_100g       || 0) * 10) / 10,
+              c:        Math.round((nt.carbohydrates_100g  || 0) * 10) / 10,
+              f:        Math.round((nt.fat_100g            || 0) * 10) / 10,
+              defaultG: 100,
+            };
+          })
+          .filter(Boolean)
+          .slice(0, 10);
         setOffResults(mapped);
       } catch {
         setOffResults([]);
@@ -371,9 +390,10 @@ function FoodScreen({
   const confirmCustom = () => {
     const cal = Number(customCal);
     if (!cal || cal <= 0) return;
+    const name = customName.trim() || 'Custom food';
     const entry = {
       id: Date.now().toString(),
-      name: customName.trim() || 'Custom food',
+      name,
       meal: addMeal,
       time: new Date().toTimeString().slice(0,5),
       grams: 0,
@@ -384,6 +404,20 @@ function FoodScreen({
     };
     const updated = [...entries, entry];
     if (onUpdateFood) onUpdateFood(vKey, updated);
+    // Save as reusable food if it has a real name (treat entered values as per-serving / per-100g)
+    if (onSaveCustomFood && customName.trim()) {
+      onSaveCustomFood({
+        id:       `custom_${Date.now()}`,
+        name,
+        cat:      'My foods',
+        cal,
+        p:        Number(customProt) || 0,
+        c:        Number(customCarb) || 0,
+        f:        Number(customFat)  || 0,
+        defaultG: 100,
+        isFixed:  true,
+      });
+    }
     resetSheet();
   };
 
@@ -809,57 +843,35 @@ function FoodScreen({
                   padding:'12px 14px', marginBottom:14
                 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                    <div>
+                    <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, color:t.text, fontWeight:500 }}>{selected.name}</div>
-                      <div style={{ fontSize:10.5, color:t.text3 }}>
-                        {selected.brand ? selected.brand + ' · ' : selected.cat + ' · '}
-                        {selected.cal} kcal · P {selected.p}g · C {selected.c}g · F {selected.f}g per 100g
+                      <div style={{ fontSize:10.5, color:t.text3, marginTop:2 }}>
+                        {selected.brand ? selected.brand + ' · ' : (selected.cat || '') + ' · '}
+                        {selected.cal} kcal · P {selected.p}g · C {selected.c}g · F {selected.f}g
+                        {selected.isFixed ? ' per serving' : ' per 100g'}
                       </div>
                     </div>
                     <button onClick={() => { setSelected(null); setGrams(''); }} style={{
                       width:24, height:24, borderRadius:6, background:'transparent',
-                      border:`1px solid ${t.border}`, color:t.text3, cursor:'pointer', fontSize:13
+                      border:`1px solid ${t.border}`, color:t.text3, cursor:'pointer', fontSize:13,
+                      flexShrink:0
                     }}>‹</button>
                   </div>
                 </div>
 
-                <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:10.5, color:t.text2, marginBottom:6 }}>
-                    Portion size (grams)
-                  </div>
-                  <div style={{ display:'flex', gap:6, marginBottom:10 }}>
-                    {[selected.defaultG, Math.round(selected.defaultG * 0.5), Math.round(selected.defaultG * 1.5)].map(g => (
-                      <button key={g} onClick={() => setGrams(String(g))} style={{
-                        flex:1, padding:'9px 0', borderRadius:9,
-                        background: grams === String(g) ? t.accent : t.surface2,
-                        color: grams === String(g) ? t.accentText : t.text2,
-                        border:`1px solid ${grams === String(g) ? t.accent : t.border}`,
-                        fontFamily:"'JetBrains Mono',monospace", fontSize:13, cursor:'pointer'
-                      }}>{g}g</button>
-                    ))}
-                  </div>
-                  <input value={grams} type="number"
-                    onChange={(e) => setGrams(e.target.value)}
-                    placeholder="Or enter grams..."
-                    style={{ width:'100%', padding:'10px 12px', borderRadius:10,
-                      border:`1px solid ${t.border}`, background:t.surface2,
-                      fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text, outline:'none' }}
-                  />
-                </div>
-
-                {grams && Number(grams) > 0 && (() => {
-                  const n = calcNutrition(selected, grams);
-                  return (
+                {selected.isFixed ? (
+                  // Fixed-portion custom food — no gram picker
+                  <>
                     <div style={{
                       display:'flex', gap:8, marginBottom:14,
                       padding:'10px 12px', borderRadius:10,
                       background:t.surface2, border:`1px solid ${t.border}`
                     }}>
                       {[
-                        { label:'kcal', val:n.calories, color:t.text },
-                        { label:'prot', val:n.protein+'g', color:t.accent },
-                        { label:'carbs', val:n.carbs+'g', color:'#0369A1' },
-                        { label:'fat', val:n.fat+'g', color:'#6D4AAF' },
+                        { label:'kcal', val:selected.cal, color:t.text },
+                        { label:'prot', val:selected.p+'g', color:t.accent },
+                        { label:'carbs', val:selected.c+'g', color:'#0369A1' },
+                        { label:'fat', val:selected.f+'g', color:'#6D4AAF' },
                       ].map(m => (
                         <div key={m.label} style={{ flex:1, textAlign:'center' }}>
                           <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:16, color:m.color }}>{m.val}</div>
@@ -867,16 +879,85 @@ function FoodScreen({
                         </div>
                       ))}
                     </div>
-                  );
-                })()}
+                    <button onClick={() => {
+                      const entry = {
+                        id: Date.now().toString(),
+                        name: selected.name,
+                        meal: addMeal,
+                        time: new Date().toTimeString().slice(0,5),
+                        grams: 0,
+                        calories: selected.cal,
+                        protein: selected.p,
+                        carbs: selected.c,
+                        fat: selected.f,
+                      };
+                      if (onUpdateFood) onUpdateFood(vKey, [...entries, entry]);
+                      resetSheet();
+                    }} style={{
+                      width:'100%', padding:'13px', borderRadius:12, border:'none',
+                      fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                      background:t.accent, color:t.accentText
+                    }}>Add to {MEALS.find(m => m.id === addMeal)?.label}</button>
+                  </>
+                ) : (
+                  // Per-100g food — show gram picker
+                  <>
+                    <div style={{ marginBottom:12 }}>
+                      <div style={{ fontSize:10.5, color:t.text2, marginBottom:6 }}>
+                        Portion size (grams)
+                      </div>
+                      <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+                        {[selected.defaultG, Math.round(selected.defaultG * 0.5), Math.round(selected.defaultG * 1.5)].map(g => (
+                          <button key={g} onClick={() => setGrams(String(g))} style={{
+                            flex:1, padding:'9px 0', borderRadius:9,
+                            background: grams === String(g) ? t.accent : t.surface2,
+                            color: grams === String(g) ? t.accentText : t.text2,
+                            border:`1px solid ${grams === String(g) ? t.accent : t.border}`,
+                            fontFamily:"'JetBrains Mono',monospace", fontSize:13, cursor:'pointer'
+                          }}>{g}g</button>
+                        ))}
+                      </div>
+                      <input value={grams} type="number"
+                        onChange={(e) => setGrams(e.target.value)}
+                        placeholder="Or enter grams..."
+                        style={{ width:'100%', padding:'10px 12px', borderRadius:10,
+                          border:`1px solid ${t.border}`, background:t.surface2,
+                          fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:t.text, outline:'none' }}
+                      />
+                    </div>
 
-                <button onClick={confirmAdd} disabled={!grams || Number(grams) <= 0} style={{
-                  width:'100%', padding:'13px', borderRadius:12, border:'none',
-                  fontFamily:t.sans, fontSize:13, fontWeight:600,
-                  cursor: grams ? 'pointer' : 'default',
-                  background: grams ? t.accent : t.surface2,
-                  color: grams ? t.accentText : t.text3
-                }}>Add to {MEALS.find(m => m.id === addMeal)?.label}</button>
+                    {grams && Number(grams) > 0 && (() => {
+                      const n = calcNutrition(selected, grams);
+                      return (
+                        <div style={{
+                          display:'flex', gap:8, marginBottom:14,
+                          padding:'10px 12px', borderRadius:10,
+                          background:t.surface2, border:`1px solid ${t.border}`
+                        }}>
+                          {[
+                            { label:'kcal', val:n.calories, color:t.text },
+                            { label:'prot', val:n.protein+'g', color:t.accent },
+                            { label:'carbs', val:n.carbs+'g', color:'#0369A1' },
+                            { label:'fat', val:n.fat+'g', color:'#6D4AAF' },
+                          ].map(m => (
+                            <div key={m.label} style={{ flex:1, textAlign:'center' }}>
+                              <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:16, color:m.color }}>{m.val}</div>
+                              <div style={{ fontSize:9.5, color:t.text3, marginTop:2 }}>{m.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    <button onClick={confirmAdd} disabled={!grams || Number(grams) <= 0} style={{
+                      width:'100%', padding:'13px', borderRadius:12, border:'none',
+                      fontFamily:t.sans, fontSize:13, fontWeight:600,
+                      cursor: grams ? 'pointer' : 'default',
+                      background: grams ? t.accent : t.surface2,
+                      color: grams ? t.accentText : t.text3
+                    }}>Add to {MEALS.find(m => m.id === addMeal)?.label}</button>
+                  </>
+                )}
               </div>
 
             ) : (
@@ -901,13 +982,28 @@ function FoodScreen({
 
                 <div style={{ overflowY:'auto', flex:1 }}>
 
-                  {/* ── Local food library ── */}
+                  {/* ── My saved custom foods ── */}
+                  {filteredCustom.length > 0 && (
+                    <>
+                      <div style={{
+                        fontSize:9.5, letterSpacing:'.12em', textTransform:'uppercase',
+                        color:t.accent, padding:'4px 4px 6px', fontWeight:500
+                      }}>My foods</div>
+                      {filteredCustom.map(food => (
+                        <FoodRow key={food.id} food={food} theme={theme} t={t}
+                          onClick={() => { setSelected(food); setGrams('100'); }}/>
+                      ))}
+                    </>
+                  )}
+
+                  {/* ── Built-in food library ── */}
                   {filteredDB.length > 0 && (
                     <>
-                      {search.trim().length >= 2 && (
+                      {(search.trim().length >= 2 || filteredCustom.length > 0) && (
                         <div style={{
                           fontSize:9.5, letterSpacing:'.12em', textTransform:'uppercase',
-                          color:t.text3, padding:'4px 4px 6px', fontWeight:500
+                          color:t.text3, padding:'4px 4px 6px', fontWeight:500,
+                          marginTop: filteredCustom.length ? 8 : 0
                         }}>Common foods</div>
                       )}
                       {filteredDB.map(food => (
