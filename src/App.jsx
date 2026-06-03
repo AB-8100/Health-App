@@ -224,6 +224,18 @@ function App() {
     return next;
   });
 
+  const importSessions = (sessions) => setCompletedSessions(prev => {
+    const next = [...prev, ...sessions];
+    setTimeout(() => scheduleSave({ completedSessions: next }), 0);
+    return next;
+  });
+
+  const editSession = (updated) => setCompletedSessions(prev => {
+    const next = prev.map(s => s.id === updated.id ? updated : s);
+    setTimeout(() => scheduleSave({ completedSessions: next }), 0);
+    return next;
+  });
+
   const navigate = (target) => {
     if (target === 'gym') setScreen(session.active ? 'gym-session' : 'gym-hub');
     else setScreen(target);
@@ -289,7 +301,9 @@ function App() {
                onBrowseLibrary={() => setScreen('gym-library')}
                onViewSummary={viewSummary}
                onDeleteSession={deleteSession}
-               onReorderSchedule={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))} />;
+               onReorderSchedule={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))}
+               onImportSessions={importSessions}
+               onEditSession={editSession} />;
     if (s === 'gym-split')
       return <SplitPickerScreen width={374} height={804} theme={tweaks.theme}
                plan={plan}
