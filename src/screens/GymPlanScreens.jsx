@@ -319,6 +319,153 @@ function EditSessionSheet({ theme, session, onClose, onSave }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Add a gym session manually for a past day
+function AddSessionSheet({ theme, day, date, onClose, onSave }) {
+  const t = themes[theme];
+  const [queue, setQueue] = React.useState(() =>
+    SECTION_ORDER.flatMap(sec => (day[sec] || []).map(id => {
+      const ex = EX_LIB[id] || {};
+      return {
+        id, name: ex.name || id, muscle: ex.muscle || '',
+        unilateral: ex.unilateral || false,
+        sets: [
+          { w: '', r: '', done: true },
+          { w: '', r: '', done: true },
+          { w: '', r: '', done: true },
+        ],
+      };
+    }))
+  );
+
+  const updateSet = (ei, si, field, val) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: ex.sets.map((s, ss) => ss !== si ? s : { ...s, [field]: val }),
+    })
+  );
+
+  const addSet = (ei) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: [...ex.sets, { w: '', r: '', done: true }],
+    })
+  );
+
+  const removeSet = (ei, si) => setQueue(prev =>
+    prev.map((ex, e) => e !== ei ? ex : {
+      ...ex,
+      sets: ex.sets.filter((_, ss) => ss !== si),
+    })
+  );
+
+  const filledSets = queue.reduce((acc, ex) =>
+    acc + ex.sets.filter(s => s.w !== '' || s.r !== '').length, 0
+  );
+
+  const handleSave = () => {
+    const filteredQueue = queue.map(ex => ({
+      ...ex,
+      sets: ex.sets
+        .filter(s => s.w !== '' || s.r !== '')
+        .map(s => ({ ...s, w: Number(s.w) || 0, r: Number(s.r) || 0, done: true })),
+    })).filter(ex => ex.sets.length > 0);
+
+    onSave({
+      id: `manual_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      date: date.toISOString(),
+      workout: day.name + ' day',
+      elapsed: 0,
+      isManual: true,
+      queue: filteredQueue,
+    });
+    onClose();
+  };
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
+      display:'flex', alignItems:'flex-end', zIndex:60
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', background:t.surface,
+        borderTopLeftRadius:22, borderTopRightRadius:22,
+        padding:'16px 20px 28px', maxHeight:'90%',
+        display:'flex', flexDirection:'column', overflow:'hidden'
+      }}>
+        <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, flexShrink:0 }}>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>Log session</div>
+          <button onClick={onClose} style={{
+            padding:'4px 10px', borderRadius:7, background:'transparent',
+            border:`1px solid ${t.border}`, color:t.text2,
+            fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+          }}>Cancel</button>
+        </div>
+        <div style={{ fontSize:11, color:t.text3, marginBottom:12, flexShrink:0 }}>
+          {day.name} day · {date.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' })}
+        </div>
+
+        <div style={{ overflowY:'auto', flex:1 }}>
+          {queue.map((ex, ei) => (
+            <div key={ex.id || ei} style={{
+              background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
+              padding:'12px 14px', marginBottom:10
+            }}>
+              <div style={{ fontSize:13, color:t.text, fontWeight:500, marginBottom:2 }}>{ex.name}</div>
+              <div style={{ fontSize:10, color:t.text3, marginBottom:10 }}>{ex.muscle}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 28px', gap:6, alignItems:'center', marginBottom:6 }}>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>#</div>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>Weight (kg)</div>
+                <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>Reps</div>
+                <div/>
+              </div>
+              {ex.sets.map((s, si) => (
+                <div key={si} style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 28px', gap:6, alignItems:'center', marginBottom:5 }}>
+                  <div style={{ fontSize:11, color:t.text3, textAlign:'center' }}>{si + 1}</div>
+                  <input type="number" value={s.w} onChange={e => updateSet(ei, si, 'w', e.target.value)}
+                    placeholder="0"
+                    style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${t.border}`,
+                      background:t.surface, fontFamily:t.mono, fontSize:13, color:t.text,
+                      outline:'none', width:'100%', boxSizing:'border-box' }}
+                  />
+                  <input type="number" value={s.r} onChange={e => updateSet(ei, si, 'r', e.target.value)}
+                    placeholder="0"
+                    style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${t.border}`,
+                      background:t.surface, fontFamily:t.mono, fontSize:13, color:t.text,
+                      outline:'none', width:'100%', boxSizing:'border-box' }}
+                  />
+                  <button onClick={() => removeSet(ei, si)} style={{
+                    width:28, height:28, borderRadius:7, background:'transparent',
+                    border:`1px solid ${t.border}`, color:'#BE3B2E',
+                    cursor:'pointer', fontSize:14, fontFamily:t.sans,
+                    display:'flex', alignItems:'center', justifyContent:'center'
+                  }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => addSet(ei)} style={{
+                width:'100%', marginTop:4, padding:'6px', borderRadius:8,
+                background:'transparent', border:`1.5px dashed ${t.border2}`,
+                color:t.text3, fontSize:11, cursor:'pointer', fontFamily:t.sans
+              }}>+ Add set</button>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={handleSave} disabled={filledSets === 0} style={{
+          marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
+          fontFamily:t.sans, fontSize:13, fontWeight:600, flexShrink:0,
+          background: filledSets > 0 ? t.accent : t.surface2,
+          color: filledSets > 0 ? t.accentText : t.text3,
+          cursor: filledSets > 0 ? 'pointer' : 'default',
+        }}>
+          {filledSets > 0 ? `Save session (${filledSets} sets logged)` : 'Enter at least one set to save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Import exercise history from pasted Excel rows
 function ImportHistorySheet({ theme, onClose, onImport }) {
   const t = themes[theme];
@@ -364,7 +511,10 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
     setRawText(text);
     const lines = text.trim().split('\n').filter(l => l.trim());
     if (!lines.length) { setParsedRows([]); return; }
-    const rows = lines.map(l => l.split('\t').map(c => c.trim()));
+    const rows = lines.map(l => {
+      if (l.includes('\t')) return l.split('\t').map(c => c.trim());
+      return l.trim().split(/\s+/);
+    });
     setParsedRows(rows);
 
     // Auto-detect header row and column roles
@@ -541,13 +691,13 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
             }}>
               {format === 'cols'
                 ? 'Copy the dates row + your exercise row from Excel and paste below'
-                : 'Each row = one session: Date · Weight · Reps (tab-separated)'}
+                : 'Each row = one session: Date · Weight · Reps (tab or space separated)'}
             </div>
 
             <textarea autoFocus value={rawText} onChange={e => handleTextChange(e.target.value)}
               placeholder={format === 'cols'
                 ? '01 Jan\t08 Jan\t15 Jan\t22 Jan\nBench\t80\t82.5\t85\t87.5'
-                : '01/01/2025\t80\t5\n08/01/2025\t82.5\t5\n15/01/2025\t85\t4'}
+                : '01/01/2025\t80\t5\n08/01/2025 82.5 5\n15/01/2025 85 4'}
               style={{
                 width:'100%', minHeight:90, padding:'10px 12px', borderRadius:10,
                 border:`1px solid ${t.border}`, background:t.surface2,
@@ -760,6 +910,24 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [drillExercise, setDrillExercise] = React.useState(null);
   const [showImport, setShowImport] = React.useState(false);
   const [editingSession, setEditingSession] = React.useState(null);
+  const [showAddSession, setShowAddSession] = React.useState(false);
+
+  // Compute the actual calendar date for the currently viewed day slot
+  const now = new Date();
+  const mondayOffset = now.getDay() === 0 ? -6 : 1 - now.getDay();
+  const viewDayDate = new Date(now);
+  viewDayDate.setDate(now.getDate() + mondayOffset + viewDayIdx);
+  viewDayDate.setHours(0, 0, 0, 0);
+  const viewDayDateEnd = new Date(viewDayDate);
+  viewDayDateEnd.setHours(23, 59, 59, 999);
+  const todayMidnight = new Date(now);
+  todayMidnight.setHours(0, 0, 0, 0);
+  const isViewDayPast = viewDayDate < todayMidnight;
+
+  const viewDayCompleted = completedSessions.find(s => {
+    const sd = new Date(s.date);
+    return sd >= viewDayDate && sd <= viewDayDateEnd;
+  });
 
   // Resolve the viewed day's scheduled session
   const viewSlot = schedule[viewDayIdx];
@@ -1083,7 +1251,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               })}
             </div>
 
-            {/* Action buttons — only show Start/Resume for today's session */}
+            {/* Action buttons — context-aware based on day and session state */}
             {viewDayIdx === dayOfWeek ? (() => {
               const todayCompleted = completedSessions.find(s => {
                 const sd = new Date(s.date);
@@ -1127,6 +1295,41 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                   border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
                   display:'flex', alignItems:'center', justifyContent:'center', gap:6
                 }}>Start session →</button>
+              );
+            })() : isViewDayPast ? (() => {
+              if (viewDayCompleted) {
+                return (
+                  <div style={{ display:'flex', gap:7 }}>
+                    <button onClick={() => onViewSummary && onViewSummary(viewDayCompleted)} style={{
+                      flex:1, padding:'11px', borderRadius:11,
+                      background:t.green+'18', color:t.green,
+                      border:`1.5px solid ${t.green}40`,
+                      fontFamily:t.sans, fontSize:12.5, fontWeight:600, cursor:'pointer'
+                    }}>
+                      ✓ Session logged — view
+                    </button>
+                    <button onClick={() => setEditingSession(viewDayCompleted)} style={{
+                      padding:'11px 14px', borderRadius:11, background:'transparent',
+                      border:`1px solid ${t.border}`, color:t.accent,
+                      fontSize:12.5, cursor:'pointer', fontFamily:t.sans, fontWeight:500
+                    }}>✎ Edit</button>
+                  </div>
+                );
+              }
+              return (
+                <div style={{ display:'flex', gap:7 }}>
+                  <button onClick={() => setShowAddSession(true)} style={{
+                    flex:1, padding:'11px', borderRadius:11,
+                    background:t.accent, color:t.accentText,
+                    border:'none', fontFamily:t.sans, fontSize:12.5, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:5
+                  }}>+ Add session data</button>
+                  <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                    padding:'11px 14px', borderRadius:11, background:'transparent',
+                    border:`1px solid ${t.border2}`, color:t.text2,
+                    fontSize:12, cursor:'pointer', fontFamily:t.sans
+                  }}>Activities ›</button>
+                </div>
               );
             })() : (
               <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
@@ -1411,6 +1614,16 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           session={editingSession}
           onClose={() => setEditingSession(null)}
           onSave={(updated) => { onEditSession && onEditSession(updated); setEditingSession(null); }}
+        />
+      )}
+
+      {showAddSession && viewDay && (
+        <AddSessionSheet
+          theme={theme}
+          day={viewDay}
+          date={viewDayDate}
+          onClose={() => setShowAddSession(false)}
+          onSave={(session) => { onImportSessions && onImportSessions([session]); setShowAddSession(false); }}
         />
       )}
     </div>
