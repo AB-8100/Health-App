@@ -89,6 +89,21 @@ function App() {
     setAuthState('ready');
   }, []);
 
+  // Scale phone frame to fit viewport on small screens (mobile browsers)
+  React.useEffect(() => {
+    const update = () => {
+      const scale = Math.min(
+        1,
+        window.innerWidth  / 406,   // 390 frame + 16 breathing room
+        window.innerHeight / 882,   // 820 frame + 14 gap + ~48 label
+      );
+      document.documentElement.style.setProperty('--phone-scale', scale.toFixed(4));
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
   const hydrateState = (data) => {
     if (!data) return;
     if (data.profile)           setProfileRaw(data.profile);
