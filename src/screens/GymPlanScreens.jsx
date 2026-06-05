@@ -467,9 +467,9 @@ function AddSessionSheet({ theme, day, date, onClose, onSave }) {
 
 // ────────────────────────────────────────────────────────────
 // Import exercise history from pasted Excel rows
-function ImportHistorySheet({ theme, onClose, onImport }) {
+function ImportHistorySheet({ theme, onClose, onImport, completedSessions = [], plan }) {
   const t = themes[theme];
-  const [step, setStep]         = React.useState('pick'); // 'pick' | 'paste'
+  const [step, setStep]         = React.useState('pick'); // 'pick' | 'paste' | 'assign'
   const [exercise, setExercise] = React.useState(null);
   const [searchQ, setSearchQ]   = React.useState('');
   const [rawText, setRawText]   = React.useState('');
@@ -479,6 +479,11 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
   // format: 'rows' = one row per date (original), 'cols' = dates across top, one row per exercise
   const [format, setFormat]     = React.useState('cols');
   const [defaultReps, setDefaultReps] = React.useState('5');
+  // assignMap: { [dateKey]: { type:'new', name:string } | { type:'existing', sessionId:string } }
+  const [assignMap, setAssignMap] = React.useState({});
+
+  const split = SPLITS[plan?.splitDays] || SPLITS[3];
+  const splitDayNames = split.days.map(d => d.name);
 
   const exOptions = React.useMemo(() => {
     const q = searchQ.toLowerCase();
@@ -589,6 +594,23 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
     }).filter(r => r.date && r.weight > 0);
   }, [parsedRows, dataRows, colMap, format, defaultReps]);
 
+  // Unique date keys derived from parsed preview
+  const uniqueDates = React.useMemo(() => (
+    [...new Set(previewRows.map(r => r.date.toISOString().slice(0,10)))].sort()
+  ), [previewRows]);
+
+  const enterAssignStep = () => {
+    const map = {};
+    uniqueDates.forEach(dateKey => {
+      const existing = completedSessions.find(s => s.date.slice(0,10) === dateKey);
+      map[dateKey] = existing
+        ? { type: 'existing', sessionId: existing.id }
+        : { type: 'new', name: splitDayNames[0] || 'Session' };
+    });
+    setAssignMap(map);
+    setStep('assign');
+  };
+
   const handleImport = () => {
     if (!exercise || !previewRows.length) return;
     const byDate = {};
@@ -597,19 +619,48 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
       if (!byDate[key]) byDate[key] = [];
       byDate[key].push({ w: r.weight, r: r.reps, done: true });
     });
-    const sessions = Object.entries(byDate).map(([dateKey, sets]) => ({
-      id:        `import_${exercise.id}_${dateKey}_${Math.random().toString(36).slice(2)}`,
-      date:      new Date(dateKey + 'T12:00:00').toISOString(),
-      workout:   exercise.name,
-      elapsed:   0,
-      isImported: true,
-      queue: [{ id: exercise.id, name: exercise.name, muscle: exercise.muscle, unilateral: false, sets }],
-    }));
-    onImport(sessions);
+
+    const newSessions = [];
+    const updatedSessions = [];
+
+    Object.entries(byDate).forEach(([dateKey, sets]) => {
+      const assignment = assignMap[dateKey] || { type: 'new', name: 'Session' };
+      const newExEntry = {
+        id: exercise.id, name: exercise.name, muscle: exercise.muscle,
+        unilateral: false, sets,
+      };
+
+      if (assignment.type === 'existing') {
+        const existing = completedSessions.find(s => s.id === assignment.sessionId);
+        if (existing) {
+          const updatedQueue = [...(existing.queue || [])];
+          const exIdx = updatedQueue.findIndex(e => e.id === exercise.id);
+          if (exIdx >= 0) {
+            updatedQueue[exIdx] = { ...updatedQueue[exIdx], sets: [...updatedQueue[exIdx].sets, ...sets] };
+          } else {
+            updatedQueue.push(newExEntry);
+          }
+          updatedSessions.push({ ...existing, queue: updatedQueue });
+        }
+      } else {
+        newSessions.push({
+          id: `import_${exercise.id}_${dateKey}_${Math.random().toString(36).slice(2)}`,
+          date: new Date(dateKey + 'T12:00:00').toISOString(),
+          workout: (assignment.name || 'Session') + ' day',
+          elapsed: 0,
+          isImported: true,
+          queue: [newExEntry],
+        });
+      }
+    });
+
+    onImport({ newSessions, updatedSessions });
     onClose();
   };
 
   const roleColors = { date:'#0369A1', weight:t.accent, reps:'#15803D', ignore:t.text3 };
+
+  const stepTitles = { pick: 'Import history', paste: `Import · ${exercise?.name}`, assign: `Assign sessions` };
 
   return (
     <div style={{
@@ -624,12 +675,13 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
       }}>
         <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
 
+        {/* Header */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexShrink:0 }}>
           <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>
-            {step === 'pick' ? 'Import history' : `Import · ${exercise?.name}`}
+            {stepTitles[step]}
           </div>
-          {step === 'paste' && (
-            <button onClick={() => setStep('pick')} style={{
+          {step !== 'pick' && (
+            <button onClick={() => setStep(step === 'assign' ? 'paste' : 'pick')} style={{
               padding:'4px 10px', borderRadius:7, background:'transparent',
               border:`1px solid ${t.border}`, color:t.text2,
               fontSize:10.5, cursor:'pointer', fontFamily:t.sans
@@ -637,7 +689,18 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
           )}
         </div>
 
-        {step === 'pick' ? (
+        {/* Step indicator */}
+        <div style={{ display:'flex', gap:4, marginBottom:14, flexShrink:0 }}>
+          {['pick','paste','assign'].map((s, i) => (
+            <div key={s} style={{
+              flex:1, height:3, borderRadius:99,
+              background: ['pick','paste','assign'].indexOf(step) >= i ? t.accent : t.border
+            }}/>
+          ))}
+        </div>
+
+        {/* ── Step 1: Pick exercise ── */}
+        {step === 'pick' && (
           <>
             <div style={{ fontSize:11.5, color:t.text2, marginBottom:10, lineHeight:1.5, flexShrink:0 }}>
               Which exercise are you importing history for?
@@ -665,7 +728,10 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
               ))}
             </div>
           </>
-        ) : (
+        )}
+
+        {/* ── Step 2: Paste data ── */}
+        {step === 'paste' && (
           <>
             {/* Format toggle */}
             <div style={{ display:'flex', gap:5, marginBottom:10, flexShrink:0 }}>
@@ -803,7 +869,7 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
               </div>
             )}
 
-            <button onClick={handleImport} disabled={!previewRows.length} style={{
+            <button onClick={enterAssignStep} disabled={!previewRows.length} style={{
               width:'100%', padding:'13px', borderRadius:12, border:'none',
               fontFamily:t.sans, fontSize:13, fontWeight:600, flexShrink:0,
               background: previewRows.length ? t.accent : t.surface2,
@@ -811,12 +877,111 @@ function ImportHistorySheet({ theme, onClose, onImport }) {
               cursor: previewRows.length ? 'pointer' : 'default'
             }}>
               {previewRows.length
-                ? `Import ${previewRows.length} sets into ${Object.keys((() => {
-                    const m = {};
-                    previewRows.forEach(r => { m[r.date.toISOString().slice(0,10)] = 1; });
-                    return m;
-                  })()).length} sessions →`
+                ? `Next: assign ${uniqueDates.length} date${uniqueDates.length > 1 ? 's' : ''} to sessions →`
                 : 'Paste data above to continue'}
+            </button>
+          </>
+        )}
+
+        {/* ── Step 3: Assign each date to a session ── */}
+        {step === 'assign' && (
+          <>
+            <div style={{ fontSize:11.5, color:t.text2, marginBottom:10, lineHeight:1.5, flexShrink:0 }}>
+              Choose which session each date's {exercise?.name} data belongs to.
+            </div>
+
+            <div style={{ overflowY:'auto', flex:1 }}>
+              {uniqueDates.map(dateKey => {
+                const dateObj = new Date(dateKey + 'T12:00:00');
+                const assignment = assignMap[dateKey] || { type: 'new', name: splitDayNames[0] || 'Session' };
+                const existingForDate = completedSessions.filter(s => s.date.slice(0,10) === dateKey);
+
+                return (
+                  <div key={dateKey} style={{
+                    background:t.surface2, border:`1px solid ${t.border}`,
+                    borderRadius:14, padding:'12px 14px', marginBottom:10
+                  }}>
+                    <div style={{ fontSize:12.5, color:t.text, fontWeight:600, marginBottom:10 }}>
+                      {dateObj.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' })}
+                    </div>
+
+                    {/* Existing sessions for this date */}
+                    {existingForDate.length > 0 && (
+                      <div style={{ marginBottom:10 }}>
+                        <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                          Add to existing session
+                        </div>
+                        {existingForDate.map(s => {
+                          const isSelected = assignment.type === 'existing' && assignment.sessionId === s.id;
+                          return (
+                            <button key={s.id}
+                              onClick={() => setAssignMap(m => ({ ...m, [dateKey]: { type:'existing', sessionId:s.id } }))}
+                              style={{
+                                width:'100%', padding:'8px 12px', borderRadius:9,
+                                marginBottom:5, textAlign:'left', cursor:'pointer',
+                                fontFamily:t.sans, fontSize:12,
+                                background: isSelected ? t.accent+'18' : t.surface,
+                                border: `1.5px solid ${isSelected ? t.accent : t.border}`,
+                                color: isSelected ? t.accent : t.text,
+                                display:'flex', alignItems:'center', justifyContent:'space-between'
+                              }}>
+                              <span>{s.workout}</span>
+                              {isSelected && <span style={{ fontSize:14 }}>✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* New session — pick split day name */}
+                    <div>
+                      <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                        {existingForDate.length > 0 ? 'Or create new session' : 'Session name'}
+                      </div>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom: assignment.type === 'new' ? 8 : 0 }}>
+                        {splitDayNames.map(name => {
+                          const isSelected = assignment.type === 'new' && assignment.name === name;
+                          return (
+                            <button key={name}
+                              onClick={() => setAssignMap(m => ({ ...m, [dateKey]: { type:'new', name } }))}
+                              style={{
+                                padding:'5px 11px', borderRadius:8, cursor:'pointer',
+                                fontFamily:t.sans, fontSize:11, fontWeight:500,
+                                background: isSelected ? t.accent : t.surface,
+                                color: isSelected ? t.accentText : t.text2,
+                                border: `1.5px solid ${isSelected ? t.accent : t.border}`
+                              }}>
+                              {name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {/* Custom name input — shown when 'new' is selected */}
+                      {assignment.type === 'new' && (
+                        <input
+                          value={assignment.name}
+                          onChange={e => setAssignMap(m => ({ ...m, [dateKey]: { type:'new', name: e.target.value } }))}
+                          placeholder="Session name…"
+                          style={{
+                            width:'100%', padding:'7px 10px', borderRadius:8,
+                            border:`1px solid ${t.border}`, background:t.surface,
+                            fontFamily:t.sans, fontSize:12, color:t.text,
+                            outline:'none', boxSizing:'border-box'
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button onClick={handleImport} style={{
+              marginTop:4, width:'100%', padding:'13px', borderRadius:12, border:'none',
+              fontFamily:t.sans, fontSize:13, fontWeight:600, flexShrink:0,
+              background:t.accent, color:t.accentText, cursor:'pointer'
+            }}>
+              Import {previewRows.length} set{previewRows.length > 1 ? 's' : ''} →
             </button>
           </>
         )}
@@ -1603,8 +1768,13 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
       {showImport && (
         <ImportHistorySheet
           theme={theme}
+          plan={plan}
+          completedSessions={completedSessions}
           onClose={() => setShowImport(false)}
-          onImport={(sessions) => onImportSessions && onImportSessions(sessions)}
+          onImport={({ newSessions, updatedSessions }) => {
+            if (newSessions.length) onImportSessions && onImportSessions(newSessions);
+            updatedSessions.forEach(s => onEditSession && onEditSession(s));
+          }}
         />
       )}
 

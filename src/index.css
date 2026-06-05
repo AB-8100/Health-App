@@ -8,6 +8,8 @@ body {
   background-image: radial-gradient(circle at 30% 20%, #EFEBE0, transparent 60%),
                     radial-gradient(circle at 70% 80%, #DCD7CD, transparent 60%),
                     #E6E3DC;
+  /* keep bg fixed on mobile when zooming */
+  background-attachment: fixed;
 }
 body[data-theme="dark"] {
   background-image: radial-gradient(circle at 30% 20%, #1A1A20, transparent 60%),
@@ -25,6 +27,8 @@ body[data-theme="dark"] {
     0 8px 24px rgba(0,0,0,.10),
     inset 0 0 0 1px rgba(255,255,255,.04);
   position: relative;
+  /* scale down to fit viewport — value set by JS resize handler */
+  zoom: var(--phone-scale, 1);
 }
 body[data-theme="dark"] .phone-frame {
   background: #000;
