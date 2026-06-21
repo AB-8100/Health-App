@@ -86,7 +86,9 @@ function App() {
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
   const [editingDayIdx, setEditingDayIdx] = React.useState(null);
-  const [activities, setActivities]       = React.useState({});
+  const [activities, setActivities]             = React.useState({});
+  const [triathlonOverrides, setTriathlonOverrides] = React.useState({});
+  const [triathlonDone, setTriathlonDone]           = React.useState({});
   const [session, setSession]             = React.useState({
     active: false, paused: false, elapsed: 0, workout: '', queue: null,
   });
@@ -154,14 +156,17 @@ function App() {
     if (data.userSettings)      setSettingsRaw(data.userSettings);
     if (data.completedSessions) setCompletedSessions(data.completedSessions);
     if (data.foodLog)           setFoodLog(data.foodLog);
-    if (data.activities)        setActivities(data.activities);
-    if (data.customFoods)       setCustomFoods(data.customFoods);
+    if (data.activities)           setActivities(data.activities);
+    if (data.triathlonOverrides)   setTriathlonOverrides(data.triathlonOverrides);
+    if (data.triathlonDone)        setTriathlonDone(data.triathlonDone);
+    if (data.customFoods)          setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
 
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
+    triathlonOverrides, triathlonDone,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -203,6 +208,8 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
+    setTriathlonOverrides({});
+    setTriathlonDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(true);
@@ -472,7 +479,17 @@ function App() {
     if (s === 'triathlon')
       return <TriathlonScreen width={374} height={804} theme={tweaks.theme}
                onNav={navigate}
-               tracksCycle={profile.tracksCycle} />;
+               tracksCycle={profile.tracksCycle}
+               triathlonOverrides={triathlonOverrides}
+               onUpdateOverrides={(next) => {
+                 setTriathlonOverrides(next);
+                 setTimeout(() => scheduleSave({ triathlonOverrides: next }), 0);
+               }}
+               triathlonDone={triathlonDone}
+               onToggleDone={(next) => {
+                 setTriathlonDone(next);
+                 setTimeout(() => scheduleSave({ triathlonDone: next }), 0);
+               }} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}

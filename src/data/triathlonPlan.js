@@ -10,6 +10,22 @@ export const TRIATHLON_META = {
   raceDistances: '750m swim / 20km bike / 5km run',
 };
 
+const _PLAN_START = new Date('2026-06-22T00:00:00');
+
+// Returns the current plan week (1-18), defaulting to 1 before plan start
+export function getCurrentTriathlonWeek() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today - _PLAN_START) / 86400000);
+  return Math.max(1, Math.min(18, Math.floor(diff / 7) + 1));
+}
+
+// Returns the Monday date of a given plan week number
+export function getTriathlonWeekStart(weekNum) {
+  const d = new Date(_PLAN_START);
+  d.setDate(d.getDate() + (weekNum - 1) * 7);
+  return d;
+}
+
 const s = (discipline, duration, sessionType, week, phase, flag = null) =>
   ({ discipline, duration, sessionType, week, phase, flag });
 
