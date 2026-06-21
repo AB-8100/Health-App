@@ -221,7 +221,7 @@ function FoodScreen({
   customFoods = [],
   onUpdateFood,
   onSaveCustomFood,
-  onNav, tracksCycle = true,
+  onNav, tracksCycle = false, hasGym = true, hasEventTraining = false,
 }) {
   const t = themes[theme];
   const base        = userSettings.dailyCaloriesBase || 1500;
@@ -742,7 +742,7 @@ function FoodScreen({
         )}
       </div>
 
-      <BottomNav theme={theme} active="food" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="food" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* ── ADD FOOD BOTTOM SHEET ── */}
       {addMeal && (

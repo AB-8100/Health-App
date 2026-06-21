@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
+import { loadFromCache, saveToCache, scheduleSaveAll, loadAccounts, saveAccounts, loadSession, saveSession, clearSession } from './utils/storage';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -15,9 +15,7 @@ import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
-
-// ─── localStorage key (referenced in resetProfile) ────────────────────────
-const LS_DATA_KEY = 'forma_data';
+import { LoginScreen, hashPassword } from './screens/LoginScreen';
 
 const TWEAK_DEFAULTS = {
   "theme": "light",
@@ -26,8 +24,9 @@ const TWEAK_DEFAULTS = {
 };
 
 const EMPTY_PROFILE = {
-  name: '', age: 30, sex: '', tracksCycle: null,
+  name: '', age: 30, sex: '', tracksCycle: false,
   height: 168, weight: 65, goal: '', connected: [], splitDays: 3,
+  hasGym: true, hasEventTraining: false,
 };
 const DEFAULT_SETTINGS = {
   dailyCaloriesBase: 1500,
@@ -76,7 +75,8 @@ function App() {
   const [contentW, setContentW] = React.useState(isMobileInit ? window.innerWidth : 374);
   const [contentH, setContentH] = React.useState(isMobileInit ? window.innerHeight : 804);
 
-  const [authState, setAuthState]     = React.useState('loading');
+  const [authState, setAuthState]     = React.useState('loading'); // 'loading'|'login'|'app'
+  const [currentUser, setCurrentUser] = React.useState(null); // { id, email, name }
   const [sheetsStatus, setSheetsStatus] = React.useState('disconnected'); // 'disconnected'|'connected'|'needs-reconnect'|'connecting'
   const [sheetsError, setSheetsError] = React.useState(null);
   const sheetsConnectedRef = React.useRef(false);
@@ -103,28 +103,42 @@ function App() {
   }, [sheetsStatus]);
 
   React.useEffect(() => {
-    const saved = loadFromCache();
-    if (saved) hydrateState(saved);
+    const sessionUserId = loadSession();
+    if (sessionUserId) {
+      const accounts = loadAccounts();
+      const account = accounts.find(a => a.id === sessionUserId);
+      if (account) {
+        setCurrentUser({ id: account.id, email: account.email, name: account.name });
+        const saved = loadFromCache(account.id);
+        if (saved) hydrateState(saved);
 
-    const status = getSheetsStatus();
-    setSheetsStatus(status);
-
-    if (status === 'connected') {
-      const connected = initFromCache();
-      if (connected) {
-        loadFromSheets().then(sheetsData => {
-          if (!sheetsData) return;
-          const localAt  = saved?.savedAt  ? new Date(saved.savedAt)       : new Date(0);
-          const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
-          if (sheetsAt > localAt) {
-            hydrateState(sheetsData);
-            saveToCache(sheetsData);
+        const status = getSheetsStatus();
+        setSheetsStatus(status);
+        if (status === 'connected') {
+          const connected = initFromCache();
+          if (connected) {
+            loadFromSheets().then(sheetsData => {
+              if (!sheetsData) return;
+              const localAt  = saved?.savedAt  ? new Date(saved.savedAt)       : new Date(0);
+              const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
+              if (sheetsAt > localAt) {
+                hydrateState(sheetsData);
+                saveToCache(sheetsData, account.id);
+              }
+            }).catch(() => setSheetsStatus('needs-reconnect'));
           }
-        }).catch(() => setSheetsStatus('needs-reconnect'));
+        }
+        // Route to the correct initial screen based on saved profile
+        const p = saved?.profile;
+        if (p && !p.hasGym && p.hasEventTraining) setScreen('triathlon');
+        else if (p && !p.hasGym && !p.hasEventTraining) setScreen('food');
+        // else default stays 'gym-hub'
+
+        setAuthState('app');
+        return;
       }
     }
-
-    setAuthState('ready');
+    setAuthState('login');
   }, []);
 
   // Scale phone frame to fit viewport on desktop; fill viewport on real phones
@@ -172,9 +186,12 @@ function App() {
     ...overrides,
   });
 
+  const currentUserIdRef = React.useRef(null);
+  React.useEffect(() => { currentUserIdRef.current = currentUser?.id || null; }, [currentUser]);
+
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
-    scheduleSaveAll(snapshot, sheetsConnectedRef.current);
+    scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
   }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods]);
 
   const setProfile = (updater) => {
@@ -199,10 +216,11 @@ function App() {
     });
   };
 
-  const resetProfile = () => {
-    try { localStorage.removeItem(LS_DATA_KEY); } catch(e) {}
+  const handleSignOut = () => {
+    clearSession();
     disconnectGoogle();
     setSheetsStatus('disconnected');
+    setCurrentUser(null);
     setProfileRaw(EMPTY_PROFILE);
     setPlanRaw(DEFAULT_PLAN);
     setSettingsRaw(DEFAULT_SETTINGS);
@@ -213,8 +231,38 @@ function App() {
     setTriathlonDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
-    setOnboarding(true);
+    setOnboarding(false);
     setScreen('gym-hub');
+    setAuthState('login');
+  };
+
+  const handleLogin = async (email, password) => {
+    const accounts = loadAccounts();
+    const account = accounts.find(a => a.email === email);
+    if (!account) throw new Error('No account found with that email.');
+    const hash = await hashPassword(password);
+    if (hash !== account.passwordHash) throw new Error('Incorrect password.');
+    saveSession(account.id);
+    setCurrentUser({ id: account.id, email: account.email, name: account.name });
+    const saved = loadFromCache(account.id);
+    if (saved) hydrateState(saved);
+    setAuthState('app');
+  };
+
+  const handleSignUp = async (displayName, email, password) => {
+    const accounts = loadAccounts();
+    if (accounts.find(a => a.email === email)) {
+      throw new Error('An account with this email already exists.');
+    }
+    const hash = await hashPassword(password);
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const newAccount = { id, email, name: displayName, passwordHash: hash, createdAt: new Date().toISOString() };
+    saveAccounts([...accounts, newAccount]);
+    saveSession(id);
+    setCurrentUser({ id, email, name: displayName });
+    setProfileRaw({ ...EMPTY_PROFILE, name: displayName });
+    setOnboarding(true);
+    setAuthState('app');
   };
 
   React.useEffect(() => {
@@ -317,10 +365,12 @@ function App() {
     const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
                        completedSessions: [], foodLog: {}, activities: {},
                        savedAt: new Date().toISOString() };
-    saveToCache(snapshot);
+    saveToCache(snapshot, currentUserIdRef.current);
     if (sheetsConnectedRef.current) saveToSheets(snapshot);
     setOnboarding(false);
-    setScreen('gym-hub');
+    if (newProfile.hasGym) setScreen('gym-hub');
+    else if (newProfile.hasEventTraining) setScreen('triathlon');
+    else setScreen('food');
   };
 
   const handleConnectSheets = async () => {
@@ -376,11 +426,32 @@ function App() {
     );
   }
 
+  if (authState === 'login') {
+    return (
+      <div className="stage">
+        <div className="phone-frame">
+          <div className="phone-notch"/>
+          <div className="phone-inner">
+            <LoginScreen
+              width={contentW} height={contentH} theme={tweaks.theme}
+              onLogin={handleLogin}
+              onSignUp={handleSignUp}
+            />
+          </div>
+        </div>
+        <div className="label">Forma · Sign in</div>
+      </div>
+    );
+  }
+
+  const hasGym = profile.hasGym !== false;
+  const hasEventTraining = !!profile.hasEventTraining;
+
   const renderScreen = (s) => {
     if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
-               initial={EMPTY_PROFILE} />;
+               initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '' }} />;
     if (s === 'home')
       return <RefinedHome width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
@@ -390,7 +461,8 @@ function App() {
                onStartSession={startSession}
                activeSession={session.active ? session : null}
                onResumeSession={() => setScreen('gym-session')}
-               onOpenAbout={() => setScreen('about-me')} />;
+               onOpenAbout={() => setScreen('about-me')}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} />;
     if (s === 'gym-hub')
       return <GymHubScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
@@ -400,6 +472,7 @@ function App() {
                completedSessions={completedSessions}
                activeSession={session.active ? session : null}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onNav={navigate}
                onStartSession={startSession}
                onResumeSession={() => setScreen('gym-session')}
@@ -417,6 +490,7 @@ function App() {
       return <SplitPickerScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onBack={() => setScreen('gym-hub')}
                onSave={(d, schedule) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0, scheduleOverride: schedule || null })); setScreen('gym-hub'); }}
                onNav={navigate} />;
@@ -430,6 +504,7 @@ function App() {
                plan={plan}
                dayId={resolvedDayId}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onBack={() => setScreen('gym-hub')}
                onSave={(updatedDay, newSchedule) => {
                  setPlan(p => ({
@@ -447,6 +522,7 @@ function App() {
                dayIdx={editingDayIdx ?? 1}
                activities={activities}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onBack={() => setScreen('gym-hub')}
                onSave={(idx, list) => {
                  setActivities(a => {
@@ -468,7 +544,8 @@ function App() {
                onUpdateFood={updateFood}
                onSaveCustomFood={saveCustomFood}
                onNav={navigate}
-               tracksCycle={profile.tracksCycle} />;
+               tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} />;
     if (s === 'about-me')
       return <AboutScreen width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
@@ -478,7 +555,7 @@ function App() {
                onSaveSettings={(s) => setUserSettings(prev => ({ ...prev, ...s }))}
                onBack={() => setScreen('gym-hub')}
                onNav={navigate}
-               onSignOut={resetProfile}
+               onSignOut={handleSignOut}
                tracksCycle={profile.tracksCycle}
                sheetsStatus={sheetsStatus}
                sheetsError={sheetsError}
@@ -490,6 +567,7 @@ function App() {
       return <TriathlonScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                triathlonOverrides={triathlonOverrides}
                onUpdateOverrides={(next) => {
                  setTriathlonOverrides(next);
@@ -503,12 +581,14 @@ function App() {
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onBack={() => setScreen('gym-hub')}
                onNav={navigate} />;
     if (s === 'gym-session' || s === 'gym')
       return <GymSessionScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={session} setSession={setSession}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onNav={navigate}
                onExit={() => { setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null }); setScreen('gym-hub'); }}
                onComplete={finishSession} />;
@@ -516,10 +596,12 @@ function App() {
       return <GymSummaryScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={lastSession}
                tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining}
                onDone={closeSummary}
                onNav={navigate} />;
     return <PlaceholderScreen width={contentW} height={contentH} theme={tweaks.theme}
-             screen={s} onNav={navigate} tracksCycle={profile.tracksCycle} />;
+             screen={s} onNav={navigate} tracksCycle={profile.tracksCycle}
+             hasGym={hasGym} hasEventTraining={hasEventTraining} />;
   };
 
   const screenLabel = onboardingActive

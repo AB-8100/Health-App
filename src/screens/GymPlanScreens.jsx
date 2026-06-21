@@ -1060,7 +1060,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
                        onReorderSchedule, onImportSessions, onEditSession,
-                       tracksCycle = true }) {
+                       tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const split = SPLITS[plan.splitDays] || SPLITS[3];
 
@@ -1779,7 +1779,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
 
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {showImport && (
         <ImportHistorySheet
@@ -1819,7 +1819,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
 // ────────────────────────────────────────────────────────────
 // Split Picker — choose 1/2/3/4/5 days per week
 function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
-                            plan, onBack, onSave, onNav, tracksCycle = true }) {
+                            plan, onBack, onSave, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const [selected, setSelected] = React.useState(plan.splitDays);
   const split = SPLITS[selected];
@@ -2017,7 +2017,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
         </button>
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
     </div>
   );
 }
@@ -2025,7 +2025,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
 // ────────────────────────────────────────────────────────────
 // Session Editor — edit one day's exercises grouped by section
 function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
-                              plan, dayId, onBack, onSave, onNav, tracksCycle = true }) {
+                              plan, dayId, onBack, onSave, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const split = SPLITS[plan.splitDays] || SPLITS[3];
   const originalDay = dayId && split
@@ -2243,7 +2243,7 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
         })}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* Add-exercise bottom sheet */}
       {addingTo && (
@@ -2353,7 +2353,7 @@ function getGymRecommendation(plan, dayIdx) {
 function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
                               plan, dayIdx = 1, activities = {},
                               onBack, onSave, onEditGym, onNav,
-                              tracksCycle = true }) {
+                              tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const dayName = DAY_NAMES[dayIdx] || 'Day';
@@ -2581,7 +2581,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
         )}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* Add activity sheet */}
       {showAdd && (
