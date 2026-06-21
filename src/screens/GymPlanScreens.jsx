@@ -2,6 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
+import { TRIATHLON_PLAN, DISCIPLINE_DISPLAY, getCurrentTriathlonWeek, getTriathlonWeekStart } from '../data/triathlonPlan';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -1276,6 +1277,21 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                       }}>{dayActs.length}</span>
                     )}
                   </div>
+                  {/* Triathlon discipline indicators */}
+                  {(() => {
+                    const dk = `${dayDate.getFullYear()}-${String(dayDate.getMonth()+1).padStart(2,'0')}-${String(dayDate.getDate()).padStart(2,'0')}`;
+                    const tSessions = (TRIATHLON_PLAN[dk] || []).filter(s => ['Swim','Bike','Run','Race'].includes(s.discipline));
+                    if (!tSessions.length) return null;
+                    return (
+                      <div style={{ display:'flex', gap:1, justifyContent:'center', marginTop:2, height:12 }}>
+                        {tSessions.map((s, si) => (
+                          <span key={si} style={{ fontSize:9, lineHeight:1 }}>
+                            {DISCIPLINE_DISPLAY[s.discipline]?.emoji}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -2343,6 +2359,14 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
   const dayName = DAY_NAMES[dayIdx] || 'Day';
   const dayActivities = activities[dayIdx] || [];
 
+  // Compute the date for dayIdx using the triathlon plan's current week,
+  // so the card shows even when the device date is before/after the plan range.
+  const _triWeekStart = getTriathlonWeekStart(getCurrentTriathlonWeek());
+  const _dayDate = new Date(_triWeekStart);
+  _dayDate.setDate(_triWeekStart.getDate() + dayIdx);
+  const _dateKey = `${_dayDate.getFullYear()}-${String(_dayDate.getMonth()+1).padStart(2,'0')}-${String(_dayDate.getDate()).padStart(2,'0')}`;
+  const triathlonSessions = (TRIATHLON_PLAN[_dateKey] || []).filter(s => s.discipline !== 'Rest');
+
   const [items, setItems] = React.useState([...dayActivities]);
   const [showAdd, setShowAdd] = React.useState(false);
   const [addType, setAddType] = React.useState(null);
@@ -2443,6 +2467,65 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
             </div>
           </div>
         )}
+
+        {/* Triathlon training plan for this date */}
+        {triathlonSessions.length > 0 && (() => {
+          const first = triathlonSessions[0];
+          const isBrick = triathlonSessions.some(s => s.flag && s.flag.toLowerCase().includes('brick'));
+          return (
+            <div style={{
+              background: t.surface,
+              border: `1.5px solid #9333EA40`,
+              borderRadius: 16,
+              padding: '12px 14px',
+              marginBottom: 12,
+            }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <div style={{ fontSize:9.5, letterSpacing:'.14em', textTransform:'uppercase', color:'#9333EA', fontWeight:600 }}>
+                  Triathlon training · Wk {first.week} · {first.phase}
+                </div>
+                {isBrick && (
+                  <span style={{
+                    fontSize:9, fontWeight:700, color:'#DC2626',
+                    background:'#DC262618', border:'1px solid #DC262630',
+                    borderRadius:5, padding:'2px 6px', letterSpacing:'.05em'
+                  }}>BRICK</span>
+                )}
+              </div>
+              {triathlonSessions.map((sess, si) => {
+                const disp = DISCIPLINE_DISPLAY[sess.discipline] || DISCIPLINE_DISPLAY['Swim'];
+                return (
+                  <div key={si} style={{
+                    display:'flex', alignItems:'center', gap:11,
+                    padding: si > 0 ? '9px 0 0' : '0',
+                    borderTop: si > 0 ? `1px solid ${t.border}` : 'none',
+                    marginTop: si > 0 ? 9 : 0,
+                  }}>
+                    <div style={{
+                      width:38, height:38, borderRadius:10, flexShrink:0,
+                      background: disp.color+'18', color: disp.color,
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:18,
+                    }}>
+                      {disp.emoji}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+                        <span style={{ fontSize:13.5, fontWeight:600, color: disp.color }}>{disp.label}</span>
+                        {sess.duration !== '—' && (
+                          <span style={{ fontSize:11, color:t.text2, fontFamily:t.mono }}>{sess.duration}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize:11, color:t.text3, lineHeight:1.4, marginTop:2 }}>{sess.sessionType}</div>
+                      {sess.flag && !sess.flag.toLowerCase().includes('brick') && (
+                        <div style={{ fontSize:9.5, color:t.text3, marginTop:2, fontStyle:'italic' }}>{sess.flag}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Activities list */}
         {items.length === 0 ? (

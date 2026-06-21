@@ -11,6 +11,7 @@ import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
+import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
@@ -71,6 +72,10 @@ function SplashScreen({ theme = 'light', userName }) {
 function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
+  const isMobileInit = window.innerWidth <= 430;
+  const [contentW, setContentW] = React.useState(isMobileInit ? window.innerWidth : 374);
+  const [contentH, setContentH] = React.useState(isMobileInit ? window.innerHeight : 804);
+
   const [authState, setAuthState]     = React.useState('loading');
   const [sheetsStatus, setSheetsStatus] = React.useState('disconnected'); // 'disconnected'|'connected'|'needs-reconnect'|'connecting'
   const sheetsConnectedRef = React.useRef(false);
@@ -81,7 +86,9 @@ function App() {
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
   const [editingDayIdx, setEditingDayIdx] = React.useState(null);
-  const [activities, setActivities]       = React.useState({});
+  const [activities, setActivities]             = React.useState({});
+  const [triathlonOverrides, setTriathlonOverrides] = React.useState({});
+  const [triathlonDone, setTriathlonDone]           = React.useState({});
   const [session, setSession]             = React.useState({
     active: false, paused: false, elapsed: 0, workout: '', queue: null,
   });
@@ -119,15 +126,23 @@ function App() {
     setAuthState('ready');
   }, []);
 
-  // Scale phone frame to fit viewport on small screens (mobile browsers)
+  // Scale phone frame to fit viewport on desktop; fill viewport on real phones
   React.useEffect(() => {
     const update = () => {
-      const scale = Math.min(
-        1,
-        window.innerWidth  / 406,   // 390 frame + 16 breathing room
-        window.innerHeight / 882,   // 820 frame + 14 gap + ~48 label
-      );
-      document.documentElement.style.setProperty('--phone-scale', scale.toFixed(4));
+      if (window.innerWidth <= 430) {
+        setContentW(window.innerWidth);
+        setContentH(window.innerHeight);
+        document.documentElement.style.setProperty('--phone-scale', '1');
+      } else {
+        setContentW(374);
+        setContentH(804);
+        const scale = Math.min(
+          1,
+          window.innerWidth  / 406,   // 390 frame + 16 breathing room
+          window.innerHeight / 882,   // 820 frame + 14 gap + ~48 label
+        );
+        document.documentElement.style.setProperty('--phone-scale', scale.toFixed(4));
+      }
     };
     update();
     window.addEventListener('resize', update);
@@ -141,14 +156,17 @@ function App() {
     if (data.userSettings)      setSettingsRaw(data.userSettings);
     if (data.completedSessions) setCompletedSessions(data.completedSessions);
     if (data.foodLog)           setFoodLog(data.foodLog);
-    if (data.activities)        setActivities(data.activities);
-    if (data.customFoods)       setCustomFoods(data.customFoods);
+    if (data.activities)           setActivities(data.activities);
+    if (data.triathlonOverrides)   setTriathlonOverrides(data.triathlonOverrides);
+    if (data.triathlonDone)        setTriathlonDone(data.triathlonDone);
+    if (data.customFoods)          setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
 
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
+    triathlonOverrides, triathlonDone,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -190,6 +208,8 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
+    setTriathlonOverrides({});
+    setTriathlonDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(true);
@@ -350,11 +370,11 @@ function App() {
 
   const renderScreen = (s) => {
     if (onboardingActive)
-      return <OnboardingScreen width={374} height={804} theme={tweaks.theme}
+      return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
                initial={EMPTY_PROFILE} />;
     if (s === 'home')
-      return <RefinedHome width={374} height={804} theme={tweaks.theme}
+      return <RefinedHome width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
                plan={plan}
                completedSessions={completedSessions}
@@ -364,7 +384,7 @@ function App() {
                onResumeSession={() => setScreen('gym-session')}
                onOpenAbout={() => setScreen('about-me')} />;
     if (s === 'gym-hub')
-      return <GymHubScreen width={374} height={804} theme={tweaks.theme}
+      return <GymHubScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                todayIdx={plan.todayIdx}
                dayOfWeek={new Date().getDay() === 0 ? 6 : new Date().getDay() - 1}
@@ -386,7 +406,7 @@ function App() {
                onImportSessions={importSessions}
                onEditSession={editSession} />;
     if (s === 'gym-split')
-      return <SplitPickerScreen width={374} height={804} theme={tweaks.theme}
+      return <SplitPickerScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                tracksCycle={profile.tracksCycle}
                onBack={() => setScreen('gym-hub')}
@@ -398,7 +418,7 @@ function App() {
       const fallbackId = split.days[0].id;
       const resolvedDayId = editingDayId || fallbackId;
       if (!resolvedDayId) return null;
-      return <SessionEditorScreen width={374} height={804} theme={tweaks.theme}
+      return <SessionEditorScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                dayId={resolvedDayId}
                tracksCycle={profile.tracksCycle}
@@ -414,7 +434,7 @@ function App() {
                onNav={navigate} />;
     }
     if (s === 'gym-day')
-      return <DayActivitiesScreen width={374} height={804} theme={tweaks.theme}
+      return <DayActivitiesScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                dayIdx={editingDayIdx ?? 1}
                activities={activities}
@@ -430,7 +450,7 @@ function App() {
                onEditGym={(dayId) => { setEditingDayId(dayId); setScreen('gym-edit'); }}
                onNav={navigate} />;
     if (s === 'food')
-      return <FoodScreen width={374} height={804} theme={tweaks.theme}
+      return <FoodScreen width={contentW} height={contentH} theme={tweaks.theme}
                foodLog={foodLog}
                userSettings={userSettings}
                plan={plan}
@@ -442,7 +462,7 @@ function App() {
                onNav={navigate}
                tracksCycle={profile.tracksCycle} />;
     if (s === 'about-me')
-      return <AboutScreen width={374} height={804} theme={tweaks.theme}
+      return <AboutScreen width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
                userSettings={userSettings}
                plan={plan}
@@ -457,25 +477,39 @@ function App() {
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;
+    if (s === 'triathlon')
+      return <TriathlonScreen width={374} height={804} theme={tweaks.theme}
+               onNav={navigate}
+               tracksCycle={profile.tracksCycle}
+               triathlonOverrides={triathlonOverrides}
+               onUpdateOverrides={(next) => {
+                 setTriathlonOverrides(next);
+                 setTimeout(() => scheduleSave({ triathlonOverrides: next }), 0);
+               }}
+               triathlonDone={triathlonDone}
+               onToggleDone={(next) => {
+                 setTriathlonDone(next);
+                 setTimeout(() => scheduleSave({ triathlonDone: next }), 0);
+               }} />;
     if (s === 'gym-library')
-      return <ExerciseLibraryScreen width={374} height={804} theme={tweaks.theme}
+      return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
                onBack={() => setScreen('gym-hub')}
                onNav={navigate} />;
     if (s === 'gym-session' || s === 'gym')
-      return <GymSessionScreen width={374} height={804} theme={tweaks.theme}
+      return <GymSessionScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={session} setSession={setSession}
                tracksCycle={profile.tracksCycle}
                onNav={navigate}
                onExit={() => { setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null }); setScreen('gym-hub'); }}
                onComplete={finishSession} />;
     if (s === 'gym-summary')
-      return <GymSummaryScreen width={374} height={804} theme={tweaks.theme}
+      return <GymSummaryScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={lastSession}
                tracksCycle={profile.tracksCycle}
                onDone={closeSummary}
                onNav={navigate} />;
-    return <PlaceholderScreen width={374} height={804} theme={tweaks.theme}
+    return <PlaceholderScreen width={contentW} height={contentH} theme={tweaks.theme}
              screen={s} onNav={navigate} tracksCycle={profile.tracksCycle} />;
   };
 
@@ -520,6 +554,7 @@ function App() {
               { value: 'gym-edit',    label: 'Gym · Session editor' },
               { value: 'gym-day',     label: 'Gym · Day activities' },
               { value: 'gym-library', label: 'Gym · Exercise library' },
+              { value: 'triathlon',   label: 'Triathlon · Plan' },
               { value: 'gym-session', label: 'Gym · In session' },
               { value: 'gym-summary', label: 'Gym · Summary' },
               { value: 'food',        label: 'Food · Weekly tracker' },

@@ -49,6 +49,27 @@ body[data-theme="dark"] .phone-frame {
 .screen-anim {
   width:100%; height:100%;
 }
+
+/* ── On a real phone: fill the viewport, drop the frame mockup ─────────────── */
+@media (max-width: 430px) {
+  body { align-items: stretch; justify-content: stretch; }
+  .stage { width: 100vw; height: 100dvh; gap: 0; }
+  .phone-frame {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    zoom: 1 !important;
+  }
+  .phone-inner {
+    border-radius: 0 !important;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .phone-notch { display: none !important; }
+  .label { display: none !important; }
+}
 .label { color:#6B6560; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
          font-family:'JetBrains Mono', monospace; }
 body[data-theme="dark"] .label { color:#8A8893; }
