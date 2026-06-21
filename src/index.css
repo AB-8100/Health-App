@@ -64,8 +64,6 @@ body[data-theme="dark"] .phone-frame {
   }
   .phone-inner {
     border-radius: 0 !important;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .phone-notch { display: none !important; }
   .label { display: none !important; }
