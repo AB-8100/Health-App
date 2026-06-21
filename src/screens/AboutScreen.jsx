@@ -476,7 +476,7 @@ function AboutScreen({
             color: '#BE3B2E', fontFamily: t.sans, fontSize: 14, fontWeight: 500,
             cursor: 'pointer', marginBottom: 8,
           }}>
-            Reset profile &amp; data
+            Sign out
           </button>
         )}
       </div>

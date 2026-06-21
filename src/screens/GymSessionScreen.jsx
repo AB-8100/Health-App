@@ -28,7 +28,7 @@ function blankSet(unilateral) {
     : { w: null, r: null, done: false };
 }
 
-function GymSessionScreen({ width = 390, height = 820, theme = 'light', session, setSession, onNav, onExit, onComplete, tracksCycle = true }) {
+function GymSessionScreen({ width = 390, height = 820, theme = 'light', session, setSession, onNav, onExit, onComplete, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
 
   React.useEffect(() => {
@@ -534,7 +534,7 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
         ))}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* End-session confirm sheet */}
       {showEndConfirm && (
@@ -647,7 +647,7 @@ function NumberInput({ value, onChange, step = 1, prefix = '', suffix = '', them
 
 // ────────────────────────────────────────────────────────────
 // Simple stubs for Food + Cycle so the bottom nav doesn't dead-end
-function PlaceholderScreen({ width, height, theme, screen, onNav, tracksCycle = true }) {
+function PlaceholderScreen({ width, height, theme, screen, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const screenInfo = {
     food:  { title: 'Food',  icon: '🍽', sub: 'Today\'s plate · Macros · Phase nutrition' },
@@ -686,14 +686,14 @@ function PlaceholderScreen({ width, height, theme, screen, onNav, tracksCycle = 
           Designed next — tap Home to return
         </div>
       </div>
-      <BottomNav theme={theme} active={screen} onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active={screen} onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────
 // Post-session summary screen
-function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session, onDone, onNav, tracksCycle = true }) {
+function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session, onDone, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const fmt = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
   const queue = session?.queue || [];
@@ -872,7 +872,7 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
         </button>
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
     </div>
   );
 }

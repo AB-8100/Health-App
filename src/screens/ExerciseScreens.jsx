@@ -126,7 +126,7 @@ const LEVEL_COLORS = {
 const PAGE_SIZE = 48;
 
 function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
-                                 onBack, onNav, tracksCycle = true }) {
+                                 onBack, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
   const [search,   setSearch]   = React.useState('');
   const [muscle,   setMuscle]   = React.useState('all');
@@ -352,7 +352,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
         )}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* Detail sheet */}
       {selected && (
@@ -569,7 +569,7 @@ const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'
 
 function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
                               plan, dayIdx, activities = {},
-                              onBack, onSave, onNav, tracksCycle = true,
+                              onBack, onSave, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false,
                               onEditGym }) {
   const t = themes[theme];
   const split = SPLITS[plan.splitDays];
@@ -724,7 +724,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
         </button>
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
       {/* Add activity sheet */}
       {addingType && (

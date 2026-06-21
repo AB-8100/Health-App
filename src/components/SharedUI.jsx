@@ -164,21 +164,25 @@ function PulseDot({ color = "#16A34A", size = 7 }) {
 }
 
 // Bottom nav (shared visual chrome)
-function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = true }) {
+function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const isDark = theme === 'dark';
   const dim = isDark ? '#6B6560' : '#A8A39C';
   const activeColor = isDark ? '#fff' : '#1C1917';
   const bg = isDark ? '#0E0E10' : '#FFFFFF';
   const border = isDark ? '#1F1F22' : '#EAE7E0';
   const allItems = [
-    // { id:'home',  label:'Home',  d:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22 V12 H15 V22' },
-    { id:'gym',        label:'Gym',     d:'M4 9 L4 15 M8 7 L8 17 M16 7 L16 17 M20 9 L20 15 M8 12 L16 12' },
-    { id:'food',       label:'Food',    d:'M5 4 V20 M19 4 V12 H17 V4 M5 12 H9 V20' },
-    { id:'triathlon',  label:'Tri',     d:'M12 3 a2 2 0 0 1 0 4 M5 13 C7 10 9 10 11 13 C13 16 15 16 17 13 C19 10 21 10 21 13 M5 18 C7 15 9 15 11 18 C13 21 15 21 17 18' },
-    { id:'cycle',      label:'Cycle',   d:'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 M12 8 V12 L15 15' },
-    { id:'about-me',   label:'Profile', d:'M12 4 a4 4 0 1 0 0 8 a4 4 0 1 0 0-8 M4 20 v-1 a8 8 0 0 1 16 0 v1' },
+    { id:'gym',        label:'Gym',      d:'M4 9 L4 15 M8 7 L8 17 M16 7 L16 17 M20 9 L20 15 M8 12 L16 12' },
+    { id:'food',       label:'Food',     d:'M5 4 V20 M19 4 V12 H17 V4 M5 12 H9 V20' },
+    { id:'triathlon',  label:'Training', d:'M12 3 a2 2 0 0 1 0 4 M5 13 C7 10 9 10 11 13 C13 16 15 16 17 13 C19 10 21 10 21 13 M5 18 C7 15 9 15 11 18 C13 21 15 21 17 18' },
+    { id:'cycle',      label:'Cycle',    d:'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 M12 8 V12 L15 15' },
+    { id:'about-me',   label:'Profile',  d:'M12 4 a4 4 0 1 0 0 8 a4 4 0 1 0 0-8 M4 20 v-1 a8 8 0 0 1 16 0 v1' },
   ];
-  const items = allItems.filter(it => it.id !== 'cycle' || tracksCycle);
+  const items = allItems.filter(it => {
+    if (it.id === 'gym') return hasGym;
+    if (it.id === 'triathlon') return hasEventTraining;
+    if (it.id === 'cycle') return tracksCycle;
+    return true;
+  });
   return (
     <div style={{
       display:'flex', borderTop:`1px solid ${border}`, background:bg,

@@ -29,22 +29,30 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
     name: '',
     age: 30,
     sex: '',
-    tracksCycle: null,
+    tracksCycle: false,
     height: 168,
     weight: 65,
     goal: '',
     connected: [],
     splitDays: 3,
+    hasGym: true,
+    hasEventTraining: false,
   });
 
-  // Step config — controls which steps appear (cycle step hidden if N/A)
-  const allSteps = ['welcome','basics','cycle','goal','imports','split','done'];
-  const steps = profile.sex === 'male' || profile.tracksCycle === false
-    ? allSteps.filter(s => s !== 'cycle')
-    : allSteps;
+  // Step config — split only appears when gym is selected
+  const allSteps = ['welcome', 'basics', 'features', 'goal', 'imports', 'split', 'done'];
+  const steps = allSteps.filter(s => {
+    if (s === 'split') return profile.hasGym;
+    return true;
+  });
   const current = steps[step] || 'welcome';
   const progress = (step + 1) / steps.length;
   const isLast = step === steps.length - 1;
+
+  // Clamp step if steps array shrinks (e.g. user unchecks gym after reaching split)
+  React.useEffect(() => {
+    setStep(s => Math.min(s, steps.length - 1));
+  }, [steps.length]);
 
   const next = () => {
     if (isLast) {
@@ -58,7 +66,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
   // Whether Next is enabled
   const canAdvance = (() => {
     if (current === 'basics') return profile.name && profile.sex;
-    if (current === 'cycle') return profile.tracksCycle !== null;
+    if (current === 'features') return profile.hasGym || profile.hasEventTraining;
     if (current === 'goal') return !!profile.goal;
     return true;
   })();
@@ -146,8 +154,8 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               Welcome to <span style={{ color:t.accent }}>Forma.</span>
             </div>
             <div style={{ fontSize:13.5, color:t.text2, lineHeight:1.55, marginBottom:24 }}>
-              Strength, nutrition, and recovery — tuned to your body and your cycle.
-              Let's set you up. Takes about a minute.
+              Training, nutrition, and recovery — all in one place, tuned to you.
+              Let's get you set up. Takes about a minute.
             </div>
             <div style={{
               padding:'14px 16px', borderRadius:14,
@@ -194,9 +202,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
                   <button key={o.value}
                     onClick={() => update({
                       sex: o.value,
-                      // Default cycle to on for female if unset
-                      tracksCycle: profile.tracksCycle === null && o.value === 'female' ? true
-                                  : (o.value === 'male' ? false : profile.tracksCycle)
+                      tracksCycle: o.value === 'female' ? true : false,
                     })}
                     style={selectStyle(t, profile.sex === o.value)}>
                     {o.label}
@@ -223,64 +229,59 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
           </div>
         )}
 
-        {current === 'cycle' && (
+        {current === 'features' && (
           <div>
             <div style={{
               fontFamily:t.serif, fontSize:30, lineHeight:1.1, color:t.text,
               marginBottom:8, letterSpacing:'-.01em'
             }}>
-              Cycle tracking.
+              What do you want to track?
             </div>
             <div style={{ fontSize:12.5, color:t.text2, marginBottom:22, lineHeight:1.5 }}>
-              Forma can tailor your training and nutrition to your menstrual cycle —
-              follicular peaks, luteal slow-downs, period care. Optional.
+              Choose what you'd like to use Forma for. You can change these any time in your profile.
             </div>
 
-            <button onClick={() => update({ tracksCycle: true })} style={{
-              width:'100%', textAlign:'left', padding:'14px 16px', borderRadius:14,
-              background: profile.tracksCycle === true ? t.accent+'10' : t.surface,
-              border:`1.5px solid ${profile.tracksCycle === true ? t.accent : t.border}`,
-              cursor:'pointer', fontFamily:t.sans, marginBottom:10,
-              display:'flex', gap:12, alignItems:'flex-start'
-            }}>
-              <div style={{
-                width:34, height:34, borderRadius:10,
-                background: profile.tracksCycle === true ? t.accent+'25' : t.surface2,
-                color: profile.tracksCycle === true ? t.accent : t.text2,
-                display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0
-              }}>🌸</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13.5, color:t.text, fontWeight:500, marginBottom:3 }}>
-                  Yes, track my cycle
-                </div>
-                <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.5 }}>
-                  Get phase-aware recommendations and a calendar view.
-                </div>
-              </div>
-            </button>
+            {/* Gym / cardio */}
+            <FeatureCard
+              icon="🏋️"
+              title="Gym & cardio"
+              sub="Log workouts, track sets and reps, plan your training split."
+              active={profile.hasGym}
+              theme={theme}
+              onToggle={() => update({ hasGym: !profile.hasGym })}
+            />
 
-            <button onClick={() => update({ tracksCycle: false })} style={{
-              width:'100%', textAlign:'left', padding:'14px 16px', borderRadius:14,
-              background: profile.tracksCycle === false ? t.accent+'10' : t.surface,
-              border:`1.5px solid ${profile.tracksCycle === false ? t.accent : t.border}`,
-              cursor:'pointer', fontFamily:t.sans,
-              display:'flex', gap:12, alignItems:'flex-start'
-            }}>
+            {/* Event training */}
+            <FeatureCard
+              icon="🏅"
+              title="Training for an event"
+              sub="Follow a structured plan for a triathlon, race, or other event."
+              active={profile.hasEventTraining}
+              theme={theme}
+              onToggle={() => update({ hasEventTraining: !profile.hasEventTraining })}
+            />
+
+            {/* Cycle tracking — only if female or other */}
+            {(profile.sex === 'female' || profile.sex === 'other') && (
+              <FeatureCard
+                icon="🌸"
+                title="Cycle tracking"
+                sub="Get phase-aware training and nutrition recommendations."
+                active={profile.tracksCycle}
+                theme={theme}
+                onToggle={() => update({ tracksCycle: !profile.tracksCycle })}
+              />
+            )}
+
+            {!profile.hasGym && !profile.hasEventTraining && (
               <div style={{
-                width:34, height:34, borderRadius:10,
-                background: profile.tracksCycle === false ? t.accent+'25' : t.surface2,
-                color: profile.tracksCycle === false ? t.accent : t.text2,
-                display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0
-              }}>✕</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13.5, color:t.text, fontWeight:500, marginBottom:3 }}>
-                  No, skip cycle tracking
-                </div>
-                <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.5 }}>
-                  We'll hide cycle features. You can turn it on later.
-                </div>
+                marginTop:10, padding:'10px 12px', borderRadius:10,
+                background:t.surface2, border:`1px dashed ${t.border}`,
+                fontSize:11.5, color:t.text3, lineHeight:1.5,
+              }}>
+                Select at least one feature to continue.
               </div>
-            </button>
+            )}
           </div>
         )}
 
@@ -451,9 +452,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               You're all set, {profile.name || 'friend'}.
             </div>
             <div style={{ fontSize:13, color:t.text2, lineHeight:1.55, marginBottom:24, padding:'0 12px' }}>
-              {profile.tracksCycle
-                ? 'Your plan will adapt to your cycle phase, training load, and recovery.'
-                : 'Your plan will adapt to your training load and recovery.'}
+              {'Your Forma is ready. Everything is personalised to you.'}
               {profile.connected.length > 0 &&
                 ` We'll start syncing ${profile.connected.length} ${profile.connected.length === 1 ? 'app' : 'apps'} now.`}
             </div>
@@ -466,8 +465,9 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               {[
                 { label:'Profile',  value: `${profile.name || '—'} · ${profile.age}yrs` },
                 { label:'Goal',     value: GOAL_OPTIONS.find(g => g.id === profile.goal)?.label || '—' },
-                { label:'Split',    value: SPLITS[profile.splitDays].name },
-                profile.tracksCycle ? { label:'Cycle',   value:'Tracking on' } : null,
+                profile.hasGym ? { label:'Gym split', value: SPLITS[profile.splitDays].name } : null,
+                profile.hasEventTraining ? { label:'Event training', value:'Enabled' } : null,
+                profile.tracksCycle ? { label:'Cycle', value:'Tracking on' } : null,
                 profile.connected.length ? { label:'Connected', value:`${profile.connected.length} apps` } : null,
               ].filter(Boolean).map((r,i,arr) => (
                 <div key={r.label} style={{
@@ -606,5 +606,36 @@ function NumberRow({ value, min, max, step = 1, unit, onChange, theme }) {
   );
 }
 
+
+function FeatureCard({ icon, title, sub, active, theme, onToggle }) {
+  const t = themes[theme];
+  return (
+    <button onClick={onToggle} style={{
+      width:'100%', textAlign:'left', padding:'14px 16px', borderRadius:14,
+      background: active ? t.accent+'10' : t.surface,
+      border:`1.5px solid ${active ? t.accent : t.border}`,
+      cursor:'pointer', fontFamily:t.sans, marginBottom:10,
+      display:'flex', gap:12, alignItems:'flex-start',
+    }}>
+      <div style={{
+        width:38, height:38, borderRadius:11,
+        background: active ? t.accent+'25' : t.surface2,
+        color: active ? t.accent : t.text2,
+        display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0,
+      }}>{icon}</div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13.5, color:t.text, fontWeight:500, marginBottom:3 }}>{title}</div>
+        <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.5 }}>{sub}</div>
+      </div>
+      <div style={{
+        width:22, height:22, borderRadius:'50%', flexShrink:0,
+        background: active ? t.accent : 'transparent',
+        border: active ? `none` : `1.5px solid ${t.border}`,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        color: active ? t.accentText : t.text3, fontSize:12,
+      }}>{active ? '✓' : ''}</div>
+    </button>
+  );
+}
 
 export { IMPORT_SOURCES, GOAL_OPTIONS, OnboardingScreen, Field, inputStyle, selectStyle, NumberRow };

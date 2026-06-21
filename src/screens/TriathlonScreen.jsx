@@ -35,7 +35,7 @@ function getSessionsForDate(dk, overrides) {
 
 export function TriathlonScreen({
   width=390, height=820, theme='light',
-  onNav, tracksCycle=true,
+  onNav, tracksCycle=false, hasGym=true, hasEventTraining=false,
   triathlonOverrides={}, onUpdateOverrides,
   triathlonDone={}, onToggleDone,
 }) {
@@ -337,7 +337,7 @@ export function TriathlonScreen({
 
       </div>
 
-      <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle}/>
+      <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
     </div>
   );
 }
