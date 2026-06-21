@@ -1,6 +1,11 @@
 import React from 'react';
 
-import { loadFromCache, saveToCache, scheduleSaveLocal } from './utils/storage';
+import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
+import {
+  initFromCache, getSheetsStatus, getSheetId,
+  connectGoogle, disconnectGoogle, reconnectGoogle,
+  loadFromSheets, saveToSheets,
+} from './utils/googleSheets';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakSelect, TweakButton } from './components/tweaks/TweaksPanel';
 import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
@@ -66,7 +71,9 @@ function SplashScreen({ theme = 'light', userName }) {
 function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
-  const [authState, setAuthState] = React.useState('loading');
+  const [authState, setAuthState]     = React.useState('loading');
+  const [sheetsStatus, setSheetsStatus] = React.useState('disconnected'); // 'disconnected'|'connected'|'needs-reconnect'|'connecting'
+  const sheetsConnectedRef = React.useRef(false);
   const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
@@ -84,8 +91,31 @@ function App() {
   const [customFoods, setCustomFoods]             = React.useState([]);
 
   React.useEffect(() => {
+    sheetsConnectedRef.current = sheetsStatus === 'connected';
+  }, [sheetsStatus]);
+
+  React.useEffect(() => {
     const saved = loadFromCache();
     if (saved) hydrateState(saved);
+
+    const status = getSheetsStatus();
+    setSheetsStatus(status);
+
+    if (status === 'connected') {
+      const connected = initFromCache();
+      if (connected) {
+        loadFromSheets().then(sheetsData => {
+          if (!sheetsData) return;
+          const localAt  = saved?.savedAt  ? new Date(saved.savedAt)       : new Date(0);
+          const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
+          if (sheetsAt > localAt) {
+            hydrateState(sheetsData);
+            saveToCache(sheetsData);
+          }
+        }).catch(() => setSheetsStatus('needs-reconnect'));
+      }
+    }
+
     setAuthState('ready');
   }, []);
 
@@ -125,7 +155,7 @@ function App() {
 
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
-    scheduleSaveLocal(snapshot);
+    scheduleSaveAll(snapshot, sheetsConnectedRef.current);
   }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods]);
 
   const setProfile = (updater) => {
@@ -152,6 +182,8 @@ function App() {
 
   const resetProfile = () => {
     try { localStorage.removeItem(LS_DATA_KEY); } catch(e) {}
+    disconnectGoogle();
+    setSheetsStatus('disconnected');
     setProfileRaw(EMPTY_PROFILE);
     setPlanRaw(DEFAULT_PLAN);
     setSettingsRaw(DEFAULT_SETTINGS);
@@ -261,11 +293,45 @@ function App() {
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setSettingsRaw(DEFAULT_SETTINGS);
-    saveToCache({ profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
-                  completedSessions: [], foodLog: {}, activities: {},
-                  savedAt: new Date().toISOString() });
+    const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
+                       completedSessions: [], foodLog: {}, activities: {},
+                       savedAt: new Date().toISOString() };
+    saveToCache(snapshot);
+    if (sheetsConnectedRef.current) saveToSheets(snapshot);
     setOnboarding(false);
     setScreen('gym-hub');
+  };
+
+  const handleConnectSheets = async () => {
+    setSheetsStatus('connecting');
+    try {
+      await connectGoogle();
+      setSheetsStatus('connected');
+      sheetsConnectedRef.current = true;
+      // Migrate current local data to the new sheet
+      const snapshot = buildSnapshot();
+      await saveToSheets(snapshot);
+    } catch(e) {
+      console.error('Google Sheets connect failed:', e.message);
+      setSheetsStatus(getSheetId() ? 'needs-reconnect' : 'disconnected');
+    }
+  };
+
+  const handleDisconnectSheets = () => {
+    disconnectGoogle();
+    setSheetsStatus('disconnected');
+  };
+
+  const handleReconnectSheets = async () => {
+    setSheetsStatus('connecting');
+    try {
+      await reconnectGoogle();
+      setSheetsStatus('connected');
+      sheetsConnectedRef.current = true;
+    } catch(e) {
+      console.error('Google Sheets reconnect failed:', e.message);
+      setSheetsStatus('needs-reconnect');
+    }
   };
 
   if (authState === 'loading') {
@@ -385,7 +451,11 @@ function App() {
                onBack={() => setScreen('gym-hub')}
                onNav={navigate}
                onSignOut={resetProfile}
-               tracksCycle={profile.tracksCycle} />;
+               tracksCycle={profile.tracksCycle}
+               sheetsStatus={sheetsStatus}
+               onConnectSheets={handleConnectSheets}
+               onDisconnectSheets={handleDisconnectSheets}
+               onReconnectSheets={handleReconnectSheets} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={374} height={804} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}

@@ -1,3 +1,5 @@
+import { scheduleSaveToSheets } from './googleSheets';
+
 const LS_DATA_KEY = 'forma_data';
 
 export function loadFromCache() {
@@ -13,4 +15,10 @@ let _saveTimer = null;
 export function scheduleSaveLocal(data) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => saveToCache(data), 1000);
+}
+
+// Save to localStorage + Google Sheets (if connected)
+export function scheduleSaveAll(data, sheetsConnected) {
+  scheduleSaveLocal(data);
+  if (sheetsConnected) scheduleSaveToSheets(data);
 }
