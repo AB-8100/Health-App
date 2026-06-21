@@ -78,6 +78,7 @@ function App() {
 
   const [authState, setAuthState]     = React.useState('loading');
   const [sheetsStatus, setSheetsStatus] = React.useState('disconnected'); // 'disconnected'|'connected'|'needs-reconnect'|'connecting'
+  const [sheetsError, setSheetsError] = React.useState(null);
   const sheetsConnectedRef = React.useRef(false);
   const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
@@ -324,9 +325,11 @@ function App() {
 
   const handleConnectSheets = async () => {
     setSheetsStatus('connecting');
+    setSheetsError(null);
     try {
       await connectGoogle();
       setSheetsStatus('connected');
+      setSheetsError(null);
       sheetsConnectedRef.current = true;
       // Migrate current local data to the new sheet
       const snapshot = buildSnapshot();
@@ -334,23 +337,28 @@ function App() {
     } catch(e) {
       console.error('Google Sheets connect failed:', e.message);
       setSheetsStatus(getSheetId() ? 'needs-reconnect' : 'disconnected');
+      setSheetsError(e.message);
     }
   };
 
   const handleDisconnectSheets = () => {
     disconnectGoogle();
     setSheetsStatus('disconnected');
+    setSheetsError(null);
   };
 
   const handleReconnectSheets = async () => {
     setSheetsStatus('connecting');
+    setSheetsError(null);
     try {
       await reconnectGoogle();
       setSheetsStatus('connected');
+      setSheetsError(null);
       sheetsConnectedRef.current = true;
     } catch(e) {
       console.error('Google Sheets reconnect failed:', e.message);
       setSheetsStatus('needs-reconnect');
+      setSheetsError(e.message);
     }
   };
 
@@ -473,6 +481,7 @@ function App() {
                onSignOut={resetProfile}
                tracksCycle={profile.tracksCycle}
                sheetsStatus={sheetsStatus}
+               sheetsError={sheetsError}
                sheetUrl={getSheetUrl()}
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}

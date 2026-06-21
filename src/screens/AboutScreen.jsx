@@ -97,7 +97,7 @@ function AboutScreen({
   profile = {}, userSettings = {}, plan = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, tracksCycle = true,
-  sheetsStatus = 'disconnected', sheetUrl = null,
+  sheetsStatus = 'disconnected', sheetsError = null, sheetUrl = null,
   onConnectSheets, onDisconnectSheets, onReconnectSheets,
 }) {
   const t = themes[theme];
@@ -258,6 +258,16 @@ function AboutScreen({
               }} />
             )}
           </div>
+
+          {sheetsError && sheetsStatus !== 'connected' && (
+            <div style={{
+              marginTop: 8, padding: '8px 10px', borderRadius: 8,
+              background: '#BE3B2E15', border: '1px solid #BE3B2E30',
+              fontSize: 11, color: '#BE3B2E', lineHeight: 1.5,
+            }}>
+              {sheetsError}
+            </div>
+          )}
 
           {sheetsStatus === 'connected' && sheetUrl && (
             <a href={sheetUrl} target="_blank" rel="noopener noreferrer" style={{
