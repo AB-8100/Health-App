@@ -2,7 +2,7 @@ import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import {
-  initFromCache, getSheetsStatus, getSheetId,
+  initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
   loadFromSheets, saveToSheets,
 } from './utils/googleSheets';
@@ -453,6 +453,7 @@ function App() {
                onSignOut={resetProfile}
                tracksCycle={profile.tracksCycle}
                sheetsStatus={sheetsStatus}
+               sheetUrl={getSheetUrl()}
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;

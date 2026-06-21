@@ -97,7 +97,7 @@ function AboutScreen({
   profile = {}, userSettings = {}, plan = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, tracksCycle = true,
-  sheetsStatus = 'disconnected',
+  sheetsStatus = 'disconnected', sheetUrl = null,
   onConnectSheets, onDisconnectSheets, onReconnectSheets,
 }) {
   const t = themes[theme];
@@ -424,9 +424,28 @@ function AboutScreen({
             )}
           </div>
 
+          {sheetsStatus === 'connected' && sheetUrl && (
+            <a href={sheetUrl} target="_blank" rel="noopener noreferrer" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 0', borderBottom: `1px solid ${t.border}`,
+              textDecoration: 'none',
+            }}>
+              <div>
+                <div style={{ fontSize: 12, color: t.accent, fontWeight: 500 }}>Open in Google Sheets</div>
+                <div style={{
+                  fontSize: 10, color: t.text3, marginTop: 1,
+                  maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {sheetUrl}
+                </div>
+              </div>
+              <span style={{ fontSize: 14, color: t.accent }}>↗</span>
+            </a>
+          )}
+
           <div style={{ padding: '10px 0 2px', fontSize: 11, color: t.text3, lineHeight: 1.6 }}>
             {sheetsStatus === 'connected'
-              ? 'Your data is automatically saved to Google Sheets after every change.'
+              ? 'Saved to 6 tabs: Profile · Sessions · Food Log · Custom Foods · Settings · Backup.'
               : 'Without sync, data is stored only in this browser and will be lost if you clear your cache.'}
           </div>
         </Section>
