@@ -2,7 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
-import { TRIATHLON_PLAN, DISCIPLINE_DISPLAY } from '../data/triathlonPlan';
+import { TRIATHLON_PLAN, DISCIPLINE_DISPLAY, getCurrentTriathlonWeek, getTriathlonWeekStart } from '../data/triathlonPlan';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -2359,12 +2359,11 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
   const dayName = DAY_NAMES[dayIdx] || 'Day';
   const dayActivities = activities[dayIdx] || [];
 
-  // Compute this week's actual calendar date for dayIdx (0=Mon … 6=Sun)
-  const _now = new Date();
-  const _mondayOff = _now.getDay() === 0 ? -6 : 1 - _now.getDay();
-  const _dayDate = new Date(_now);
-  _dayDate.setDate(_now.getDate() + _mondayOff + dayIdx);
-  _dayDate.setHours(0, 0, 0, 0);
+  // Compute the date for dayIdx using the triathlon plan's current week,
+  // so the card shows even when the device date is before/after the plan range.
+  const _triWeekStart = getTriathlonWeekStart(getCurrentTriathlonWeek());
+  const _dayDate = new Date(_triWeekStart);
+  _dayDate.setDate(_triWeekStart.getDate() + dayIdx);
   const _dateKey = `${_dayDate.getFullYear()}-${String(_dayDate.getMonth()+1).padStart(2,'0')}-${String(_dayDate.getDate()).padStart(2,'0')}`;
   const triathlonSessions = (TRIATHLON_PLAN[_dateKey] || []).filter(s => s.discipline !== 'Rest');
 

@@ -1,9 +1,8 @@
 import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
-import { TRIATHLON_PLAN, DISCIPLINE_DISPLAY, TRIATHLON_META } from '../data/triathlonPlan';
+import { TRIATHLON_PLAN, DISCIPLINE_DISPLAY, TRIATHLON_META, getCurrentTriathlonWeek, getTriathlonWeekStart } from '../data/triathlonPlan';
 
-const PLAN_START  = new Date('2026-06-22T00:00:00');
 const RACE_DATE   = new Date('2026-10-25T00:00:00');
 const TOTAL_WEEKS = 18;
 
@@ -20,17 +19,9 @@ function toDateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
-function getWeekStartDate(weekNum) {
-  const d = new Date(PLAN_START);
-  d.setDate(d.getDate() + (weekNum - 1) * 7);
-  return d;
-}
-
-function getCurrentWeek() {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const diff = Math.floor((today - PLAN_START) / 86400000);
-  return Math.max(1, Math.min(TOTAL_WEEKS, Math.floor(diff / 7) + 1));
-}
+// Re-export helpers from data file for use in this module
+const getWeekStartDate = getTriathlonWeekStart;
+const getCurrentWeek  = getCurrentTriathlonWeek;
 
 function getPhase(weekNum) {
   return PHASES.find(p => weekNum >= p.weeks[0] && weekNum <= p.weeks[1]) || PHASES[0];
@@ -187,6 +178,13 @@ export function TriathlonScreen({
           <div style={{ textAlign:'center' }}>
             <div style={{ fontSize:13.5, fontWeight:600, color:t.text }}>Week {viewWeek}</div>
             <div style={{ fontSize:10.5, color:t.text3 }}>{weekLabel}</div>
+            {viewWeek !== initWeek && (
+              <button onClick={() => setViewWeek(initWeek)} style={{
+                marginTop:4, padding:'2px 10px', borderRadius:6,
+                background: t.accent+'18', border:`1px solid ${t.accent}40`,
+                color:t.accent, fontFamily:t.sans, fontSize:10.5, fontWeight:600, cursor:'pointer'
+              }}>↩ Wk {initWeek} (current)</button>
+            )}
           </div>
           <button onClick={() => setViewWeek(w => Math.min(TOTAL_WEEKS, w + 1))} disabled={viewWeek === TOTAL_WEEKS} style={{
             width:34, height:34, borderRadius:9, background:'transparent', border:`1px solid ${t.border}`,
@@ -337,16 +335,6 @@ export function TriathlonScreen({
           })}
         </div>
 
-        {/* Jump to current week */}
-        {viewWeek !== initWeek && (
-          <button onClick={() => setViewWeek(initWeek)} style={{
-            width:'100%', padding:'11px', borderRadius:12,
-            background:'transparent', border:`1px dashed ${t.border2}`,
-            color:t.text2, fontFamily:t.sans, fontSize:12, cursor:'pointer'
-          }}>
-            ↩ Back to current week (Wk {initWeek})
-          </button>
-        )}
       </div>
 
       <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle}/>
