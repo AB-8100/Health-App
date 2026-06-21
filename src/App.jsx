@@ -478,7 +478,7 @@ function App() {
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;
     if (s === 'triathlon')
-      return <TriathlonScreen width={374} height={804} theme={tweaks.theme}
+      return <TriathlonScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
                tracksCycle={profile.tracksCycle}
                triathlonOverrides={triathlonOverrides}
