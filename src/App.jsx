@@ -11,6 +11,7 @@ import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
+import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
@@ -468,6 +469,10 @@ function App() {
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;
+    if (s === 'triathlon')
+      return <TriathlonScreen width={374} height={804} theme={tweaks.theme}
+               onNav={navigate}
+               tracksCycle={profile.tracksCycle} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
@@ -531,6 +536,7 @@ function App() {
               { value: 'gym-edit',    label: 'Gym · Session editor' },
               { value: 'gym-day',     label: 'Gym · Day activities' },
               { value: 'gym-library', label: 'Gym · Exercise library' },
+              { value: 'triathlon',   label: 'Triathlon · Plan' },
               { value: 'gym-session', label: 'Gym · In session' },
               { value: 'gym-summary', label: 'Gym · Summary' },
               { value: 'food',        label: 'Food · Weekly tracker' },
