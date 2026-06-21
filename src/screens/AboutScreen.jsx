@@ -97,7 +97,7 @@ function AboutScreen({
   profile = {}, userSettings = {}, plan = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, tracksCycle = true,
-  sheetsStatus = 'disconnected',
+  sheetsStatus = 'disconnected', sheetUrl = null,
   onConnectSheets, onDisconnectSheets, onReconnectSheets,
 }) {
   const t = themes[theme];
@@ -190,6 +190,100 @@ function AboutScreen({
             </div>
           </div>
         </div>
+
+        {/* Google Sheets sync */}
+        <Section title="Data sync" theme={theme}>
+          <div style={{ fontSize: 11, color: t.text2, marginBottom: 12, lineHeight: 1.5 }}>
+            Connect Google Sheets to back up your data to your Google Drive and keep it safe across devices.
+          </div>
+
+          {/* Status row */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '10px 0', borderBottom: `1px solid ${t.border}`,
+          }}>
+            {/* Google Sheets icon */}
+            <div style={{
+              width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+              background: sheetsStatus === 'connected' ? '#1A73E8' : (theme === 'dark' ? t.surface2 : '#F5F3EF'),
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <rect x="4" y="2" width="16" height="20" rx="2" fill={sheetsStatus === 'connected' ? '#fff' : '#34A853'} fillOpacity={sheetsStatus === 'connected' ? 1 : 0.9} />
+                <rect x="7" y="8"  width="10" height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
+                <rect x="7" y="11" width="10" height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
+                <rect x="7" y="14" width="7"  height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
+              </svg>
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: t.text, fontWeight: 500 }}>Google Sheets</div>
+              <div style={{ fontSize: 10.5, color: t.text3 }}>
+                {sheetsStatus === 'connected'       && 'Syncing to Google Drive'}
+                {sheetsStatus === 'disconnected'    && 'Not connected'}
+                {sheetsStatus === 'needs-reconnect' && 'Session expired — reconnect to resume'}
+                {sheetsStatus === 'connecting'      && 'Connecting…'}
+              </div>
+            </div>
+
+            {sheetsStatus === 'disconnected' && onConnectSheets && (
+              <button onClick={onConnectSheets} style={{
+                padding: '5px 12px', borderRadius: 8,
+                background: t.accent + '15', color: t.accent,
+                border: `1px solid ${t.accent + '30'}`,
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+              }}>Connect</button>
+            )}
+            {sheetsStatus === 'needs-reconnect' && onReconnectSheets && (
+              <button onClick={onReconnectSheets} style={{
+                padding: '5px 12px', borderRadius: 8,
+                background: '#F59E0B15', color: '#D97706',
+                border: '1px solid #F59E0B30',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+              }}>Reconnect</button>
+            )}
+            {sheetsStatus === 'connected' && onDisconnectSheets && (
+              <button onClick={onDisconnectSheets} style={{
+                padding: '5px 12px', borderRadius: 8,
+                background: '#BE3B2E15', color: '#BE3B2E',
+                border: '1px solid #BE3B2E30',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+              }}>Disconnect</button>
+            )}
+            {sheetsStatus === 'connecting' && (
+              <div style={{
+                width: 18, height: 18, border: `2px solid ${t.accent}`,
+                borderTopColor: 'transparent', borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite', flexShrink: 0,
+              }} />
+            )}
+          </div>
+
+          {sheetsStatus === 'connected' && sheetUrl && (
+            <a href={sheetUrl} target="_blank" rel="noopener noreferrer" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 0', borderBottom: `1px solid ${t.border}`,
+              textDecoration: 'none',
+            }}>
+              <div>
+                <div style={{ fontSize: 12, color: t.accent, fontWeight: 500 }}>Open in Google Sheets</div>
+                <div style={{
+                  fontSize: 10, color: t.text3, marginTop: 1,
+                  maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {sheetUrl}
+                </div>
+              </div>
+              <span style={{ fontSize: 14, color: t.accent }}>↗</span>
+            </a>
+          )}
+
+          <div style={{ padding: '10px 0 2px', fontSize: 11, color: t.text3, lineHeight: 1.6 }}>
+            {sheetsStatus === 'connected'
+              ? 'Saved to 6 tabs: Profile · Sessions · Food Log · Custom Foods · Settings · Backup.'
+              : 'Without sync, data is stored only in this browser and will be lost if you clear your cache.'}
+          </div>
+        </Section>
 
         {/* Body stats */}
         <Section title="Body stats" theme={theme}>
@@ -354,81 +448,6 @@ function AboutScreen({
               </div>
             );
           })}
-        </Section>
-
-        {/* Google Sheets sync */}
-        <Section title="Data sync" theme={theme}>
-          <div style={{ fontSize: 11, color: t.text2, marginBottom: 12, lineHeight: 1.5 }}>
-            Connect Google Sheets to back up your data to your Google Drive and keep it safe across devices.
-          </div>
-
-          {/* Status row */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 0', borderBottom: `1px solid ${t.border}`,
-          }}>
-            {/* Google Sheets icon */}
-            <div style={{
-              width: 36, height: 36, borderRadius: 9, flexShrink: 0,
-              background: sheetsStatus === 'connected' ? '#1A73E8' : (theme === 'dark' ? t.surface2 : '#F5F3EF'),
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <rect x="4" y="2" width="16" height="20" rx="2" fill={sheetsStatus === 'connected' ? '#fff' : '#34A853'} fillOpacity={sheetsStatus === 'connected' ? 1 : 0.9} />
-                <rect x="7" y="8"  width="10" height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
-                <rect x="7" y="11" width="10" height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
-                <rect x="7" y="14" width="7"  height="1.5" rx="0.75" fill={sheetsStatus === 'connected' ? '#1A73E8' : '#fff'} />
-              </svg>
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, color: t.text, fontWeight: 500 }}>Google Sheets</div>
-              <div style={{ fontSize: 10.5, color: t.text3 }}>
-                {sheetsStatus === 'connected'    && 'Syncing to Google Drive'}
-                {sheetsStatus === 'disconnected' && 'Not connected'}
-                {sheetsStatus === 'needs-reconnect' && 'Session expired — reconnect to resume'}
-                {sheetsStatus === 'connecting'   && 'Connecting…'}
-              </div>
-            </div>
-
-            {sheetsStatus === 'disconnected' && onConnectSheets && (
-              <button onClick={onConnectSheets} style={{
-                padding: '5px 12px', borderRadius: 8,
-                background: t.accent + '15', color: t.accent,
-                border: `1px solid ${t.accent + '30'}`,
-                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
-              }}>Connect</button>
-            )}
-            {sheetsStatus === 'needs-reconnect' && onReconnectSheets && (
-              <button onClick={onReconnectSheets} style={{
-                padding: '5px 12px', borderRadius: 8,
-                background: '#F59E0B15', color: '#D97706',
-                border: '1px solid #F59E0B30',
-                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
-              }}>Reconnect</button>
-            )}
-            {sheetsStatus === 'connected' && onDisconnectSheets && (
-              <button onClick={onDisconnectSheets} style={{
-                padding: '5px 12px', borderRadius: 8,
-                background: '#BE3B2E15', color: '#BE3B2E',
-                border: '1px solid #BE3B2E30',
-                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
-              }}>Disconnect</button>
-            )}
-            {sheetsStatus === 'connecting' && (
-              <div style={{
-                width: 18, height: 18, border: `2px solid ${t.accent}`,
-                borderTopColor: 'transparent', borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite', flexShrink: 0,
-              }} />
-            )}
-          </div>
-
-          <div style={{ padding: '10px 0 2px', fontSize: 11, color: t.text3, lineHeight: 1.6 }}>
-            {sheetsStatus === 'connected'
-              ? 'Your data is automatically saved to Google Sheets after every change.'
-              : 'Without sync, data is stored only in this browser and will be lost if you clear your cache.'}
-          </div>
         </Section>
 
         {/* App info + sign out */}
