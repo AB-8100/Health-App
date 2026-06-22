@@ -3,7 +3,19 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabaseKey) {
+  console.error(
+    'Forma: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in .env.local\n' +
+    'Copy .env.example to .env.local and fill in your Supabase project credentials.'
+  );
+}
+
+// Fall back to placeholder values so the module loads; auth calls will fail gracefully
+// and the app will fall through to the login screen via the 6-second timeout.
+export const supabase = createClient(
+  supabaseUrl  || 'https://placeholder.supabase.co',
+  supabaseKey  || 'placeholder-key'
+);
 
 // ── Load — fetch from all tables and reconstruct the app snapshot ─────────────
 

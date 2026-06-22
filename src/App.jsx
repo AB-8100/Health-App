@@ -285,6 +285,21 @@ function App() {
     });
   };
 
+  const resetProfile = () => {
+    setProfileRaw(EMPTY_PROFILE);
+    setPlanRaw(DEFAULT_PLAN);
+    setSettingsRaw(DEFAULT_SETTINGS);
+    setCompletedSessions([]);
+    setFoodLog({});
+    setActivities({});
+    setTriathlonOverrides({});
+    setTriathlonDone({});
+    setCustomFoods([]);
+    setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
+    setOnboarding(true);
+    setScreen('home');
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     disconnectGoogle();
