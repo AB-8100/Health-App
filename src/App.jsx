@@ -329,7 +329,10 @@ function App() {
   const handleSignUp = async (displayName, email, password) => {
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: { data: { full_name: displayName } },
+      options: {
+        data: { full_name: displayName },
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
     });
     if (error) throw new Error(error.message);
     // If email confirmation is disabled in Supabase, session is returned immediately
