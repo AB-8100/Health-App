@@ -1,6 +1,7 @@
 import React from 'react';
 
-import { loadFromCache, saveToCache, scheduleSaveAll, loadAccounts, saveAccounts, loadSession, saveSession, clearSession } from './utils/storage';
+import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
+import { supabase, loadUserData } from './utils/supabase';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -15,7 +16,7 @@ import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
-import { LoginScreen, hashPassword } from './screens/LoginScreen';
+import { LoginScreen } from './screens/LoginScreen';
 
 const TWEAK_DEFAULTS = {
   "theme": "light",
@@ -102,44 +103,63 @@ function App() {
     sheetsConnectedRef.current = sheetsStatus === 'connected';
   }, [sheetsStatus]);
 
-  React.useEffect(() => {
-    const sessionUserId = loadSession();
-    if (sessionUserId) {
-      const accounts = loadAccounts();
-      const account = accounts.find(a => a.id === sessionUserId);
-      if (account) {
-        setCurrentUser({ id: account.id, email: account.email, name: account.name });
-        const saved = loadFromCache(account.id);
-        if (saved) hydrateState(saved);
+  const bootstrapUser = React.useCallback(async (supaSession) => {
+    const sbUser = supaSession?.user;
+    if (!sbUser) { setAuthState('login'); return; }
 
-        const status = getSheetsStatus();
-        setSheetsStatus(status);
-        if (status === 'connected') {
-          const connected = initFromCache();
-          if (connected) {
-            loadFromSheets().then(sheetsData => {
-              if (!sheetsData) return;
-              const localAt  = saved?.savedAt  ? new Date(saved.savedAt)       : new Date(0);
-              const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
-              if (sheetsAt > localAt) {
-                hydrateState(sheetsData);
-                saveToCache(sheetsData, account.id);
-              }
-            }).catch(() => setSheetsStatus('needs-reconnect'));
-          }
+    const name = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email.split('@')[0];
+    setCurrentUser({ id: sbUser.id, email: sbUser.email, name });
+
+    // Load from local cache first for instant paint
+    const cached = loadFromCache(sbUser.id);
+    if (cached) hydrateState(cached);
+
+    // Then fetch from Supabase and merge if newer
+    try {
+      const remote = await loadUserData(sbUser.id);
+      if (remote) {
+        const localAt  = cached?.savedAt  ? new Date(cached.savedAt)  : new Date(0);
+        const remoteAt = remote.savedAt ? new Date(remote.savedAt) : new Date(0);
+        if (remoteAt > localAt) {
+          hydrateState(remote);
+          saveToCache(remote, sbUser.id);
         }
-        // Route to the correct initial screen based on saved profile
-        const p = saved?.profile;
-        if (p && !p.hasGym && p.hasEventTraining) setScreen('triathlon');
-        else if (p && !p.hasGym && !p.hasEventTraining) setScreen('food');
-        // else default stays 'gym-hub'
+      }
+    } catch (e) { console.warn('Forma: remote load failed', e); }
 
-        setAuthState('app');
-        return;
+    const status = getSheetsStatus();
+    setSheetsStatus(status);
+    if (status === 'connected') {
+      const connected = initFromCache();
+      if (connected) {
+        loadFromSheets().then(sheetsData => {
+          if (!sheetsData) return;
+          const localAt  = cached?.savedAt  ? new Date(cached.savedAt)       : new Date(0);
+          const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
+          if (sheetsAt > localAt) {
+            hydrateState(sheetsData);
+            saveToCache(sheetsData, sbUser.id);
+          }
+        }).catch(() => setSheetsStatus('needs-reconnect'));
       }
     }
-    setAuthState('login');
+
+    const p = cached?.profile;
+    if (p && !p.hasGym && p.hasEventTraining) setScreen('triathlon');
+    else if (p && !p.hasGym && !p.hasEventTraining) setScreen('food');
+
+    setAuthState('app');
   }, []);
+
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => bootstrapUser(data.session));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) bootstrapUser(session);
+      else setAuthState('login');
+    });
+    return () => subscription.unsubscribe();
+  }, [bootstrapUser]);
 
   // Scale phone frame to fit viewport on desktop; fill viewport on real phones
   React.useEffect(() => {
@@ -216,8 +236,8 @@ function App() {
     });
   };
 
-  const handleSignOut = () => {
-    clearSession();
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
     disconnectGoogle();
     setSheetsStatus('disconnected');
     setCurrentUser(null);
@@ -237,32 +257,21 @@ function App() {
   };
 
   const handleLogin = async (email, password) => {
-    const accounts = loadAccounts();
-    const account = accounts.find(a => a.email === email);
-    if (!account) throw new Error('No account found with that email.');
-    const hash = await hashPassword(password);
-    if (hash !== account.passwordHash) throw new Error('Incorrect password.');
-    saveSession(account.id);
-    setCurrentUser({ id: account.id, email: account.email, name: account.name });
-    const saved = loadFromCache(account.id);
-    if (saved) hydrateState(saved);
-    setAuthState('app');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    // onAuthStateChange will call bootstrapUser automatically
   };
 
   const handleSignUp = async (displayName, email, password) => {
-    const accounts = loadAccounts();
-    if (accounts.find(a => a.email === email)) {
-      throw new Error('An account with this email already exists.');
-    }
-    const hash = await hashPassword(password);
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    const newAccount = { id, email, name: displayName, passwordHash: hash, createdAt: new Date().toISOString() };
-    saveAccounts([...accounts, newAccount]);
-    saveSession(id);
-    setCurrentUser({ id, email, name: displayName });
-    setProfileRaw({ ...EMPTY_PROFILE, name: displayName });
-    setOnboarding(true);
-    setAuthState('app');
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { full_name: displayName } },
+    });
+    if (error) throw new Error(error.message);
+    // If email confirmation is disabled in Supabase, session is returned immediately
+    if (data.session) return; // onAuthStateChange handles the rest
+    // If confirmation required, inform the user
+    throw new Error('Check your email to confirm your account, then sign in.');
   };
 
   React.useEffect(() => {

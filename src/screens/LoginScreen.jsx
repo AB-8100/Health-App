@@ -1,12 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
-
-export async function hashPassword(password) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode('forma_v1:' + password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+import { supabase } from '../utils/supabase';
 
 export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogin, onSignUp }) {
   const t = themes[theme];
@@ -14,6 +8,7 @@ export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogi
   const [form, setForm] = React.useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [googleLoading, setGoogleLoading] = React.useState(false);
 
   const update = (patch) => { setForm(f => ({ ...f, ...patch })); setError(''); };
 
@@ -41,6 +36,21 @@ export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogi
   };
 
   const switchMode = (m) => { setMode(m); setError(''); setForm({ name: '', email: '', password: '', confirm: '' }); };
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
+    } catch (e) {
+      setError(e.message);
+      setGoogleLoading(false);
+    }
+  };
 
   return (
     <div style={{
@@ -193,17 +203,42 @@ export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogi
           </div>
         )}
 
-        <div style={{
-          marginTop: 20, padding: '10px 12px', borderRadius: 10,
-          background: t.surface2, border: `1px dashed ${t.border}`,
-          fontSize: 11, color: t.text3, lineHeight: 1.5,
-          display: 'flex', gap: 8, alignItems: 'flex-start',
-        }}>
-          <span>🔒</span>
-          <span>Your account and health data are stored locally on this device. Nothing is sent to external servers.</span>
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 0' }}>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
+          <span style={{ fontSize: 11, color: t.text3 }}>or</span>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
         </div>
+
+        {/* Google sign-in */}
+        <button
+          onClick={handleGoogle}
+          disabled={googleLoading || loading}
+          style={{
+            width: '100%', padding: '13px', borderRadius: 13, marginTop: 12,
+            background: t.surface, border: `1px solid ${t.border}`,
+            fontFamily: t.sans, fontSize: 13.5, fontWeight: 600, color: t.text,
+            cursor: (googleLoading || loading) ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            opacity: (googleLoading || loading) ? 0.6 : 1,
+          }}
+        >
+          <GoogleIcon />
+          {googleLoading ? 'Redirecting…' : 'Continue with Google'}
+        </button>
       </div>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.12 17.64 11.84 17.64 9.2z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+      <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+    </svg>
   );
 }
 
