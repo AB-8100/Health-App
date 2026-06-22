@@ -16,7 +16,7 @@ export async function loadUserData(userId) {
     { data: foodRows },
     { data: customFoods },
     { data: activities },
-    { data: triathlon },
+    { data: trainingPlans },
   ] = await Promise.all([
     supabase.from('profiles').select('*').eq('user_id', userId).single(),
     supabase.from('user_settings').select('*').eq('user_id', userId).single(),
@@ -25,7 +25,7 @@ export async function loadUserData(userId) {
     supabase.from('food_log').select('*').eq('user_id', userId),
     supabase.from('custom_foods').select('*').eq('user_id', userId),
     supabase.from('day_activities').select('*').eq('user_id', userId),
-    supabase.from('triathlon_data').select('*').eq('user_id', userId).single(),
+    supabase.from('training_plans').select('*').eq('user_id', userId),
   ]);
 
   if (!profile && !settings && !plan) return null;
@@ -61,9 +61,11 @@ export async function loadUserData(userId) {
     foodLog,
     customFoods:        (customFoods ?? []).map(dbToCustomFood),
     activities:         activitiesMap,
-    triathlonOverrides: triathlon?.overrides ?? {},
-    triathlonDone:      triathlon?.done      ?? {},
-    savedAt:            profile?.updated_at  ?? new Date().toISOString(),
+    // App currently uses triathlon plan; keyed by training_type for future plans
+    triathlonOverrides: trainingPlans?.find(p => p.training_type === 'triathlon')?.overrides ?? {},
+    triathlonDone:      trainingPlans?.find(p => p.training_type === 'triathlon')?.done      ?? {},
+    trainingPlans:      trainingPlans ?? [],
+    savedAt:            profile?.updated_at ?? new Date().toISOString(),
   };
 }
 
@@ -122,11 +124,12 @@ export async function saveUserData(userId, snapshot) {
     );
   }
   if (snapshot.triathlonOverrides !== undefined || snapshot.triathlonDone !== undefined) {
-    ops.push(supabase.from('triathlon_data').upsert({
-      user_id:   userId,
-      overrides: snapshot.triathlonOverrides ?? {},
-      done:      snapshot.triathlonDone      ?? {},
-      updated_at: new Date().toISOString(),
+    ops.push(supabase.from('training_plans').upsert({
+      user_id:       userId,
+      training_type: 'triathlon',
+      overrides:     snapshot.triathlonOverrides ?? {},
+      done:          snapshot.triathlonDone      ?? {},
+      updated_at:    new Date().toISOString(),
     }));
   }
 
