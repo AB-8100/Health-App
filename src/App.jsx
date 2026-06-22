@@ -331,7 +331,7 @@ function App() {
       email, password,
       options: {
         data: { full_name: displayName },
-        emailRedirectTo: window.location.origin + window.location.pathname,
+        emailRedirectTo: import.meta.env.VITE_APP_URL || (window.location.origin + import.meta.env.BASE_URL),
       },
     });
     if (error) throw new Error(error.message);
