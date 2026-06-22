@@ -1062,6 +1062,48 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        onReorderSchedule, onImportSessions, onEditSession,
                        tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
+
+  if (!plan.splitDays) {
+    return (
+      <div style={{
+        width, height, background:t.bg, fontFamily:t.sans, color:t.text,
+        display:'flex', flexDirection:'column', overflow:'hidden', position:'relative'
+      }}>
+        <div style={{
+          height:44, display:'flex', alignItems:'flex-end', justifyContent:'space-between',
+          padding:'0 22px 8px', fontSize:14, fontWeight:600
+        }}>
+          <span>9:41</span>
+          <div style={{ display:'flex', gap:5, alignItems:'center', fontSize:11 }}>
+            <span>●●●</span><span>📶</span><span>🔋</span>
+          </div>
+        </div>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 28px', gap:16 }}>
+          <div style={{
+            width:64, height:64, borderRadius:18,
+            background:`linear-gradient(135deg, ${t.accent}20, #6D4AAF20)`,
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:28
+          }}>🏋️</div>
+          <div style={{ textAlign:'center' }}>
+            <div style={{ fontFamily:t.serif, fontSize:24, color:t.text, marginBottom:8 }}>
+              No gym plan yet
+            </div>
+            <div style={{ fontSize:13, color:t.text2, lineHeight:1.6 }}>
+              Your training plan will appear here. Plans and workout logging are coming soon.
+            </div>
+          </div>
+        </div>
+        <BottomNav
+          theme={theme} active="gym"
+          onNav={onNav}
+          tracksCycle={tracksCycle}
+          hasGym={hasGym}
+          hasEventTraining={hasEventTraining}
+        />
+      </div>
+    );
+  }
+
   const split = SPLITS[plan.splitDays] || SPLITS[3];
 
   // Use plan.scheduleOverride only if all its day IDs still exist in the current split.

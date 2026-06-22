@@ -34,17 +34,13 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
     weight: 65,
     goal: '',
     connected: [],
-    splitDays: 3,
     hasGym: true,
     hasEventTraining: false,
   });
 
   // Step config — split only appears when gym is selected
-  const allSteps = ['welcome', 'basics', 'features', 'goal', 'imports', 'split', 'done'];
-  const steps = allSteps.filter(s => {
-    if (s === 'split') return profile.hasGym;
-    return true;
-  });
+  const allSteps = ['welcome', 'basics', 'features', 'goal', 'imports', 'done'];
+  const steps = allSteps;
   const current = steps[step] || 'welcome';
   const progress = (step + 1) / steps.length;
   const isLast = step === steps.length - 1;
@@ -465,7 +461,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               {[
                 { label:'Profile',  value: `${profile.name || '—'} · ${profile.age}yrs` },
                 { label:'Goal',     value: GOAL_OPTIONS.find(g => g.id === profile.goal)?.label || '—' },
-                profile.hasGym ? { label:'Gym split', value: SPLITS[profile.splitDays].name } : null,
+                profile.hasGym ? { label:'Gym', value:'Enabled' } : null,
                 profile.hasEventTraining ? { label:'Event training', value:'Enabled' } : null,
                 profile.tracksCycle ? { label:'Cycle', value:'Tracking on' } : null,
                 profile.connected.length ? { label:'Connected', value:`${profile.connected.length} apps` } : null,

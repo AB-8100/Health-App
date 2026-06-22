@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
   weightUnit: 'kg',
   heightUnit: 'cm',
 };
-const DEFAULT_PLAN = { splitDays: 3, todayIdx: 0, overrides: {} };
+const DEFAULT_PLAN = { splitDays: null, todayIdx: 0, overrides: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error boundary — catches render crashes so the app never goes fully blank
@@ -352,7 +352,7 @@ function App() {
   }, [tweaks.theme]);
 
   const startSession = () => {
-    const split = SPLITS[plan.splitDays] || SPLITS[3];
+    const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
     if (!split || !split.days || !split.days.length) return;
     const todayBase = split.days[(plan.todayIdx || 0) % split.days.length];
     const today = (plan.overrides && plan.overrides[todayBase.id]) || todayBase;
@@ -434,7 +434,7 @@ function App() {
   };
 
   const completeOnboarding = (newProfile) => {
-    const newPlan = { splitDays: newProfile.splitDays || 3, todayIdx: 0, overrides: {} };
+    const newPlan = { splitDays: null, todayIdx: 0, overrides: {} };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setSettingsRaw(DEFAULT_SETTINGS);
