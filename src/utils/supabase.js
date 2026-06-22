@@ -41,6 +41,7 @@ export async function loadUserData(userId) {
       protein:  row.protein_g,
       carbs:    row.carbs_g,
       fat:      row.fat_g,
+      sugar:    row.sugar_g ?? null,
       meal:     row.meal ?? null,
       ...(row.extra ?? {}),
     });
@@ -140,6 +141,8 @@ function dbToProfile(r) {
   return {
     name: r.name, age: r.age, sex: r.sex,
     height: r.height_cm, weight: r.weight_kg,
+    bmi: r.bmi,
+    location: r.location, timezone: r.timezone ?? 'UTC',
     goal: r.goal, hasGym: r.has_gym,
     hasEventTraining: r.has_event_training,
     tracksCycle: r.tracks_cycle, splitDays: r.split_days,
@@ -148,8 +151,15 @@ function dbToProfile(r) {
   };
 }
 function profileToDb(p) {
-  const { name, age, sex, height, weight, goal, hasGym, hasEventTraining, tracksCycle, splitDays, connected, ...extra } = p;
-  return { name, age, sex, height_cm: height, weight_kg: weight, goal, has_gym: hasGym ?? true, has_event_training: hasEventTraining ?? false, tracks_cycle: tracksCycle ?? false, split_days: splitDays ?? 3, connected: connected ?? [], extra };
+  const { name, age, sex, height, weight, goal, hasGym, hasEventTraining, tracksCycle, splitDays, connected, location, timezone, ...extra } = p;
+  const bmi = (height && weight) ? Math.round((weight / ((height / 100) ** 2)) * 10) / 10 : null;
+  return {
+    name, age, sex, height_cm: height, weight_kg: weight, bmi,
+    location: location ?? null, timezone: timezone ?? 'UTC',
+    goal, has_gym: hasGym ?? true, has_event_training: hasEventTraining ?? false,
+    tracks_cycle: tracksCycle ?? false, split_days: splitDays ?? 3,
+    connected: connected ?? [], extra,
+  };
 }
 
 function dbToSettings(r) {
@@ -182,7 +192,7 @@ function foodLogToRows(userId, foodLog) {
   const rows = [];
   for (const [date, day] of Object.entries(foodLog)) {
     for (const entry of day.entries ?? []) {
-      const { id, name, calories, protein, carbs, fat, meal, ...extra } = entry;
+      const { id, name, calories, protein, carbs, fat, sugar, meal, ...extra } = entry;
       rows.push({
         id:        id || undefined,
         user_id:   userId,
@@ -192,6 +202,7 @@ function foodLogToRows(userId, foodLog) {
         protein_g: protein  ?? null,
         carbs_g:   carbs    ?? null,
         fat_g:     fat      ?? null,
+        sugar_g:   sugar    ?? null,
         meal:      meal     ?? null,
         extra:     Object.keys(extra).length ? extra : {},
       });
@@ -201,9 +212,18 @@ function foodLogToRows(userId, foodLog) {
 }
 
 function dbToCustomFood(r) {
-  return { id: r.id, name: r.name, calories: r.calories, protein: r.protein_g, carbs: r.carbs_g, fat: r.fat_g, ...(r.extra ?? {}) };
+  return { id: r.id, name: r.name, calories: r.calories, protein: r.protein_g, carbs: r.carbs_g, fat: r.fat_g, sugar: r.sugar_g, ...(r.extra ?? {}) };
 }
 function customFoodToDb(userId, f) {
-  const { id, name, calories, protein, carbs, fat, ...extra } = f;
-  return { id: id || undefined, user_id: userId, name, calories: calories ?? null, protein_g: protein ?? null, carbs_g: carbs ?? null, fat_g: fat ?? null, extra: Object.keys(extra).length ? extra : {} };
+  const { id, name, calories, protein, carbs, fat, sugar, ...extra } = f;
+  return { id: id || undefined, user_id: userId, name, calories: calories ?? null, protein_g: protein ?? null, carbs_g: carbs ?? null, fat_g: fat ?? null, sugar_g: sugar ?? null, extra: Object.keys(extra).length ? extra : {} };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Returns today's date string (YYYY-MM-DD) in the user's local timezone via Supabase
+export async function getUserLocalDate(userId) {
+  const { data, error } = await supabase.rpc('get_user_local_date', { p_user_id: userId });
+  if (error) throw error;
+  return data; // 'YYYY-MM-DD'
 }
