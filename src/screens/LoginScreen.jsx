@@ -43,7 +43,7 @@ export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogi
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin },
+        options: { redirectTo: window.location.origin + window.location.pathname.replace(/\/$/, '') },
       });
       if (error) throw error;
     } catch (e) {
