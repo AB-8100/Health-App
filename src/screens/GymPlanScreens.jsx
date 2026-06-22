@@ -1062,13 +1062,15 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        onReorderSchedule, onImportSessions, onEditSession,
                        tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
-  const split = SPLITS[plan.splitDays] || SPLITS[3];
+  const split = plan?.splitDays ? SPLITS[plan.splitDays] : null;
 
   // Use plan.scheduleOverride only if all its day IDs still exist in the current split.
-  const splitDayIds = new Set(split.days.map(d => d.id));
-  const scheduleOverrideIsValid = plan.scheduleOverride &&
+  const splitDayIds = split ? new Set(split.days.map(d => d.id)) : new Set();
+  const scheduleOverrideIsValid = split && plan.scheduleOverride &&
     plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
-  const schedule = scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule;
+  const schedule = split
+    ? (scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule)
+    : ['—','—','—','—','—','—','—'];
 
   // viewDayIdx: which day the exercise focus card shows (defaults to today's day of week)
   const [viewDayIdx, setViewDayIdx] = React.useState(dayOfWeek);
@@ -1163,6 +1165,24 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
         </div>
       </div>
 
+      {!split ? (
+        <div style={{
+          flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+          justifyContent:'center', gap:12, padding:'0 32px', textAlign:'center'
+        }}>
+          <div style={{
+            width:56, height:56, borderRadius:16, background:t.accent+'18',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:26, marginBottom:4
+          }}>🏋️</div>
+          <div style={{ fontFamily:t.serif, fontSize:26, color:t.text, lineHeight:1.1 }}>
+            Gym plan
+          </div>
+          <div style={{ fontSize:13, color:t.text3, lineHeight:1.6 }}>
+            Your training split will appear here once it's set up.
+          </div>
+        </div>
+      ) : (
       <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 16px' }} className="phone-scroll">
 
         {/* Top header */}
@@ -1778,6 +1798,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
         </div>
 
       </div>
+      )}
 
       <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
 
@@ -1821,7 +1842,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
 function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
                             plan, onBack, onSave, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
   const t = themes[theme];
-  const [selected, setSelected] = React.useState(plan.splitDays);
+  const [selected, setSelected] = React.useState(plan.splitDays || 3);
   const split = SPLITS[selected];
 
   // Editable schedule — initialise from plan override if valid, else default

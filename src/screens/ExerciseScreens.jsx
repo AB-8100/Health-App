@@ -572,10 +572,10 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
                               onBack, onSave, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false,
                               onEditGym }) {
   const t = themes[theme];
-  const split = SPLITS[plan.splitDays];
-  const slot = split.schedule[dayIdx];
-  const isRestDay = slot === '—';
-  const gymDay = !isRestDay ? split.days.find(d => d.id === slot) : null;
+  const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
+  const slot = split ? split.schedule[dayIdx] : '—';
+  const isRestDay = !split || slot === '—';
+  const gymDay = !isRestDay && split ? split.days.find(d => d.id === slot) : null;
   const [dayActs, setDayActs] = React.useState(activities[dayIdx] || []);
   const [addingType, setAddingType] = React.useState(null);
   const [draft, setDraft] = React.useState({ duration: 30, time: '07:00', notes: '' });
