@@ -156,11 +156,12 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => bootstrapUser(data.session));
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) bootstrapUser(session);
-      else setAuthState('login');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        bootstrapUser(session);
+      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
+        setAuthState('login');
+      }
     });
     return () => subscription.unsubscribe();
   }, [bootstrapUser]);
