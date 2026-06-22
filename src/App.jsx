@@ -110,9 +110,14 @@ function App() {
     const name = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email.split('@')[0];
     setCurrentUser({ id: sbUser.id, email: sbUser.email, name });
 
+    let profileFound = false;
+
     // Load from local cache first for instant paint
     const cached = loadFromCache(sbUser.id);
-    if (cached) hydrateState(cached);
+    if (cached) {
+      hydrateState(cached);
+      profileFound = !!(cached.profile?.name);
+    }
 
     // Then fetch from Supabase and merge if newer
     try {
@@ -124,8 +129,11 @@ function App() {
           hydrateState(remote);
           saveToCache(remote, sbUser.id);
         }
+        if (remote.profile?.name) profileFound = true;
       }
     } catch (e) { console.warn('Forma: remote load failed', e); }
+
+    if (!profileFound) setOnboarding(true);
 
     const status = getSheetsStatus();
     setSheetsStatus(status);
