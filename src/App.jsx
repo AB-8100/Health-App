@@ -38,6 +38,39 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_PLAN = { splitDays: 3, todayIdx: 0, overrides: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Error boundary — catches render crashes so the app never goes fully blank
+// ─────────────────────────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{
+          width: '100%', height: '100%', background: '#F5F2ED',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24,
+          fontFamily: 'DM Sans, system-ui, sans-serif',
+        }}>
+          <div style={{ fontSize: 32, color: '#BE5A38', fontFamily: 'DM Serif Display, serif' }}>Forma</div>
+          <div style={{ fontSize: 14, color: '#6B6560', textAlign: 'center' }}>
+            Something went wrong. Please reload and try again.
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 20px', borderRadius: 10, background: '#BE5A38',
+              color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >Reload</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Splash screen — shown while checking for a cached session on load
 // ─────────────────────────────────────────────────────────────────────────────
 function SplashScreen({ theme = 'light', userName }) {
@@ -156,14 +189,25 @@ function App() {
   }, []);
 
   React.useEffect(() => {
+    // getSession() triggers the PKCE code exchange when returning from OAuth.
+    // Only bootstrap if a session is returned — never set 'login' here to avoid
+    // clobbering a SIGNED_IN that fires immediately after.
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) bootstrapUser(data.session);
+    });
+
+    // Safety net: if auth state hasn't resolved in 6s, show login rather than hang on splash.
+    const timeout = setTimeout(() => setAuthState(s => s === 'loading' ? 'login' : s), 6000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      clearTimeout(timeout);
       if (session) {
         bootstrapUser(session);
-      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
+      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
         setAuthState('login');
       }
     });
-    return () => subscription.unsubscribe();
+    return () => { subscription.unsubscribe(); clearTimeout(timeout); };
   }, [bootstrapUser]);
 
   // Scale phone frame to fit viewport on desktop; fill viewport on real phones
@@ -628,9 +672,11 @@ function App() {
         <div className="phone-frame">
           <div className="phone-notch"/>
           <div className="phone-inner">
-            <div key={onboardingActive ? 'onboarding' : screen} className="screen-anim">
-              {renderScreen(screen)}
-            </div>
+            <ErrorBoundary>
+              <div key={onboardingActive ? 'onboarding' : screen} className="screen-anim">
+                {renderScreen(screen)}
+              </div>
+            </ErrorBoundary>
           </div>
         </div>
         <div className="label">
