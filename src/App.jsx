@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
-import { supabase, loadUserData } from './utils/supabase';
+import { supabase, loadUserData, saveUserData } from './utils/supabase';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -143,26 +143,48 @@ function App() {
     const name = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email.split('@')[0];
     setCurrentUser({ id: sbUser.id, email: sbUser.email, name });
 
-    // Load from local cache first for instant paint
+    // Show cached data immediately for instant paint while Supabase loads
     const cached = loadFromCache(sbUser.id);
     if (cached) hydrateState(cached);
 
-    // Then fetch from Supabase and merge if newer
-    let hasAnyData = !!cached;
+    // Supabase is the source of truth — if it has no data the user is new,
+    // regardless of what's in localStorage (handles stale cache after account reset).
+    let hasAnyData = false;
+    let loadedProfile = null;
     try {
       const remote = await loadUserData(sbUser.id);
       if (remote) {
         hasAnyData = true;
+        loadedProfile = remote.profile ?? null;
         const localAt  = cached?.savedAt  ? new Date(cached.savedAt)  : new Date(0);
         const remoteAt = remote.savedAt ? new Date(remote.savedAt) : new Date(0);
-        if (remoteAt > localAt) {
+        if (remoteAt >= localAt) {
           hydrateState(remote);
           saveToCache(remote, sbUser.id);
+        } else {
+          loadedProfile = cached?.profile ?? null;
         }
       }
-    } catch (e) { console.warn('Forma: remote load failed', e); }
+      // remote === null → no Supabase data → treat as new user even if cache exists
+    } catch (e) {
+      console.warn('Forma: remote load failed', e);
+      // Network/DB error: fall back to cache so existing users aren't locked out offline
+      if (cached) { hasAnyData = true; loadedProfile = cached.profile ?? null; }
+    }
 
-    if (!hasAnyData) setOnboarding(true);
+    if (!hasAnyData) {
+      // New user or stale cache after account reset — clear everything and start fresh
+      setProfileRaw(EMPTY_PROFILE);
+      setPlanRaw(DEFAULT_PLAN);
+      setSettingsRaw(DEFAULT_SETTINGS);
+      setCompletedSessions([]);
+      setFoodLog({});
+      setActivities({});
+      setTriathlonOverrides({});
+      setTriathlonDone({});
+      setCustomFoods([]);
+      setOnboarding(true);
+    }
 
     const status = getSheetsStatus();
     setSheetsStatus(status);
@@ -181,9 +203,11 @@ function App() {
       }
     }
 
-    const p = cached?.profile;
-    if (p && !p.hasGym && p.hasEventTraining) setScreen('triathlon');
-    else if (p && !p.hasGym && !p.hasEventTraining) setScreen('food');
+    // Route to the right starting screen based on the loaded profile
+    if (hasAnyData && loadedProfile && !loadedProfile.hasGym) {
+      if (loadedProfile.hasEventTraining) setScreen('triathlon');
+      else setScreen('food');
+    }
 
     setAuthState('app');
   }, []);
@@ -443,6 +467,10 @@ function App() {
                        savedAt: new Date().toISOString() };
     saveToCache(snapshot, currentUserIdRef.current);
     if (sheetsConnectedRef.current) saveToSheets(snapshot);
+    // Save to Supabase immediately so next login finds real remote data
+    if (currentUserIdRef.current) {
+      saveUserData(currentUserIdRef.current, snapshot).catch(e => console.warn('Forma: onboarding save failed', e));
+    }
     setOnboarding(false);
     if (newProfile.hasGym) setScreen('gym-hub');
     else if (newProfile.hasEventTraining) setScreen('triathlon');

@@ -84,6 +84,26 @@ export function TriathlonScreen({
   const fmtDate = (d) => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
   const weekLabel = `${fmtDate(weekStart)} – ${fmtDate(weekEnd)}`;
 
+  // No plan data yet — show blank placeholder
+  if (Object.keys(TRIATHLON_PLAN).length === 0) {
+    return (
+      <div style={{ width, height, background:t.bg, fontFamily:t.sans, color:t.text, display:'flex', flexDirection:'column' }}>
+        <div style={{ height:44, display:'flex', alignItems:'flex-end', justifyContent:'space-between', padding:'0 22px 8px', fontSize:14, fontWeight:600, flexShrink:0 }}>
+          <span>9:41</span>
+          <div style={{ display:'flex', gap:5, alignItems:'center', fontSize:11 }}>
+            <span>●●●</span><span>📶</span><span>🔋</span>
+          </div>
+        </div>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:'0 32px', textAlign:'center' }}>
+          <div style={{ width:56, height:56, borderRadius:16, background:t.accent+'18', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, marginBottom:4 }}>🏅</div>
+          <div style={{ fontFamily:t.serif, fontSize:26, color:t.text, lineHeight:1.1 }}>Training plan</div>
+          <div style={{ fontSize:13, color:t.text3, lineHeight:1.6 }}>Your event training plan will appear here once it's set up.</div>
+        </div>
+        <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       width, height, background:t.bg, fontFamily:t.sans, color:t.text,
