@@ -252,6 +252,42 @@ export async function saveUserGoals(userId, goalsPayload) {
   if (error) throw error;
 }
 
+// ── Intake (deep questionnaire) ───────────────────────────────────────────────
+
+export async function saveUserIntake(userId, intakePayload) {
+  const { error } = await supabase.from('user_intake').upsert({
+    user_id:              userId,
+    status:               intakePayload.status ?? 'draft',
+    run_baseline:         intakePayload.runBaseline  ?? {},
+    swim_baseline:        intakePayload.swimBaseline ?? {},
+    bike_baseline:        intakePayload.bikeBaseline ?? {},
+    availability:         intakePayload.availability ?? {},
+    injury:               intakePayload.injury ?? {},
+    completed_at:         intakePayload.completedAt ?? null,
+    updated_at:           new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function loadUserIntake(userId) {
+  const { data, error } = await supabase
+    .from('user_intake')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+  return {
+    status:       data.status,
+    completedAt:  data.completed_at,
+    runBaseline:  data.run_baseline  ?? {},
+    swimBaseline: data.swim_baseline ?? {},
+    bikeBaseline: data.bike_baseline ?? {},
+    availability: data.availability  ?? {},
+    injury:       data.injury        ?? {},
+  };
+}
+
 export async function loadUserGoals(userId) {
   const { data, error } = await supabase
     .from('user_goals')
