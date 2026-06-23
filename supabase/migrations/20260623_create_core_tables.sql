@@ -256,6 +256,8 @@ create policy "Users can delete own training plans"
 -- ── get_user_local_date RPC ───────────────────────────────────────────────────
 -- Returns the current date string in the user's stored timezone.
 
+drop function if exists public.get_user_local_date(uuid);
+
 create or replace function public.get_user_local_date(p_user_id uuid)
 returns text
 language sql
