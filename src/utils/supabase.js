@@ -234,6 +234,34 @@ function customFoodToDb(userId, f) {
   return { id: id || undefined, user_id: userId, name, calories: calories ?? null, protein_g: protein ?? null, carbs_g: carbs ?? null, fat_g: fat ?? null, sugar_g: sugar ?? null, extra: Object.keys(extra).length ? extra : {} };
 }
 
+// ── Goals ─────────────────────────────────────────────────────────────────────
+
+export async function saveUserGoals(userId, goalsPayload) {
+  const { error } = await supabase.from('user_goals').upsert({
+    user_id:                userId,
+    goals:                  goalsPayload.goals ?? [],
+    training_days_per_week: goalsPayload.trainingDaysPerWeek ?? null,
+    unavailable_days:       goalsPayload.unavailableDays ?? [],
+    gym_access:             goalsPayload.gymAccess ?? false,
+    pool_access:            goalsPayload.poolAccess ?? false,
+    pool_days:              goalsPayload.poolDays ?? [],
+    regular_sports:         goalsPayload.regularSports ?? [],
+    primary_goal_type:      goalsPayload.goals?.[0]?.type ?? null,
+    updated_at:             new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function loadUserGoals(userId) {
+  const { data, error } = await supabase
+    .from('user_goals')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data ?? null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Returns today's date string (YYYY-MM-DD) in the user's local timezone via Supabase

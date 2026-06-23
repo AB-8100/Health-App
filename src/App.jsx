@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
-import { supabase, loadUserData, saveUserData } from './utils/supabase';
+import { supabase, loadUserData, saveUserData, saveUserGoals } from './utils/supabase';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -14,6 +14,7 @@ import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, D
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
@@ -339,6 +340,27 @@ function App() {
     setOnboardingStage('goals');
   };
 
+  // Called when Stage 2 (GoalsSetup) is complete
+  const handleGoalsSetupComplete = (goalsPayload) => {
+    const primaryGoalType = goalsPayload.goals?.[0]?.type ?? '';
+    const hasEvent = goalsPayload.goals?.some(g => g.type === 'event_race');
+
+    const updatedProfile = {
+      ...profile,
+      goal: primaryGoalType,
+      hasGym: goalsPayload.gymAccess,
+      hasEventTraining: hasEvent,
+    };
+
+    // Persist goals to Supabase
+    if (currentUserIdRef.current) {
+      saveUserGoals(currentUserIdRef.current, goalsPayload)
+        .catch(e => console.warn('Forma: goals save failed', e));
+    }
+
+    completeOnboarding(updatedProfile);
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     disconnectGoogle();
@@ -573,7 +595,11 @@ function App() {
       return <ProfileSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                onComplete={handleProfileSetupComplete} />;
-    if (onboardingStage === 'goals' || onboardingActive)
+    if (onboardingStage === 'goals')
+      return <GoalsSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
+               onComplete={handleGoalsSetupComplete} />;
+    if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
                initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '', ...profile }} />;
