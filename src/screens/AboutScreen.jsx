@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { ACTIVITY_LEVELS, calculateTDEE } from '../utils/calories';
 const CONNECTED_SERVICES = [
   { id: 'strava',   name: 'Strava',       scope: 'Runs · Rides · Workouts',  color: '#FC5200', glyph: 'S' },
   { id: 'apple',    name: 'Apple Health', scope: 'Steps · Sleep · Weight',   color: '#000',    glyph: 'A' },
@@ -116,10 +117,21 @@ function AboutScreen({
     new Set(profile.connected || [])
   );
 
+  const TDEE_KEYS = new Set(['weight', 'height', 'age', 'sex', 'activityLevel']);
+
   const updateProfile = (key, val) => {
     const updated = { ...localProfile, [key]: val };
     setLP(updated);
     if (onSaveProfile) onSaveProfile(updated);
+    // Recalculate TDEE when any relevant stat changes
+    if (TDEE_KEYS.has(key)) {
+      const tdee = calculateTDEE(updated);
+      if (tdee) {
+        const nextSettings = { ...localSettings, dailyCaloriesBase: tdee };
+        setLS(nextSettings);
+        if (onSaveSettings) onSaveSettings(nextSettings);
+      }
+    }
   };
 
   const updateSettings = (key, val) => {
@@ -334,6 +346,32 @@ function AboutScreen({
           </div>
         </Section>
 
+        {/* Activity level */}
+        <Section title="Activity level" theme={theme}>
+          <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
+            Used to calculate your daily calorie target via the Mifflin-St Jeor equation.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {ACTIVITY_LEVELS.map(lvl => {
+              const active = (localProfile.activityLevel || 'moderate') === lvl.id;
+              return (
+                <button key={lvl.id} onClick={() => updateProfile('activityLevel', lvl.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                  borderRadius: 10, background: active ? t.accent + '15' : 'transparent',
+                  border: `1px solid ${active ? t.accent : t.border}`,
+                  cursor: 'pointer', fontFamily: t.sans, textAlign: 'left',
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: t.text, fontWeight: active ? 500 : 400 }}>{lvl.label}</div>
+                    <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>{lvl.sub}</div>
+                  </div>
+                  {active && <span style={{ fontSize: 14, color: t.accent }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </Section>
+
         {/* Training goal */}
         <Section title="Training goal" theme={theme}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -369,6 +407,26 @@ function AboutScreen({
 
         {/* Calorie settings */}
         <Section title="Calorie targets" theme={theme}>
+          {(() => {
+            const tdee = calculateTDEE(localProfile);
+            return tdee ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 10px', borderRadius: 10, marginBottom: 10,
+                background: t.accent + '10', border: `1px solid ${t.accent}30`,
+              }}>
+                <div>
+                  <div style={{ fontSize: 11.5, color: t.text, fontWeight: 500 }}>Calculated TDEE</div>
+                  <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
+                    Mifflin-St Jeor · {ACTIVITY_LEVELS.find(l => l.id === (localProfile.activityLevel || 'moderate'))?.label}
+                  </div>
+                </div>
+                <div style={{ fontFamily: t.mono, fontSize: 15, color: t.accent, fontWeight: 600 }}>
+                  {tdee.toLocaleString()} kcal
+                </div>
+              </div>
+            ) : null;
+          })()}
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
             Base calories apply on rest days. Gym days and active sessions add their boost automatically.
           </div>

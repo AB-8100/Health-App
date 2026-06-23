@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { SPLITS } from './GymPlanScreens';
+import { ACTIVITY_LEVELS } from '../utils/calories';
 const IMPORT_SOURCES = [
   { id:'strava',   name:'Strava',         scope:'Runs · Rides · Workouts', color:'#FC5200', glyph:'S', cycleOnly:false },
   { id:'mfp',      name:'MyFitnessPal',   scope:'Meals · Macros · Calories', color:'#0072CE', glyph:'M', cycleOnly:false },
@@ -32,6 +33,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
     tracksCycle: false,
     height: 168,
     weight: 65,
+    activityLevel: 'moderate',
     goal: '',
     connected: [],
     splitDays: null,
@@ -225,6 +227,32 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
             <Field label="Height" theme={theme}>
               <NumberRow value={profile.height} min={130} max={220} unit="cm"
                 onChange={(v) => update({ height: v })} theme={theme}/>
+            </Field>
+
+            <Field label="Activity level" theme={theme}
+              hint="Used to calculate your daily calorie target.">
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {ACTIVITY_LEVELS.map(lvl => (
+                  <button key={lvl.id} onClick={() => update({ activityLevel: lvl.id })}
+                    style={{
+                      textAlign:'left', padding:'10px 12px', borderRadius:11, cursor:'pointer',
+                      fontFamily:t.sans, display:'flex', alignItems:'center', gap:10,
+                      background: profile.activityLevel === lvl.id ? t.accent+'10' : t.surface,
+                      border:`1.5px solid ${profile.activityLevel === lvl.id ? t.accent : t.border}`,
+                    }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:12.5, color:t.text, fontWeight:500 }}>{lvl.label}</div>
+                      <div style={{ fontSize:10.5, color:t.text3, marginTop:1 }}>{lvl.sub}</div>
+                    </div>
+                    {profile.activityLevel === lvl.id && (
+                      <span style={{
+                        width:18, height:18, borderRadius:'50%', background:t.accent, color:t.accentText,
+                        display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, flexShrink:0
+                      }}>✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </Field>
           </div>
         )}

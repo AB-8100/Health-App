@@ -9,6 +9,7 @@ import {
 } from './utils/googleSheets';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakSelect, TweakButton } from './components/tweaks/TweaksPanel';
 import { themes, RefinedHome } from './screens/HomeScreen';
+import { calculateTDEE } from './utils/calories';
 import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
@@ -26,7 +27,8 @@ const TWEAK_DEFAULTS = {
 
 const EMPTY_PROFILE = {
   name: '', age: 30, sex: '', tracksCycle: false,
-  height: 168, weight: 65, goal: '', connected: [], splitDays: null,
+  height: 168, weight: 65, activityLevel: 'moderate',
+  goal: '', connected: [], splitDays: null,
   hasGym: true, hasEventTraining: false,
 };
 const DEFAULT_SETTINGS = {
@@ -459,10 +461,12 @@ function App() {
 
   const completeOnboarding = (newProfile) => {
     const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
+    const tdee = calculateTDEE(newProfile);
+    const newSettings = { ...DEFAULT_SETTINGS, ...(tdee ? { dailyCaloriesBase: tdee } : {}) };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
-    setSettingsRaw(DEFAULT_SETTINGS);
-    const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
+    setSettingsRaw(newSettings);
+    const snapshot = { profile: newProfile, plan: newPlan, userSettings: newSettings,
                        completedSessions: [], foodLog: {}, activities: {},
                        savedAt: new Date().toISOString() };
     saveToCache(snapshot, currentUserIdRef.current);
