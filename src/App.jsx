@@ -188,9 +188,6 @@ function App() {
       setCustomFoods([]);
       // Stage 1: collect profile basics before anything else
       setOnboardingStage('profile');
-    } else if (loadedProfile && !loadedProfile.goal) {
-      // Has profile but no goal set yet — send to Stage 2
-      setOnboardingStage('goals');
     }
 
     const status = getSheetsStatus();
@@ -275,7 +272,9 @@ function App() {
     if (data.triathlonOverrides)   setTriathlonOverrides(data.triathlonOverrides);
     if (data.triathlonDone)        setTriathlonDone(data.triathlonDone);
     if (data.customFoods)          setCustomFoods(data.customFoods);
-    setOnboarding(!data.profile || !data.profile.name);
+    // Route to profile setup (Stage 1) instead of the old onboarding wizard
+    // if the loaded profile has no name; stages beyond 1 are handled in bootstrapUser
+    if (!data.profile || !data.profile.name) setOnboardingStage('profile');
   };
 
   const buildSnapshot = (overrides = {}) => ({
@@ -332,11 +331,12 @@ function App() {
     setScreen('home');
   };
 
-  // Called when Stage 1 (ProfileSetup) is complete
+  // Called when Stage 1 (ProfileSetup) is complete; Stage 2 will be wired here
   const handleProfileSetupComplete = ({ profile: p, userSettings: s }) => {
     setProfileRaw(prev => ({ ...prev, ...p }));
     setSettingsRaw(prev => ({ ...prev, ...s }));
-    setOnboardingStage('goals');
+    setOnboardingStage(null);
+    setScreen('gym-hub');
   };
 
   const handleSignOut = async () => {
@@ -573,7 +573,8 @@ function App() {
       return <ProfileSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                onComplete={handleProfileSetupComplete} />;
-    if (onboardingStage === 'goals' || onboardingActive)
+    // Stage 2 (Goals) will be inserted here; old OnboardingScreen kept only for dev tools
+    if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
                initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '', ...profile }} />;
