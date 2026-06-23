@@ -1,0 +1,2010 @@
+{
+  "activities": [
+    {
+      "name": "Football (match, 90 min)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "low",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Suppresses legs gym + running within 48hrs"
+    },
+    {
+      "name": "Football (5-a-side, casual)",
+      "category": "team_sport",
+      "leg_load": "medium",
+      "upper_load": "low",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Soft warning for legs sessions next day"
+    },
+    {
+      "name": "Football (5-a-side, competitive)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "low",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Rugby (full match)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 72,
+      "notes": "Full body high load \u2014 treat as rest-day trigger"
+    },
+    {
+      "name": "Rugby (training session)",
+      "category": "team_sport",
+      "leg_load": "medium",
+      "upper_load": "medium",
+      "cardio_load": "medium",
+      "core_load": "medium",
+      "intensity_default": "medium",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Basketball (game)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "medium",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Basketball (casual/shooting around)",
+      "category": "team_sport",
+      "leg_load": "low",
+      "upper_load": "low",
+      "cardio_load": "low",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": ""
+    },
+    {
+      "name": "Netball (match)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "low",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Hockey (match)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "medium",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Bent-over running position adds core + back load"
+    },
+    {
+      "name": "Tennis (match)",
+      "category": "racket_sport",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Asymmetric upper body load"
+    },
+    {
+      "name": "Tennis (casual hit)",
+      "category": "racket_sport",
+      "leg_load": "low",
+      "upper_load": "medium",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Badminton (competitive)",
+      "category": "racket_sport",
+      "leg_load": "medium",
+      "upper_load": "medium",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Squash",
+      "category": "racket_sport",
+      "leg_load": "high",
+      "upper_load": "medium",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Very high intensity \u2014 short duration but maximal effort"
+    },
+    {
+      "name": "Volleyball (competitive)",
+      "category": "team_sport",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Jumping + spiking = high legs and upper"
+    },
+    {
+      "name": "Volleyball (casual beach)",
+      "category": "team_sport",
+      "leg_load": "medium",
+      "upper_load": "medium",
+      "cardio_load": "medium",
+      "core_load": "medium",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Sand adds leg load vs indoor"
+    },
+    {
+      "name": "Cricket (batting/fielding)",
+      "category": "team_sport",
+      "leg_load": "low",
+      "upper_load": "medium",
+      "cardio_load": "low",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Mostly low intensity with explosive bursts"
+    },
+    {
+      "name": "Cricket (bowling)",
+      "category": "team_sport",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 48,
+      "notes": "High shoulder and core load for bowlers"
+    },
+    {
+      "name": "Running (easy / recovery)",
+      "category": "endurance",
+      "leg_load": "low",
+      "upper_load": "none",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Doesn't block legs gym next day"
+    },
+    {
+      "name": "Running (tempo)",
+      "category": "endurance",
+      "leg_load": "medium",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Soft warning for legs gym within 24hrs"
+    },
+    {
+      "name": "Running (interval / track)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Running (long run)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Suppresses legs gym within 48hrs"
+    },
+    {
+      "name": "Running (parkrun effort)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "low",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Counts as quality session not long run"
+    },
+    {
+      "name": "Cycling (easy / commute)",
+      "category": "endurance",
+      "leg_load": "low",
+      "upper_load": "none",
+      "cardio_load": "low",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "No block on gym sessions"
+    },
+    {
+      "name": "Cycling (moderate ride)",
+      "category": "endurance",
+      "leg_load": "medium",
+      "upper_load": "none",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Cycling (long ride)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Cycling (indoor / structured intervals)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "low",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Zwift / Wahoo structured session"
+    },
+    {
+      "name": "Swimming (easy / technique)",
+      "category": "endurance",
+      "leg_load": "low",
+      "upper_load": "medium",
+      "cardio_load": "medium",
+      "core_load": "medium",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Does not conflict with legs gym"
+    },
+    {
+      "name": "Swimming (moderate)",
+      "category": "endurance",
+      "leg_load": "low",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "medium",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Swimming (hard / intervals)",
+      "category": "endurance",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Open water swimming",
+      "category": "endurance",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Higher core demand than pool due to sighting + conditions"
+    },
+    {
+      "name": "Rowing (on water)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Full body \u2014 treat as high load day"
+    },
+    {
+      "name": "Rowing (ergometer / erg)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Triathlon brick (bike + run)",
+      "category": "endurance",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Combined session \u2014 counts as high legs + cardio load"
+    },
+    {
+      "name": "Legs day (gym)",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Suppresses running + football within 48hrs"
+    },
+    {
+      "name": "Push day (gym)",
+      "category": "gym",
+      "leg_load": "none",
+      "upper_load": "high",
+      "cardio_load": "none",
+      "core_load": "low",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Chest, shoulders, triceps"
+    },
+    {
+      "name": "Pull day (gym)",
+      "category": "gym",
+      "leg_load": "none",
+      "upper_load": "high",
+      "cardio_load": "none",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Back, biceps"
+    },
+    {
+      "name": "Upper body day (gym)",
+      "category": "gym",
+      "leg_load": "none",
+      "upper_load": "high",
+      "cardio_load": "none",
+      "core_load": "low",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Full body (gym)",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "low",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "All muscle groups \u2014 treat as high load day"
+    },
+    {
+      "name": "Conditioning circuit",
+      "category": "gym",
+      "leg_load": "medium",
+      "upper_load": "medium",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Running-specific: glutes, hips, single-leg, core"
+    },
+    {
+      "name": "Core / abs session",
+      "category": "gym",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "high",
+      "intensity_default": "low",
+      "recovery_hours": 24,
+      "notes": "Standalone core work \u2014 low overall load"
+    },
+    {
+      "name": "HIIT class",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "medium",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "CrossFit WOD",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Full body + cardio \u2014 treat same as full body high"
+    },
+    {
+      "name": "Powerlifting session",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "none",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 72,
+      "notes": "CNS fatigue extends recovery beyond muscle groups"
+    },
+    {
+      "name": "Olympic lifting session",
+      "category": "gym",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "none",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Yoga (gentle / restorative)",
+      "category": "mobility",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Good active recovery \u2014 never blocked"
+    },
+    {
+      "name": "Yoga (vinyasa / power)",
+      "category": "mobility",
+      "leg_load": "low",
+      "upper_load": "medium",
+      "cardio_load": "low",
+      "core_load": "medium",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Pilates",
+      "category": "mobility",
+      "leg_load": "low",
+      "upper_load": "low",
+      "cardio_load": "none",
+      "core_load": "high",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "High core focus but low overall load"
+    },
+    {
+      "name": "Stretching / foam rolling",
+      "category": "mobility",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "none",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Recovery only \u2014 always fine"
+    },
+    {
+      "name": "Mobility session",
+      "category": "mobility",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": ""
+    },
+    {
+      "name": "Boxing (sparring)",
+      "category": "combat",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Boxing (pad/bag work)",
+      "category": "combat",
+      "leg_load": "low",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "MMA / BJJ training",
+      "category": "combat",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Full body contact \u2014 high recovery demand"
+    },
+    {
+      "name": "Muay Thai",
+      "category": "combat",
+      "leg_load": "high",
+      "upper_load": "high",
+      "cardio_load": "high",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Surfing",
+      "category": "water_sport",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Paddle out = high upper; pop-up + surfing = core + legs"
+    },
+    {
+      "name": "Paddleboarding (SUP)",
+      "category": "water_sport",
+      "leg_load": "low",
+      "upper_load": "medium",
+      "cardio_load": "low",
+      "core_load": "high",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": ""
+    },
+    {
+      "name": "Kayaking / canoeing",
+      "category": "water_sport",
+      "leg_load": "none",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Climbing (bouldering)",
+      "category": "adventure",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "low",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 48,
+      "notes": "Finger/forearm load not captured \u2014 add grip fatigue note"
+    },
+    {
+      "name": "Climbing (sport / trad)",
+      "category": "adventure",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": ""
+    },
+    {
+      "name": "Hiking (moderate)",
+      "category": "adventure",
+      "leg_load": "medium",
+      "upper_load": "none",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Hiking (long / mountainous)",
+      "category": "adventure",
+      "leg_load": "high",
+      "upper_load": "none",
+      "cardio_load": "high",
+      "core_load": "medium",
+      "intensity_default": "high",
+      "recovery_hours": 48,
+      "notes": "Descent adds significant eccentric leg load"
+    },
+    {
+      "name": "Active recovery (walk / gentle swim)",
+      "category": "recovery",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "none",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Never blocked; can follow any session"
+    },
+    {
+      "name": "Rest day",
+      "category": "recovery",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "none",
+      "core_load": "none",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": "Fully clears all load flags"
+    }
+  ],
+  "exercises": [
+    {
+      "name": "Barbell Back Squat",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "core",
+        "lower_back"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "barbell",
+      "wger_id": 111
+    },
+    {
+      "name": "Barbell Front Squat",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "core",
+        "upper_back"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Goblet Squat",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "core"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "kettlebell",
+      "wger_id": null
+    },
+    {
+      "name": "Leg Press",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "machine",
+      "wger_id": 99
+    },
+    {
+      "name": "Romanian Deadlift",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "lower_back",
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Conventional Deadlift",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes",
+        "lower_back"
+      ],
+      "secondary_muscles": [
+        "quadriceps",
+        "core",
+        "traps"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": 29
+    },
+    {
+      "name": "Sumo Deadlift",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "glutes",
+        "hamstrings",
+        "quadriceps"
+      ],
+      "secondary_muscles": [
+        "lower_back",
+        "adductors"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Hip Thrust",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Bulgarian Split Squat",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "core"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Walking Lunge",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "core"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "dumbbell",
+      "wger_id": 47
+    },
+    {
+      "name": "Step Up",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Good Morning",
+      "category": "compound_lower",
+      "primary_muscles": [
+        "hamstrings",
+        "lower_back"
+      ],
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Leg Extension",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "quadriceps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "machine",
+      "wger_id": 116
+    },
+    {
+      "name": "Leg Curl (lying)",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "hamstrings"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "pull",
+      "equipment": "machine",
+      "wger_id": 101
+    },
+    {
+      "name": "Leg Curl (seated)",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "hamstrings"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "pull",
+      "equipment": "machine",
+      "wger_id": null
+    },
+    {
+      "name": "Calf Raise (standing)",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "calves"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "machine",
+      "wger_id": 219
+    },
+    {
+      "name": "Calf Raise (seated)",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "soleus"
+      ],
+      "secondary_muscles": [
+        "calves"
+      ],
+      "movement_pattern": "push",
+      "equipment": "machine",
+      "wger_id": null
+    },
+    {
+      "name": "Adductor Machine",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "adductors"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "machine",
+      "wger_id": null
+    },
+    {
+      "name": "Abductor Machine",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "abductors",
+        "glutes"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "machine",
+      "wger_id": null
+    },
+    {
+      "name": "Glute Kickback (cable)",
+      "category": "isolation_lower",
+      "primary_muscles": [
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Barbell Bench Press (flat)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest"
+      ],
+      "secondary_muscles": [
+        "triceps",
+        "anterior_deltoid"
+      ],
+      "movement_pattern": "push",
+      "equipment": "barbell",
+      "wger_id": 192
+    },
+    {
+      "name": "Barbell Bench Press (incline)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "upper_chest",
+        "anterior_deltoid"
+      ],
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "movement_pattern": "push",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Dumbbell Bench Press (flat)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest"
+      ],
+      "secondary_muscles": [
+        "triceps",
+        "anterior_deltoid"
+      ],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": 94
+    },
+    {
+      "name": "Dumbbell Bench Press (incline)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "upper_chest",
+        "anterior_deltoid"
+      ],
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Overhead Press (barbell)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "anterior_deltoid",
+        "lateral_deltoid"
+      ],
+      "secondary_muscles": [
+        "triceps",
+        "upper_chest",
+        "core"
+      ],
+      "movement_pattern": "push",
+      "equipment": "barbell",
+      "wger_id": 200
+    },
+    {
+      "name": "Overhead Press (dumbbell)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "anterior_deltoid",
+        "lateral_deltoid"
+      ],
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": 79
+    },
+    {
+      "name": "Push Up",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest"
+      ],
+      "secondary_muscles": [
+        "triceps",
+        "anterior_deltoid",
+        "core"
+      ],
+      "movement_pattern": "push",
+      "equipment": "bodyweight",
+      "wger_id": 36
+    },
+    {
+      "name": "Dips (chest focus)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest",
+        "triceps"
+      ],
+      "secondary_muscles": [
+        "anterior_deltoid"
+      ],
+      "movement_pattern": "push",
+      "equipment": "bodyweight",
+      "wger_id": 38
+    },
+    {
+      "name": "Cable Fly (flat)",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest"
+      ],
+      "secondary_muscles": [
+        "anterior_deltoid"
+      ],
+      "movement_pattern": "push",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Dumbbell Fly",
+      "category": "compound_upper_push",
+      "primary_muscles": [
+        "chest"
+      ],
+      "secondary_muscles": [
+        "anterior_deltoid"
+      ],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": 85
+    },
+    {
+      "name": "Pull Up",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "biceps"
+      ],
+      "secondary_muscles": [
+        "rear_deltoid",
+        "core"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "bodyweight",
+      "wger_id": 31
+    },
+    {
+      "name": "Chin Up",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "biceps"
+      ],
+      "secondary_muscles": [
+        "chest"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Barbell Row (bent over)",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "rhomboids"
+      ],
+      "secondary_muscles": [
+        "biceps",
+        "rear_deltoid",
+        "lower_back"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "barbell",
+      "wger_id": 63
+    },
+    {
+      "name": "Dumbbell Row (single arm)",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "rhomboids"
+      ],
+      "secondary_muscles": [
+        "biceps",
+        "rear_deltoid"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "dumbbell",
+      "wger_id": 88
+    },
+    {
+      "name": "Lat Pulldown",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats"
+      ],
+      "secondary_muscles": [
+        "biceps",
+        "rear_deltoid"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cable",
+      "wger_id": 122
+    },
+    {
+      "name": "Seated Cable Row",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "rhomboids"
+      ],
+      "secondary_muscles": [
+        "biceps",
+        "rear_deltoid"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cable",
+      "wger_id": 115
+    },
+    {
+      "name": "T-Bar Row",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "lats",
+        "rhomboids"
+      ],
+      "secondary_muscles": [
+        "biceps",
+        "lower_back"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Face Pull",
+      "category": "compound_upper_pull",
+      "primary_muscles": [
+        "rear_deltoid",
+        "rhomboids"
+      ],
+      "secondary_muscles": [
+        "external_rotators"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Bicep Curl (barbell)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "biceps"
+      ],
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "barbell",
+      "wger_id": 72
+    },
+    {
+      "name": "Bicep Curl (dumbbell)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "biceps"
+      ],
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "dumbbell",
+      "wger_id": 75
+    },
+    {
+      "name": "Bicep Curl (cable)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "biceps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "pull",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Hammer Curl",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "biceps",
+        "brachialis"
+      ],
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "dumbbell",
+      "wger_id": 84
+    },
+    {
+      "name": "Tricep Pushdown (cable)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "triceps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "cable",
+      "wger_id": 86
+    },
+    {
+      "name": "Skull Crusher",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "triceps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Overhead Tricep Extension",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "triceps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": 96
+    },
+    {
+      "name": "Lateral Raise",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "lateral_deltoid"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": 78
+    },
+    {
+      "name": "Lateral Raise (cable)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "lateral_deltoid"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Front Raise",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "anterior_deltoid"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Reverse Fly",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "rear_deltoid",
+        "rhomboids"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "pull",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Shrug (barbell)",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "traps"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "pull",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Chest Supported Row",
+      "category": "isolation_upper",
+      "primary_muscles": [
+        "rhomboids",
+        "rear_deltoid"
+      ],
+      "secondary_muscles": [
+        "lats"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Plank",
+      "category": "core",
+      "primary_muscles": [
+        "core",
+        "transverse_abdominis"
+      ],
+      "secondary_muscles": [
+        "shoulders",
+        "glutes"
+      ],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": 146
+    },
+    {
+      "name": "Side Plank",
+      "category": "core",
+      "primary_muscles": [
+        "obliques",
+        "core"
+      ],
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Dead Bug",
+      "category": "core",
+      "primary_muscles": [
+        "core",
+        "transverse_abdominis"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Cable Crunch",
+      "category": "core",
+      "primary_muscles": [
+        "rectus_abdominis"
+      ],
+      "secondary_muscles": [
+        "obliques"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Hanging Leg Raise",
+      "category": "core",
+      "primary_muscles": [
+        "rectus_abdominis",
+        "hip_flexors"
+      ],
+      "secondary_muscles": [
+        "obliques"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "bodyweight",
+      "wger_id": 33
+    },
+    {
+      "name": "Ab Wheel Rollout",
+      "category": "core",
+      "primary_muscles": [
+        "core",
+        "transverse_abdominis"
+      ],
+      "secondary_muscles": [
+        "shoulders",
+        "lats"
+      ],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Russian Twist",
+      "category": "core",
+      "primary_muscles": [
+        "obliques"
+      ],
+      "secondary_muscles": [
+        "core"
+      ],
+      "movement_pattern": "rotation",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Pallof Press",
+      "category": "core",
+      "primary_muscles": [
+        "core",
+        "obliques"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "cable",
+      "wger_id": null
+    },
+    {
+      "name": "Sit Up",
+      "category": "core",
+      "primary_muscles": [
+        "rectus_abdominis"
+      ],
+      "secondary_muscles": [
+        "hip_flexors"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "bodyweight",
+      "wger_id": 35
+    },
+    {
+      "name": "Glute Bridge",
+      "category": "core",
+      "primary_muscles": [
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Bird Dog",
+      "category": "core",
+      "primary_muscles": [
+        "core",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "lower_back"
+      ],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Copenhagen Plank",
+      "category": "core",
+      "primary_muscles": [
+        "adductors",
+        "core"
+      ],
+      "secondary_muscles": [
+        "obliques"
+      ],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Power Clean",
+      "category": "olympic",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes",
+        "traps"
+      ],
+      "secondary_muscles": [
+        "quadriceps",
+        "core",
+        "shoulders"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Hang Clean",
+      "category": "olympic",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes",
+        "traps"
+      ],
+      "secondary_muscles": [
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Snatch",
+      "category": "olympic",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes",
+        "traps",
+        "shoulders"
+      ],
+      "secondary_muscles": [
+        "quadriceps",
+        "core"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Clean and Jerk",
+      "category": "olympic",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes",
+        "quadriceps",
+        "shoulders"
+      ],
+      "secondary_muscles": [
+        "core",
+        "traps"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "barbell",
+      "wger_id": null
+    },
+    {
+      "name": "Kettlebell Swing",
+      "category": "olympic",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "core",
+        "shoulders",
+        "lats"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "kettlebell",
+      "wger_id": null
+    },
+    {
+      "name": "Box Jump",
+      "category": "olympic",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "calves",
+        "core"
+      ],
+      "movement_pattern": "squat",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Single Leg Deadlift",
+      "category": "conditioning",
+      "primary_muscles": [
+        "hamstrings",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "core",
+        "lower_back"
+      ],
+      "movement_pattern": "hinge",
+      "equipment": "dumbbell",
+      "wger_id": null
+    },
+    {
+      "name": "Clamshell",
+      "category": "conditioning",
+      "primary_muscles": [
+        "glutes",
+        "abductors"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "resistance_band",
+      "wger_id": null
+    },
+    {
+      "name": "Monster Walk",
+      "category": "conditioning",
+      "primary_muscles": [
+        "glutes",
+        "abductors"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "resistance_band",
+      "wger_id": null
+    },
+    {
+      "name": "Nordic Hamstring Curl",
+      "category": "conditioning",
+      "primary_muscles": [
+        "hamstrings"
+      ],
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Single Leg Calf Raise",
+      "category": "conditioning",
+      "primary_muscles": [
+        "calves",
+        "soleus"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "push",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Lateral Band Walk",
+      "category": "conditioning",
+      "primary_muscles": [
+        "glutes",
+        "abductors"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "resistance_band",
+      "wger_id": null
+    },
+    {
+      "name": "Hip Flexor March (standing)",
+      "category": "conditioning",
+      "primary_muscles": [
+        "hip_flexors",
+        "core"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "isometric",
+      "equipment": "bodyweight",
+      "wger_id": null
+    },
+    {
+      "name": "Reverse Hyperextension",
+      "category": "conditioning",
+      "primary_muscles": [
+        "glutes",
+        "hamstrings",
+        "lower_back"
+      ],
+      "secondary_muscles": [],
+      "movement_pattern": "hinge",
+      "equipment": "machine",
+      "wger_id": null
+    },
+    {
+      "name": "Treadmill Run",
+      "category": "cardio",
+      "primary_muscles": [
+        "quadriceps",
+        "hamstrings",
+        "calves"
+      ],
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "movement_pattern": "cardio",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Stationary Bike (moderate)",
+      "category": "cardio",
+      "primary_muscles": [
+        "quadriceps",
+        "hamstrings"
+      ],
+      "secondary_muscles": [
+        "glutes",
+        "calves"
+      ],
+      "movement_pattern": "cardio",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Stationary Bike (hard intervals)",
+      "category": "cardio",
+      "primary_muscles": [
+        "quadriceps",
+        "hamstrings"
+      ],
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "movement_pattern": "cardio",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Rowing Machine (moderate)",
+      "category": "cardio",
+      "primary_muscles": [
+        "lats",
+        "hamstrings",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "quadriceps",
+        "core",
+        "biceps"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Rowing Machine (hard)",
+      "category": "cardio",
+      "primary_muscles": [
+        "lats",
+        "hamstrings",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "quadriceps",
+        "core"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Elliptical (moderate)",
+      "category": "cardio",
+      "primary_muscles": [
+        "quadriceps",
+        "glutes"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "calves"
+      ],
+      "movement_pattern": "cardio",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Stairmaster",
+      "category": "cardio",
+      "primary_muscles": [
+        "glutes",
+        "quadriceps"
+      ],
+      "secondary_muscles": [
+        "hamstrings",
+        "calves",
+        "core"
+      ],
+      "movement_pattern": "cardio",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    },
+    {
+      "name": "Ski Erg",
+      "category": "cardio",
+      "primary_muscles": [
+        "lats",
+        "core",
+        "triceps"
+      ],
+      "secondary_muscles": [
+        "shoulders",
+        "glutes"
+      ],
+      "movement_pattern": "pull",
+      "equipment": "cardio_machine",
+      "wger_id": null
+    }
+  ],
+  "muscle_groups": [
+    {
+      "name": "quadriceps",
+      "body_region": "legs",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "hamstrings",
+      "body_region": "legs",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "glutes",
+      "body_region": "legs",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "calves",
+      "body_region": "legs",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "soleus",
+      "body_region": "legs",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "adductors",
+      "body_region": "legs",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "abductors",
+      "body_region": "legs",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "hip_flexors",
+      "body_region": "legs",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "chest",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "upper_chest",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "lats",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "rhomboids",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "traps",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "anterior_deltoid",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "lateral_deltoid",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "rear_deltoid",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "biceps",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "triceps",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "forearms",
+      "body_region": "upper",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "brachialis",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "external_rotators",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "core",
+      "body_region": "core",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "rectus_abdominis",
+      "body_region": "core",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "obliques",
+      "body_region": "core",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "transverse_abdominis",
+      "body_region": "core",
+      "recovery_hours_default": 24
+    },
+    {
+      "name": "lower_back",
+      "body_region": "core",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "upper_back",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    },
+    {
+      "name": "shoulders",
+      "body_region": "upper",
+      "recovery_hours_default": 48
+    }
+  ],
+  "meta": {
+    "version": "1.0",
+    "activity_count": 62,
+    "exercise_count": 85,
+    "muscle_group_count": 28,
+    "notes": "Seed data for Forma Supabase. Activities cover team sports, endurance, gym sessions, mobility, combat, and water sports. Exercises cover compound/isolation upper and lower, core, olympic, running conditioning, and cardio machines. wger_id fields map to wger.de open source exercise DB for future enrichment."
+  }
+}
