@@ -34,7 +34,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
     weight: 65,
     goal: '',
     connected: [],
-    splitDays: 3,
+    splitDays: null,
     hasGym: true,
     hasEventTraining: false,
   });
@@ -422,17 +422,19 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               ))}
             </div>
 
-            <div style={{
-              background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
-              padding:'14px 16px'
-            }}>
-              <div style={{ fontFamily:t.serif, fontSize:18, color:t.text, marginBottom:4 }}>
-                {SPLITS[profile.splitDays].name}
+            {profile.splitDays && SPLITS[profile.splitDays] && (
+              <div style={{
+                background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+                padding:'14px 16px'
+              }}>
+                <div style={{ fontFamily:t.serif, fontSize:18, color:t.text, marginBottom:4 }}>
+                  {SPLITS[profile.splitDays].name}
+                </div>
+                <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.5 }}>
+                  {SPLITS[profile.splitDays].description}
+                </div>
               </div>
-              <div style={{ fontSize:11.5, color:t.text2, lineHeight:1.5 }}>
-                {SPLITS[profile.splitDays].description}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -465,7 +467,7 @@ function OnboardingScreen({ width = 390, height = 820, theme = 'light', onComple
               {[
                 { label:'Profile',  value: `${profile.name || '—'} · ${profile.age}yrs` },
                 { label:'Goal',     value: GOAL_OPTIONS.find(g => g.id === profile.goal)?.label || '—' },
-                profile.hasGym ? { label:'Gym split', value: SPLITS[profile.splitDays].name } : null,
+                profile.hasGym && profile.splitDays ? { label:'Gym split', value: SPLITS[profile.splitDays].name } : null,
                 profile.hasEventTraining ? { label:'Event training', value:'Enabled' } : null,
                 profile.tracksCycle ? { label:'Cycle', value:'Tracking on' } : null,
                 profile.connected.length ? { label:'Connected', value:`${profile.connected.length} apps` } : null,
