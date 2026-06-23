@@ -1,7 +1,7 @@
--- Reference tables for Forma: activities, exercises, muscle_groups
+-- Reference tables for Forma: ref_activities, ref_exercises, ref_muscle_groups
 -- These are read-only seed tables (no user_id); seeded via scripts/seed-reference-data.js
 
-create table if not exists public.activities (
+create table if not exists public.ref_activities (
   id               bigint generated always as identity primary key,
   name             text        not null unique,
   category         text        not null,
@@ -14,7 +14,7 @@ create table if not exists public.activities (
   notes            text        not null default ''
 );
 
-create table if not exists public.exercises (
+create table if not exists public.ref_exercises (
   id               bigint generated always as identity primary key,
   name             text        not null unique,
   category         text        not null,
@@ -25,7 +25,7 @@ create table if not exists public.exercises (
   wger_id          int
 );
 
-create table if not exists public.muscle_groups (
+create table if not exists public.ref_muscle_groups (
   id                    bigint generated always as identity primary key,
   name                  text    not null unique,
   body_region           text    not null,
@@ -33,15 +33,15 @@ create table if not exists public.muscle_groups (
 );
 
 -- Enable RLS (read-only for all authenticated users; no writes from client)
-alter table public.activities    enable row level security;
-alter table public.exercises     enable row level security;
-alter table public.muscle_groups enable row level security;
+alter table public.ref_activities    enable row level security;
+alter table public.ref_exercises     enable row level security;
+alter table public.ref_muscle_groups enable row level security;
 
-create policy "Anyone can read activities"
-  on public.activities for select using (true);
+create policy "Anyone can read ref_activities"
+  on public.ref_activities for select using (true);
 
-create policy "Anyone can read exercises"
-  on public.exercises for select using (true);
+create policy "Anyone can read ref_exercises"
+  on public.ref_exercises for select using (true);
 
-create policy "Anyone can read muscle_groups"
-  on public.muscle_groups for select using (true);
+create policy "Anyone can read ref_muscle_groups"
+  on public.ref_muscle_groups for select using (true);

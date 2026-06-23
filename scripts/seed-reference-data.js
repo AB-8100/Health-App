@@ -42,7 +42,7 @@ async function upsert(table, rows, conflictColumn = 'name') {
 async function main() {
   console.log('Seeding reference tables…\n');
 
-  await upsert('activities', seed.activities.map(a => ({
+  await upsert('ref_activities', seed.activities.map(a => ({
     name:              a.name,
     category:          a.category,
     leg_load:          a.leg_load,
@@ -54,7 +54,7 @@ async function main() {
     notes:             a.notes ?? '',
   })));
 
-  await upsert('exercises', seed.exercises.map(e => ({
+  await upsert('ref_exercises', seed.exercises.map(e => ({
     name:              e.name,
     category:          e.category,
     primary_muscles:   e.primary_muscles,
@@ -64,7 +64,7 @@ async function main() {
     wger_id:           e.wger_id ?? null,
   })));
 
-  await upsert('muscle_groups', seed.muscle_groups.map(m => ({
+  await upsert('ref_muscle_groups', seed.muscle_groups.map(m => ({
     name:                   m.name,
     body_region:            m.body_region,
     recovery_hours_default: m.recovery_hours_default,
