@@ -14,6 +14,7 @@ import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, D
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -117,6 +118,8 @@ function App() {
   const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
+  // 'profile' = Stage 1 | 'goals' = Stage 2 | null = main app
+  const [onboardingStage, setOnboardingStage] = React.useState(null);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
@@ -183,7 +186,11 @@ function App() {
       setTriathlonOverrides({});
       setTriathlonDone({});
       setCustomFoods([]);
-      setOnboarding(true);
+      // Stage 1: collect profile basics before anything else
+      setOnboardingStage('profile');
+    } else if (loadedProfile && !loadedProfile.goal) {
+      // Has profile but no goal set yet — send to Stage 2
+      setOnboardingStage('goals');
     }
 
     const status = getSheetsStatus();
@@ -320,8 +327,16 @@ function App() {
     setTriathlonDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
-    setOnboarding(true);
+    setOnboardingStage('profile');
+    setOnboarding(false);
     setScreen('home');
+  };
+
+  // Called when Stage 1 (ProfileSetup) is complete
+  const handleProfileSetupComplete = ({ profile: p, userSettings: s }) => {
+    setProfileRaw(prev => ({ ...prev, ...p }));
+    setSettingsRaw(prev => ({ ...prev, ...s }));
+    setOnboardingStage('goals');
   };
 
   const handleSignOut = async () => {
@@ -340,6 +355,7 @@ function App() {
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(false);
+    setOnboardingStage(null);
     setScreen('gym-hub');
     setAuthState('login');
   };
@@ -472,6 +488,7 @@ function App() {
       saveUserData(currentUserIdRef.current, snapshot).catch(e => console.warn('Forma: onboarding save failed', e));
     }
     setOnboarding(false);
+    setOnboardingStage(null);
     if (newProfile.hasGym) setScreen('gym-hub');
     else if (newProfile.hasEventTraining) setScreen('triathlon');
     else setScreen('food');
@@ -552,10 +569,14 @@ function App() {
   const hasEventTraining = !!profile.hasEventTraining;
 
   const renderScreen = (s) => {
-    if (onboardingActive)
+    if (onboardingStage === 'profile')
+      return <ProfileSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
+               onComplete={handleProfileSetupComplete} />;
+    if (onboardingStage === 'goals' || onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
-               initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '' }} />;
+               initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '', ...profile }} />;
     if (s === 'home')
       return <RefinedHome width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
@@ -708,9 +729,11 @@ function App() {
              hasGym={hasGym} hasEventTraining={hasEventTraining} />;
   };
 
-  const screenLabel = onboardingActive
-    ? 'ONBOARDING'
-    : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
+  const screenLabel = onboardingStage === 'profile'
+    ? 'PROFILE SETUP'
+    : (onboardingStage === 'goals' || onboardingActive)
+      ? 'ONBOARDING'
+      : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
 
   return (
     <>
@@ -742,9 +765,10 @@ function App() {
         <TweakSection label="Navigate">
           <TweakSelect
             label="Screen"
-            value={onboardingActive ? 'onboarding' : screen}
+            value={onboardingStage === 'profile' ? 'profile-setup' : onboardingStage === 'goals' ? 'onboarding' : onboardingActive ? 'onboarding' : screen}
             options={[
-              { value: 'onboarding',  label: 'Onboarding' },
+              { value: 'profile-setup', label: 'Profile Setup (Stage 1)' },
+              { value: 'onboarding',  label: 'Onboarding (Stage 2+)' },
               { value: 'home',        label: 'Home' },
               { value: 'gym-hub',     label: 'Gym · Hub' },
               { value: 'gym-split',   label: 'Gym · Split picker' },
@@ -759,14 +783,15 @@ function App() {
               { value: 'cycle',       label: 'Cycle (stub)' },
             ]}
             onChange={(v) => {
-              if (v === 'onboarding') setOnboarding(true);
-              else { setOnboarding(false); setScreen(v); }
+              if (v === 'profile-setup') { setOnboardingStage('profile'); setOnboarding(false); }
+              else if (v === 'onboarding') { setOnboarding(true); setOnboardingStage(null); }
+              else { setOnboarding(false); setOnboardingStage(null); setScreen(v); }
             }}
           />
         </TweakSection>
         <TweakSection label="Profile">
           <TweakButton label="Re-run onboarding" secondary
-            onClick={() => { setOnboarding(true); setScreen('home'); }} />
+            onClick={() => { setOnboardingStage('profile'); setOnboarding(false); setScreen('home'); }} />
           <TweakButton label="Reset all data" secondary onClick={resetProfile} />
         </TweakSection>
       </TweaksPanel>
