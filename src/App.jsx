@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
-import { supabase, loadUserData, saveUserData } from './utils/supabase';
+import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake } from './utils/supabase';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -14,6 +14,8 @@ import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, D
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { TriathlonScreen } from './screens/TriathlonScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
+import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AboutScreen } from './screens/AboutScreen';
@@ -118,8 +120,10 @@ function App() {
   const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
-  // 'profile' = Stage 1 | 'goals' = Stage 2 | null = main app
+  // 'profile' = Stage 1 | 'goals' = Stage 2 | 'intake' = Stage 3 | null = main app
   const [onboardingStage, setOnboardingStage] = React.useState(null);
+  // Holds the Stage 2 payload while Stage 3 (intake) is shown
+  const [pendingGoalsPayload, setPendingGoalsPayload] = React.useState(null);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
@@ -337,6 +341,46 @@ function App() {
     setProfileRaw(prev => ({ ...prev, ...p }));
     setSettingsRaw(prev => ({ ...prev, ...s }));
     setOnboardingStage('goals');
+  };
+
+  // Called when Stage 2 (GoalsSetup) is complete — routes to Stage 3 (intake)
+  const handleGoalsSetupComplete = (goalsPayload) => {
+    // Persist goals to Supabase
+    if (currentUserIdRef.current) {
+      saveUserGoals(currentUserIdRef.current, goalsPayload)
+        .catch(e => console.warn('Forma: goals save failed', e));
+    }
+    // Hold onto the payload so Stage 3 can read goal types for conditional sections
+    setPendingGoalsPayload(goalsPayload);
+    setOnboardingStage('intake');
+  };
+
+  // Called when Stage 3 (DeepQuestionnaire) completes or is skipped
+  const handleIntakeComplete = (intakePayload, skipped) => {
+    const gp = pendingGoalsPayload || {};
+    const primaryGoalType = gp.goals?.[0]?.type ?? '';
+    const hasEvent = gp.goals?.some(g => g.type === 'event_race');
+
+    const updatedProfile = {
+      ...profile,
+      goal: primaryGoalType,
+      hasGym: gp.gymAccess ?? profile.hasGym,
+      hasEventTraining: hasEvent,
+    };
+
+    // Persist intake to Supabase
+    if (currentUserIdRef.current) {
+      saveUserIntake(currentUserIdRef.current, intakePayload)
+        .catch(e => console.warn('Forma: intake save failed', e));
+    }
+
+    // Trigger plan regeneration if a draft plan already exists and intake is complete
+    if (!skipped && updatedProfile.splitDays) {
+      console.info('Forma: intake complete — plan regeneration triggered');
+    }
+
+    setPendingGoalsPayload(null);
+    completeOnboarding(updatedProfile);
   };
 
   const handleSignOut = async () => {
@@ -573,7 +617,16 @@ function App() {
       return <ProfileSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                onComplete={handleProfileSetupComplete} />;
-    if (onboardingStage === 'goals' || onboardingActive)
+    if (onboardingStage === 'goals')
+      return <GoalsSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
+               onComplete={handleGoalsSetupComplete} />;
+    if (onboardingStage === 'intake')
+      return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
+               goalsPayload={pendingGoalsPayload}
+               onComplete={handleIntakeComplete} />;
+    if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
                initial={{ ...EMPTY_PROFILE, name: currentUser?.name || '', ...profile }} />;
@@ -731,9 +784,13 @@ function App() {
 
   const screenLabel = onboardingStage === 'profile'
     ? 'PROFILE SETUP'
-    : (onboardingStage === 'goals' || onboardingActive)
-      ? 'ONBOARDING'
-      : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
+    : onboardingStage === 'goals'
+      ? 'GOALS SETUP'
+      : onboardingStage === 'intake'
+        ? 'DEEP INTAKE'
+        : onboardingActive
+          ? 'ONBOARDING'
+          : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
 
   return (
     <>
@@ -765,10 +822,12 @@ function App() {
         <TweakSection label="Navigate">
           <TweakSelect
             label="Screen"
-            value={onboardingStage === 'profile' ? 'profile-setup' : onboardingStage === 'goals' ? 'onboarding' : onboardingActive ? 'onboarding' : screen}
+            value={onboardingStage === 'profile' ? 'profile-setup' : onboardingStage === 'goals' ? 'goals-setup' : onboardingStage === 'intake' ? 'deep-intake' : onboardingActive ? 'onboarding' : screen}
             options={[
               { value: 'profile-setup', label: 'Profile Setup (Stage 1)' },
-              { value: 'onboarding',  label: 'Onboarding (Stage 2+)' },
+              { value: 'goals-setup',   label: 'Goals Setup (Stage 2)' },
+              { value: 'deep-intake',   label: 'Deep Intake (Stage 3)' },
+              { value: 'onboarding',    label: 'Legacy Onboarding' },
               { value: 'home',        label: 'Home' },
               { value: 'gym-hub',     label: 'Gym · Hub' },
               { value: 'gym-split',   label: 'Gym · Split picker' },
@@ -784,6 +843,8 @@ function App() {
             ]}
             onChange={(v) => {
               if (v === 'profile-setup') { setOnboardingStage('profile'); setOnboarding(false); }
+              else if (v === 'goals-setup') { setOnboardingStage('goals'); setOnboarding(false); }
+              else if (v === 'deep-intake') { setOnboardingStage('intake'); setOnboarding(false); }
               else if (v === 'onboarding') { setOnboarding(true); setOnboardingStage(null); }
               else { setOnboarding(false); setOnboardingStage(null); setScreen(v); }
             }}
