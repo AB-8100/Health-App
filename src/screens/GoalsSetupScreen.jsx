@@ -30,6 +30,19 @@ const SPORT_TYPES = [
 
 const INTENSITY_LEVELS = ['Low', 'Moderate', 'High'];
 
+const GENERAL_ACTIVITIES = [
+  { id: 'running',   label: 'Running',   icon: '🏃' },
+  { id: 'cycling',   label: 'Cycling',   icon: '🚴' },
+  { id: 'swimming',  label: 'Swimming',  icon: '🏊' },
+  { id: 'rowing',    label: 'Rowing',    icon: '🚣' },
+  { id: 'yoga',      label: 'Yoga',      icon: '🧘' },
+  { id: 'hiit',      label: 'HIIT',      icon: '⚡' },
+  { id: 'walking',   label: 'Walking',   icon: '🚶' },
+  { id: 'pilates',   label: 'Pilates',   icon: '🤸' },
+  { id: 'climbing',  label: 'Climbing',  icon: '🧗' },
+  { id: 'dancing',   label: 'Dancing',   icon: '💃' },
+];
+
 const DAYS     = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -40,9 +53,9 @@ const RANK_COLOURS = ['#BE5A38', '#6D4AAF', '#15803D'];
 
 const DEFAULT_CONFIG = {
   event_race:         { raceType: '', raceDate: '', fitnessLevel: '' },
-  strength_programme: { focus: '', daysPerWeek: 3 },
+  strength_programme: { focus: '' },
   sport_activity:     { sportType: '', daysPerWeek: 2, intensity: 'Moderate' },
-  general_fitness:    {},
+  general_fitness:    { activities: [] },
   micro_target:       { description: '' },
 };
 
@@ -56,8 +69,9 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
   const [goalConfigs,   setGoalConfigs]   = React.useState({});
 
   // ── schedule ─────────────────────────────────────────────────────────────
-  const [trainingDaysPerWeek, setTrainingDaysPerWeek] = React.useState(4);
-  const [unavailableDays,     setUnavailableDays]     = React.useState([]);
+  const [trainingDays, setTrainingDays] = React.useState([]);
+  const trainingDaysPerWeek = trainingDays.length;
+  const unavailableDays     = DAY_KEYS.filter(d => !trainingDays.includes(d));
 
   // ── facilities ────────────────────────────────────────────────────────────
   const [gymAccess,  setGymAccess]  = React.useState(false);
@@ -72,9 +86,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
   const buildSteps = (goals) => {
     const steps = ['select'];
     if (goals.length >= 2) steps.push('rank');
-    goals.forEach(g => {
-      if (g !== 'general_fitness') steps.push(`config_${g}`);
-    });
+    goals.forEach(g => steps.push(`config_${g}`));
     steps.push('schedule', 'facilities', 'sports', 'done');
     return steps;
   };
@@ -104,6 +116,10 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
     if (current === 'config_sport_activity') {
       return !!(goalConfigs['sport_activity']?.sportType);
     }
+    if (current === 'config_general_fitness') {
+      return (goalConfigs['general_fitness']?.activities || []).length >= 1;
+    }
+    if (current === 'schedule') return trainingDays.length >= 1;
     return true;
   })();
 
@@ -149,6 +165,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
         rank: RANK_LABELS[i] || 'Supporting',
         config: goalConfigs[type] || {},
       })),
+      trainingDays,
       trainingDaysPerWeek,
       unavailableDays,
       gymAccess,
@@ -171,6 +188,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
       select: 'Goals', rank: 'Priority',
       config_event_race: 'Race details', config_strength_programme: 'Strength focus',
       config_sport_activity: 'Sport details', config_micro_target: 'Your target',
+      config_general_fitness: 'Activities',
       schedule: 'Schedule', facilities: 'Access', sports: 'Regular sports', done: '',
     };
     return map[s] || s;
@@ -440,22 +458,6 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
               </div>
             </GField>
 
-            <GField label="Training days per week" t={t}>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {[2, 3, 4, 5, 6].map(d => {
-                  const active = goalConfigs['strength_programme']?.daysPerWeek === d;
-                  return (
-                    <button key={d} onClick={() => updateConfig('strength_programme', { daysPerWeek: d })} style={{
-                      flex: 1, padding: '13px 0', borderRadius: 11,
-                      background: active ? t.text : t.surface,
-                      color: active ? (theme === 'dark' ? t.bg : '#fff') : t.text,
-                      border: `1px solid ${active ? t.text : t.border}`,
-                      fontFamily: t.serif, fontSize: 20, cursor: 'pointer',
-                    }}>{d}</button>
-                  );
-                })}
-              </div>
-            </GField>
           </div>
         )}
 
@@ -548,6 +550,50 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
           </div>
         )}
 
+        {/* ── config: general_fitness ── */}
+        {current === 'config_general_fitness' && (
+          <div>
+            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
+              What do you enjoy?
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
+              Pick the activities you like — we'll weave these into your weekly plan alongside any strength work.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {GENERAL_ACTIVITIES.map(act => {
+                const selected = (goalConfigs['general_fitness']?.activities || []).includes(act.id);
+                return (
+                  <button key={act.id} onClick={() => {
+                    const prev = goalConfigs['general_fitness']?.activities || [];
+                    const next = selected ? prev.filter(a => a !== act.id) : [...prev, act.id];
+                    updateConfig('general_fitness', { activities: next });
+                  }} style={{
+                    padding: '10px 14px', borderRadius: 11,
+                    background: selected ? t.accent + '15' : t.surface,
+                    border: `1.5px solid ${selected ? t.accent : t.border}`,
+                    color: selected ? t.accent : t.text,
+                    fontFamily: t.sans, fontSize: 13, cursor: 'pointer', fontWeight: 500,
+                    display: 'flex', alignItems: 'center', gap: 7,
+                  }}>
+                    <span>{act.icon}</span>
+                    <span>{act.label}</span>
+                    {selected && <span style={{ fontSize: 12 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {(goalConfigs['general_fitness']?.activities || []).length === 0 && (
+              <div style={{
+                marginTop: 16, padding: '10px 12px', borderRadius: 10,
+                background: t.surface2, border: `1px dashed ${t.border}`,
+                fontSize: 11.5, color: t.text3,
+              }}>
+                Select at least one activity to continue.
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── schedule ── */}
         {current === 'schedule' && (
           <div>
@@ -555,47 +601,34 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
               Your training week.
             </div>
             <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
-              How many days can you train, and which days are off-limits?
+              Tap the days you're available to train. We'll build your plan around these.
             </div>
 
-            <GField label="Training days per week" t={t}>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {[2, 3, 4, 5, 6, 7].map(d => {
-                  const active = trainingDaysPerWeek === d;
-                  return (
-                    <button key={d} onClick={() => setTrainingDaysPerWeek(d)} style={{
-                      flex: 1, padding: '13px 0', borderRadius: 11,
-                      background: active ? t.text : t.surface,
-                      color: active ? (theme === 'dark' ? t.bg : '#fff') : t.text,
-                      border: `1px solid ${active ? t.text : t.border}`,
-                      fontFamily: t.serif, fontSize: 20, cursor: 'pointer',
-                    }}>{d}</button>
-                  );
-                })}
-              </div>
-            </GField>
-
-            <GField label="Fixed unavailable days (tap to block)" t={t}>
-              <div style={{ display: 'flex', gap: 5 }}>
+            <GField label="Training days" t={t}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
                 {DAYS.map((day, i) => {
                   const key = DAY_KEYS[i];
-                  const on  = unavailableDays.includes(key);
+                  const on  = trainingDays.includes(key);
                   return (
-                    <button key={key} onClick={() => setUnavailableDays(prev =>
+                    <button key={key} onClick={() => setTrainingDays(prev =>
                       on ? prev.filter(d => d !== key) : [...prev, key]
                     )} style={{
-                      flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 10.5,
-                      background: on ? t.invSurface : t.surface,
-                      color: on ? t.invText : t.text,
-                      border: `1px solid ${on ? t.invSurface : t.border}`,
-                      fontFamily: t.sans, cursor: 'pointer', fontWeight: 500,
-                    }}>{day}</button>
+                      padding: '11px 0', borderRadius: 11, fontSize: 11, fontWeight: 600,
+                      background: on ? t.accent : t.surface,
+                      color: on ? t.accentText : t.text3,
+                      border: `1.5px solid ${on ? t.accent : t.border}`,
+                      fontFamily: t.sans, cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    }}>
+                      <span>{day}</span>
+                    </button>
                   );
                 })}
               </div>
-              {unavailableDays.length > 0 && (
-                <div style={{ fontSize: 11, color: t.text3, marginTop: 8 }}>
-                  Blocked: {unavailableDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}
+              {trainingDays.length > 0 && (
+                <div style={{ fontSize: 11.5, color: t.text2, marginTop: 10 }}>
+                  {trainingDays.length} day{trainingDays.length !== 1 ? 's' : ''} selected:{' '}
+                  {trainingDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}
                 </div>
               )}
             </GField>
@@ -793,7 +826,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
                 );
               })}
               {[
-                { label: 'Training days', value: `${trainingDaysPerWeek} / week` },
+                { label: 'Training days', value: trainingDays.length > 0 ? trainingDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ') : '—' },
                 gymAccess ? { label: 'Gym access', value: '✓ Yes' } : null,
                 (isTriathlonGoal && poolAccess) ? { label: 'Pool access', value: '✓ Yes' } : null,
                 unavailableDays.length ? { label: 'Days blocked', value: unavailableDays.length + ' days' } : null,
