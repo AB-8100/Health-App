@@ -198,6 +198,10 @@ function App() {
   const [onboardingStage, setOnboardingStage] = React.useState(null);
   // Holds the Stage 2 payload while Stage 3 (intake) is shown
   const [pendingGoalsPayload, setPendingGoalsPayload] = React.useState(null);
+  // Whether Stage 3 was opened from the main app (not initial onboarding)
+  const screenBeforeIntakeRef = React.useRef(null);
+  // True when the user has a saved intake draft (started but not finished)
+  const [intakeDraft, setIntakeDraft] = React.useState(false);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
@@ -361,6 +365,17 @@ function App() {
   const currentUserIdRef = React.useRef(null);
   React.useEffect(() => { currentUserIdRef.current = currentUser?.id || null; }, [currentUser]);
 
+  // Sync intakeDraft from localStorage whenever the user or onboarding stage changes
+  React.useEffect(() => {
+    if (!currentUser?.id) { setIntakeDraft(false); return; }
+    try {
+      const raw = localStorage.getItem(`forma_intake_${currentUser.id}`);
+      if (!raw) { setIntakeDraft(false); return; }
+      const parsed = JSON.parse(raw);
+      setIntakeDraft(parsed.status === 'draft');
+    } catch { setIntakeDraft(false); }
+  }, [currentUser?.id, onboardingStage]);
+
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
@@ -444,6 +459,7 @@ function App() {
       hasEventTraining: hasEvent,
       hasTrainingActivities: !!hasTrainingActivities,
       splitDays: autoSplitDays,
+      intakeCompleted: !skipped,
     };
 
     // Persist intake to Supabase
@@ -453,7 +469,41 @@ function App() {
     }
 
     setPendingGoalsPayload(null);
-    completeOnboarding(updatedProfile, initialActivities);
+
+    // If opened from the main app (not initial onboarding), just save the profile and return
+    if (screenBeforeIntakeRef.current !== null) {
+      const returnTo = screenBeforeIntakeRef.current;
+      screenBeforeIntakeRef.current = null;
+      setProfileRaw(updatedProfile);
+      setOnboardingStage(null);
+      setIntakeDraft(skipped);
+      setTimeout(() => scheduleSave({ profile: updatedProfile }), 0);
+      setScreen(returnTo);
+    } else {
+      completeOnboarding(updatedProfile, initialActivities);
+    }
+  };
+
+  // Opens Stage 3 from within the main app (banner tap on weekly or profile screens)
+  const handleStartQuestionnaire = (fromScreen) => {
+    screenBeforeIntakeRef.current = fromScreen || screen;
+    // Build a minimal goalsPayload from the current profile so intake steps are correct
+    const goalsFromProfile = profile.goal
+      ? [{ type: profile.goal, config: {} }]
+      : [];
+    setPendingGoalsPayload({ goals: goalsFromProfile, gymAccess: profile.hasGym });
+    setOnboarding(false);
+    setOnboardingStage('intake');
+  };
+
+  // Called when the user exits Stage 3 mid-flow (saves draft, returns to previous screen)
+  const handleExitQuestionnaire = () => {
+    setOnboardingStage(null);
+    setIntakeDraft(true);
+    setPendingGoalsPayload(null);
+    const returnTo = screenBeforeIntakeRef.current || 'weekly';
+    screenBeforeIntakeRef.current = null;
+    setScreen(returnTo);
   };
 
   const handleSignOut = async () => {
@@ -702,7 +752,8 @@ function App() {
       return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                goalsPayload={pendingGoalsPayload}
-               onComplete={handleIntakeComplete} />;
+               onComplete={handleIntakeComplete}
+               onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
     if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
@@ -818,7 +869,10 @@ function App() {
                sheetUrl={getSheetUrl()}
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}
-               onReconnectSheets={handleReconnectSheets} />;
+               onReconnectSheets={handleReconnectSheets}
+               intakeCompleted={!!profile.intakeCompleted}
+               intakeDraft={intakeDraft}
+               onStartQuestionnaire={() => handleStartQuestionnaire('about-me')} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
@@ -839,7 +893,10 @@ function App() {
                }}
                eventPhasePlan={eventPhasePlan}
                onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }}
-               onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))} />;
+               onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))}
+               intakeCompleted={!!profile.intakeCompleted}
+               intakeDraft={intakeDraft}
+               onStartQuestionnaire={() => handleStartQuestionnaire('weekly')} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
