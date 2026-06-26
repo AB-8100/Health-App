@@ -146,14 +146,12 @@ function generateActivitySchedule(goalsPayload) {
   return { schedule, gymDayCount, gymDayIndices };
 }
 
-// Gym split is determined by how many gym sessions are in the weekly plan,
-// not the total number of training days.
-function getAutoSplitDays(gymDayCount) {
-  if (!gymDayCount || gymDayCount <= 0) return null;
-  if (gymDayCount === 1) return 1;
-  if (gymDayCount === 2) return 2;
-  if (gymDayCount === 3) return 3;
-  if (gymDayCount === 4) return 4;
+function getAutoSplitDays(totalTrainingDays, gymAccess) {
+  if (!gymAccess || !totalTrainingDays || totalTrainingDays <= 0) return null;
+  if (totalTrainingDays === 1) return 1;
+  if (totalTrainingDays === 2) return 2;
+  if (totalTrainingDays === 3) return 3;
+  if (totalTrainingDays === 4) return 4;
   return 5;
 }
 
@@ -478,7 +476,7 @@ function App() {
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
     const { schedule: initialActivities, gymDayCount, gymDayIndices } = generateActivitySchedule({ ...gp, gymAccess });
-    const autoSplitDays = getAutoSplitDays(gymDayCount);
+    const autoSplitDays = getAutoSplitDays(gp.trainingDays?.length || 0, gymAccess);
 
     // Build a scheduleOverride so gym sessions land on the user's chosen training days
     // rather than the split's default hardcoded day slots.
