@@ -59,11 +59,28 @@ const ACTIVITY_DEFS = {
   dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
 };
 
-// Spreads selected activities across training days (capped at trainingDays.length).
-// Gym sessions are not stored in the activities state — they're tracked via plan.splitDays.
-// Returns { schedule, gymDayCount } so the caller can pick the right gym split.
+// Sport name → display metadata for regularSports entries
+const SPORT_DISPLAY = {
+  'Football':     { emoji: '⚽', color: '#16A34A' },
+  'Basketball':   { emoji: '🏀', color: '#EA580C' },
+  'Tennis':       { emoji: '🎾', color: '#65A30D' },
+  'Swimming':     { emoji: '🏊', color: '#0369A1' },
+  'Cycling':      { emoji: '🚴', color: '#9333EA' },
+  'Running':      { emoji: '🏃', color: '#0090FF' },
+  'Rugby':        { emoji: '🏉', color: '#854D0E' },
+  'CrossFit':     { emoji: '⚡', color: '#DC2626' },
+  'Martial Arts': { emoji: '🥋', color: '#4B5563' },
+  'Golf':         { emoji: '⛳', color: '#15803D' },
+  'Hockey':       { emoji: '🏒', color: '#1D4ED8' },
+  'Volleyball':   { emoji: '🏐', color: '#D97706' },
+};
+
+// Spreads selected activities + gym across the user's chosen training days.
+// Gym sessions are NOT stored in the activities state (tracked via plan.splitDays/scheduleOverride).
+// Regular sports land on their assigned days regardless of training-day selection.
+// Returns { schedule, gymDayCount, gymDayIndices }.
 function generateActivitySchedule(goalsPayload) {
-  const { goals = [], trainingDays = [], gymAccess = false } = goalsPayload;
+  const { goals = [], trainingDays = [], gymAccess = false, regularSports = [] } = goalsPayload;
   const generalGoal = goals.find(g => g.type === 'general_fitness');
   let selectedIds = [...(generalGoal?.config?.activities || [])];
 
@@ -72,17 +89,41 @@ function generateActivitySchedule(goalsPayload) {
     selectedIds = ['gym', ...selectedIds];
   }
 
-  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
+  const schedule = {};
 
-  // Only gym (or nothing selected) → all training days count as gym sessions
+  // Place regular sports on their pinned days (these are fixed, not cycled)
+  regularSports.forEach(sport => {
+    const dayIdx = DAY_KEY_TO_IDX[sport.day];
+    if (dayIdx === undefined) return;
+    const display = SPORT_DISPLAY[sport.sport] || { emoji: '🏅', color: '#6B7280' };
+    if (!schedule[dayIdx]) schedule[dayIdx] = [];
+    schedule[dayIdx].push({
+      id: `sport-${dayIdx}-${sport.sport}`,
+      type: 'other',
+      label: sport.sport,
+      emoji: display.emoji,
+      color: display.color,
+      duration: 60,
+      isGym: false,
+      source: 'regularSport',
+      intensity: sport.intensity,
+    });
+  });
+
+  if (!trainingDays.length) return { schedule, gymDayCount: 0, gymDayIndices: [] };
+
+  // Only gym (or nothing selected) → all training days are gym days
   const nonGymActivities = selectedIds.filter(id => id !== 'gym');
   if (!nonGymActivities.length) {
-    return { schedule: {}, gymDayCount: gymAccess ? trainingDays.length : 0 };
+    const gymDayIndices = trainingDays
+      .map(day => DAY_KEY_TO_IDX[day])
+      .filter(idx => idx !== undefined);
+    return { schedule, gymDayCount: gymAccess ? gymDayIndices.length : 0, gymDayIndices: gymAccess ? gymDayIndices : [] };
   }
 
   // Cycle through activity list (gym + others) across training days
-  const schedule = {};
   let gymDayCount = 0;
+  const gymDayIndices = [];
 
   trainingDays.forEach((day, i) => {
     const dayIdx = DAY_KEY_TO_IDX[day];
@@ -91,16 +132,18 @@ function generateActivitySchedule(goalsPayload) {
 
     if (actId === 'gym') {
       gymDayCount++;
-      // Gym days are represented by plan.splitDays — no entry needed in activities
+      gymDayIndices.push(dayIdx);
+      // Gym days are represented by plan.splitDays + scheduleOverride — no activities entry
     } else {
       const def = ACTIVITY_DEFS[actId];
       if (def) {
-        schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
+        if (!schedule[dayIdx]) schedule[dayIdx] = [];
+        schedule[dayIdx].push({ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' });
       }
     }
   });
 
-  return { schedule, gymDayCount };
+  return { schedule, gymDayCount, gymDayIndices };
 }
 
 // Gym split is determined by how many gym sessions are in the weekly plan,
@@ -434,8 +477,23 @@ function App() {
       (gp.regularSports || []).length > 0;
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
-    const { schedule: initialActivities, gymDayCount } = generateActivitySchedule({ ...gp, gymAccess });
+    const { schedule: initialActivities, gymDayCount, gymDayIndices } = generateActivitySchedule({ ...gp, gymAccess });
     const autoSplitDays = getAutoSplitDays(gymDayCount);
+
+    // Build a scheduleOverride so gym sessions land on the user's chosen training days
+    // rather than the split's default hardcoded day slots.
+    let scheduleOverride = null;
+    if (autoSplitDays && gymDayIndices.length > 0) {
+      const splitTemplate = SPLITS[autoSplitDays];
+      if (splitTemplate) {
+        const blank = ['—','—','—','—','—','—','—'];
+        gymDayIndices.forEach((dayIdx, i) => {
+          const splitDay = splitTemplate.days[i];
+          if (splitDay) blank[dayIdx] = splitDay.id;
+        });
+        scheduleOverride = blank;
+      }
+    }
 
     const updatedProfile = {
       ...profile,
@@ -453,7 +511,7 @@ function App() {
     }
 
     setPendingGoalsPayload(null);
-    completeOnboarding(updatedProfile, initialActivities);
+    completeOnboarding(updatedProfile, initialActivities, scheduleOverride);
   };
 
   const handleSignOut = async () => {
@@ -590,8 +648,8 @@ function App() {
     else setScreen(target);
   };
 
-  const completeOnboarding = (newProfile, initialActivities = {}) => {
-    const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
+  const completeOnboarding = (newProfile, initialActivities = {}, scheduleOverride = null) => {
+    const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {}, ...(scheduleOverride ? { scheduleOverride } : {}) };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setSettingsRaw(DEFAULT_SETTINGS);
@@ -838,7 +896,6 @@ function App() {
                  setTimeout(() => scheduleSave({ planSessionsDone: next }), 0);
                }}
                eventPhasePlan={eventPhasePlan}
-               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }}
                onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
