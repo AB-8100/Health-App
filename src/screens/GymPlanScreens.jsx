@@ -1276,10 +1276,10 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             fontSize:9.5, letterSpacing:'.18em', textTransform:'uppercase',
             color:t.text3, marginBottom:3
           }}>
-            Your plan
+            Gym
           </div>
           <div style={{ fontFamily:t.serif, fontSize:28, lineHeight:1, color:t.text }}>
-            {split.name}
+            Your session plan
           </div>
         </div>
 
@@ -1293,7 +1293,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
               color:t.text3
             }}>
-              This week · {split.sub}
+              This week · {split.name}
             </div>
             <button onClick={onChangeSplit} style={{
               padding:'3px 8px', borderRadius:7,
@@ -1367,11 +1367,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                       ? '#fff'
                       : isToday ? t.accentText : (isRest ? t.text3 : t.accent),
                     display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:11, fontWeight:600, fontFamily:t.mono,
+                    fontSize: isRest || hasCompleted ? 11 : 14, fontWeight:600, fontFamily:t.mono,
                     transition:'background .2s',
                     boxShadow: isSelected ? `0 0 0 3px ${t.accent}25` : 'none',
                   }}>
-                    {hasCompleted ? '✓' : isRest ? (dayActs.length ? '+' : '·') : dayInfo.name.charAt(0)}
+                    {hasCompleted ? '✓' : isRest ? (dayActs.length ? '+' : '·') : '🏋️'}
                     {dayActs.length > 0 && !hasCompleted && (
                       <span style={{
                         position:'absolute', top:-3, right:-3,
