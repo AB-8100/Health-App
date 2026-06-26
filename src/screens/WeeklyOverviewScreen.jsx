@@ -754,7 +754,7 @@ export function WeeklyOverviewScreen({
       )}
 
       <BottomNav
-        theme={theme} active="triathlon" onNav={onNav}
+        theme={theme} active="weekly" onNav={onNav}
         tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
       />
     </div>

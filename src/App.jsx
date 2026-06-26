@@ -259,7 +259,7 @@ function App() {
 
     // Route to the right starting screen based on the loaded profile
     if (hasAnyData && loadedProfile) {
-      setScreen('triathlon');
+      setScreen('weekly');
     }
 
     setAuthState('app');
@@ -581,7 +581,7 @@ function App() {
     }
     setOnboarding(false);
     setOnboardingStage(null);
-    setScreen('triathlon');
+    setScreen('weekly');
   };
 
   const handleConnectSheets = async () => {
@@ -788,7 +788,7 @@ function App() {
                onConnectSheets={handleConnectSheets}
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;
-    if (s === 'triathlon')
+    if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
                profile={profile}
@@ -885,7 +885,7 @@ function App() {
               { value: 'gym-edit',    label: 'Gym · Session editor' },
               { value: 'gym-day',     label: 'Gym · Day activities' },
               { value: 'gym-library', label: 'Gym · Exercise library' },
-              { value: 'triathlon',   label: 'Weekly Overview' },
+              { value: 'weekly',   label: 'Weekly Overview' },
               { value: 'gym-session', label: 'Gym · In session' },
               { value: 'gym-summary', label: 'Gym · Summary' },
               { value: 'food',        label: 'Food · Weekly tracker' },
