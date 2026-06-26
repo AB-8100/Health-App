@@ -217,7 +217,7 @@ function App() {
 
     // Route to the right starting screen based on the loaded profile
     if (hasAnyData && loadedProfile && !loadedProfile.hasGym) {
-      if (loadedProfile.hasEventTraining) setScreen('triathlon');
+      if (loadedProfile.hasEventTraining || loadedProfile.hasTrainingActivities) setScreen('triathlon');
       else setScreen('food');
     }
 
@@ -361,12 +361,17 @@ function App() {
     const gp = pendingGoalsPayload || {};
     const primaryGoalType = gp.goals?.[0]?.type ?? '';
     const hasEvent = gp.goals?.some(g => g.type === 'event_race');
+    const hasTrainingActivities =
+      gp.goals?.some(g => g.type === 'general_fitness' && (g.config?.activities || []).length > 0) ||
+      gp.goals?.some(g => g.type === 'sport_activity' && g.config?.sportType) ||
+      (gp.regularSports || []).length > 0;
 
     const updatedProfile = {
       ...profile,
       goal: primaryGoalType,
       hasGym: gp.gymAccess ?? profile.hasGym,
       hasEventTraining: hasEvent,
+      hasTrainingActivities: !!hasTrainingActivities,
     };
 
     // Persist intake to Supabase
@@ -535,7 +540,7 @@ function App() {
     setOnboarding(false);
     setOnboardingStage(null);
     if (newProfile.hasGym) setScreen('gym-hub');
-    else if (newProfile.hasEventTraining) setScreen('triathlon');
+    else if (newProfile.hasEventTraining || newProfile.hasTrainingActivities) setScreen('triathlon');
     else setScreen('food');
   };
 
@@ -612,6 +617,7 @@ function App() {
 
   const hasGym = profile.hasGym !== false;
   const hasEventTraining = !!profile.hasEventTraining;
+  const hasTrainingActivities = !!profile.hasTrainingActivities;
 
   const renderScreen = (s) => {
     if (onboardingStage === 'profile')
@@ -641,7 +647,7 @@ function App() {
                activeSession={session.active ? session : null}
                onResumeSession={() => setScreen('gym-session')}
                onOpenAbout={() => setScreen('about-me')}
-               hasGym={hasGym} hasEventTraining={hasEventTraining} />;
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-hub')
       return <GymHubScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
@@ -651,7 +657,7 @@ function App() {
                completedSessions={completedSessions}
                activeSession={session.active ? session : null}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onNav={navigate}
                onStartSession={startSession}
                onResumeSession={() => setScreen('gym-session')}
@@ -669,7 +675,7 @@ function App() {
       return <SplitPickerScreen width={contentW} height={contentH} theme={tweaks.theme}
                plan={plan}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onBack={() => setScreen('gym-hub')}
                onSave={(d, schedule) => { setPlan(p => ({ ...p, splitDays: d, todayIdx: 0, scheduleOverride: schedule || null })); setScreen('gym-hub'); }}
                onNav={navigate} />;
@@ -683,7 +689,7 @@ function App() {
                plan={plan}
                dayId={resolvedDayId}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onBack={() => setScreen('gym-hub')}
                onSave={(updatedDay, newSchedule) => {
                  setPlan(p => ({
@@ -701,7 +707,7 @@ function App() {
                dayIdx={editingDayIdx ?? 1}
                activities={activities}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onBack={() => setScreen('gym-hub')}
                onSave={(idx, list) => {
                  setActivities(a => {
@@ -724,7 +730,7 @@ function App() {
                onSaveCustomFood={saveCustomFood}
                onNav={navigate}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining} />;
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'about-me')
       return <AboutScreen width={contentW} height={contentH} theme={tweaks.theme}
                profile={profile}
@@ -750,7 +756,7 @@ function App() {
                plan={plan}
                activities={activities}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                triathlonOverrides={triathlonOverrides}
                onUpdateOverrides={(next) => {
                  setTriathlonOverrides(next);
@@ -765,14 +771,14 @@ function App() {
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onBack={() => setScreen('gym-hub')}
                onNav={navigate} />;
     if (s === 'gym-session' || s === 'gym')
       return <GymSessionScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={session} setSession={setSession}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onNav={navigate}
                onExit={() => { setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null }); setScreen('gym-hub'); }}
                onComplete={finishSession} />;
@@ -780,12 +786,12 @@ function App() {
       return <GymSummaryScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={lastSession}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onDone={closeSummary}
                onNav={navigate} />;
     return <PlaceholderScreen width={contentW} height={contentH} theme={tweaks.theme}
              screen={s} onNav={navigate} tracksCycle={profile.tracksCycle}
-             hasGym={hasGym} hasEventTraining={hasEventTraining} />;
+             hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
   };
 
   const screenLabel = onboardingStage === 'profile'

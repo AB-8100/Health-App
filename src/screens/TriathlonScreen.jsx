@@ -99,7 +99,7 @@ export function TriathlonScreen({
           <div style={{ fontFamily:t.serif, fontSize:26, color:t.text, lineHeight:1.1 }}>Training plan</div>
           <div style={{ fontSize:13, color:t.text3, lineHeight:1.6 }}>Your event training plan will appear here once it's set up.</div>
         </div>
-        <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+        <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
       </div>
     );
   }
@@ -357,7 +357,7 @@ export function TriathlonScreen({
 
       </div>
 
-      <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+      <BottomNav theme={theme} active="triathlon" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
     </div>
   );
 }
