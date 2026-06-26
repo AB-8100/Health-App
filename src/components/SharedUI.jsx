@@ -164,7 +164,7 @@ function PulseDot({ color = "#16A34A", size = 7 }) {
 }
 
 // Bottom nav (shared visual chrome)
-function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
+function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const isDark = theme === 'dark';
   const dim = isDark ? '#6B6560' : '#A8A39C';
   const activeColor = isDark ? '#fff' : '#1C1917';
@@ -179,7 +179,7 @@ function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = fals
   ];
   const items = allItems.filter(it => {
     if (it.id === 'gym') return hasGym;
-    if (it.id === 'triathlon') return hasEventTraining;
+    if (it.id === 'triathlon') return hasEventTraining || hasTrainingActivities;
     if (it.id === 'cycle') return tracksCycle;
     return true;
   });

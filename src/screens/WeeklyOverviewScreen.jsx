@@ -498,7 +498,7 @@ export function WeeklyOverviewScreen({
   width = 390, height = 820, theme = 'light',
   onNav, profile = {},
   plan = {}, activities = {},
-  tracksCycle = false, hasGym = true, hasEventTraining = false,
+  tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
   triathlonOverrides = {}, onUpdateOverrides,
   triathlonDone = {}, onToggleDone,
   onTapDay,
@@ -755,7 +755,7 @@ export function WeeklyOverviewScreen({
 
       <BottomNav
         theme={theme} active="triathlon" onNav={onNav}
-        tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}
+        tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
       />
     </div>
   );

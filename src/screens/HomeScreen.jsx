@@ -77,7 +77,7 @@ function ActivityIcon({ kind, size=14, color='currentColor' }) {
 const SESSIONS_WEEKS = [0, 0, 0, 0, 0, 0, 0, 0]; // populated from real session history
 
 // ────────────────────────────────────────────────────────────
-function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStartSession, activeSession, onResumeSession, profile, plan = null, completedSessions = [], onOpenAbout, hasGym = true, hasEventTraining = false }) {
+function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStartSession, activeSession, onResumeSession, profile, plan = null, completedSessions = [], onOpenAbout, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const tracksCycle = profile ? profile.tracksCycle : false;
   const userName = profile?.name || '';
@@ -579,7 +579,7 @@ function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStar
         </div>
       </div>
 
-      <BottomNav theme={theme} active="home" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+      <BottomNav theme={theme} active="home" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
     </div>
   );
 }

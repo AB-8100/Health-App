@@ -126,7 +126,7 @@ const LEVEL_COLORS = {
 const PAGE_SIZE = 48;
 
 function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
-                                 onBack, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false }) {
+                                 onBack, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const [search,   setSearch]   = React.useState('');
   const [muscle,   setMuscle]   = React.useState('all');
@@ -352,7 +352,7 @@ function ExerciseLibraryScreen({ width = 390, height = 820, theme = 'light',
         )}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
 
       {/* Detail sheet */}
       {selected && (
@@ -724,7 +724,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
         </button>
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining}/>
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
 
       {/* Add activity sheet */}
       {addingType && (
