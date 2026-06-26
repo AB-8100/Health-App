@@ -155,9 +155,9 @@ function App() {
   const [contentW, setContentW] = React.useState(isMobileInit ? window.innerWidth : 374);
   const [contentH, setContentH] = React.useState(isMobileInit ? window.innerHeight : 804);
 
-  const [authState, setAuthState]     = React.useState('loading'); // 'loading'|'login'|'app'
-  const [currentUser, setCurrentUser] = React.useState(null); // { id, email, name }
-  const [sheetsStatus, setSheetsStatus] = React.useState('disconnected'); // 'disconnected'|'connected'|'needs-reconnect'|'connecting'
+  const [authState, setAuthState]     = React.useState('loading');
+  const [currentUser, setCurrentUser] = React.useState(null);
+  const [sheetsStatus, setSheetsStatus] = React.useState('disconnected');
   const [sheetsError, setSheetsError] = React.useState(null);
   const sheetsConnectedRef = React.useRef(false);
   const [screen, setScreen]               = React.useState('gym-hub');
@@ -190,99 +190,94 @@ function App() {
     const sbUser = supaSession?.user;
     if (!sbUser) { setAuthState('login'); return; }
 
-    const name = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email.split('@')[0];
-    setCurrentUser({ id: sbUser.id, email: sbUser.email, name });
-
-    // Show cached data immediately for instant paint while Supabase loads
-    const cached = loadFromCache(sbUser.id);
-    if (cached) hydrateState(cached);
-
-    // Supabase is the source of truth — if it has no data the user is new,
-    // regardless of what's in localStorage (handles stale cache after account reset).
-    let hasAnyData = false;
-    let loadedProfile = null;
     try {
-      const remote = await loadUserData(sbUser.id);
-      if (remote) {
-        hasAnyData = true;
-        loadedProfile = remote.profile ?? null;
-        const localAt  = cached?.savedAt  ? new Date(cached.savedAt)  : new Date(0);
-        const remoteAt = remote.savedAt ? new Date(remote.savedAt) : new Date(0);
-        if (remoteAt >= localAt) {
-          hydrateState(remote);
-          saveToCache(remote, sbUser.id);
-        } else {
-          loadedProfile = cached?.profile ?? null;
+      const name = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email.split('@')[0];
+      setCurrentUser({ id: sbUser.id, email: sbUser.email, name });
+
+      // Show cached data immediately for instant paint while Supabase loads
+      const cached = loadFromCache(sbUser.id);
+      if (cached) hydrateState(cached);
+
+      // Supabase is the source of truth — if it has no data the user is new,
+      // regardless of what's in localStorage (handles stale cache after account reset).
+      let hasAnyData = false;
+      let loadedProfile = null;
+      try {
+        const remote = await loadUserData(sbUser.id);
+        if (remote) {
+          hasAnyData = true;
+          loadedProfile = remote.profile ?? null;
+          const localAt  = cached?.savedAt  ? new Date(cached.savedAt)  : new Date(0);
+          const remoteAt = remote.savedAt ? new Date(remote.savedAt) : new Date(0);
+          if (remoteAt >= localAt) {
+            hydrateState(remote);
+            saveToCache(remote, sbUser.id);
+          } else {
+            loadedProfile = cached?.profile ?? null;
+          }
+        }
+        // remote === null → no Supabase data → treat as new user even if cache exists
+      } catch (e) {
+        console.warn('Forma: remote load failed', e);
+        // Network/DB error: fall back to cache so existing users aren't locked out offline
+        if (cached) { hasAnyData = true; loadedProfile = cached.profile ?? null; }
+      }
+
+      if (!hasAnyData) {
+        // New user or stale cache after account reset — clear everything and start fresh
+        setProfileRaw(EMPTY_PROFILE);
+        setPlanRaw(DEFAULT_PLAN);
+        setSettingsRaw(DEFAULT_SETTINGS);
+        setCompletedSessions([]);
+        setFoodLog({});
+        setActivities({});
+        setEventOverrides({});
+        setPlanSessionsDone({});
+        setCustomFoods([]);
+        // Stage 1: collect profile basics before anything else
+        setOnboardingStage('profile');
+      } else if (loadedProfile && !loadedProfile.goal) {
+        // Has profile but no goal set yet — send to Stage 2
+        setOnboardingStage('goals');
+      }
+
+      const status = getSheetsStatus();
+      setSheetsStatus(status);
+      if (status === 'connected') {
+        const connected = initFromCache();
+        if (connected) {
+          loadFromSheets().then(sheetsData => {
+            if (!sheetsData) return;
+            const localAt  = cached?.savedAt  ? new Date(cached.savedAt)       : new Date(0);
+            const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
+            if (sheetsAt > localAt) {
+              hydrateState(sheetsData);
+              saveToCache(sheetsData, sbUser.id);
+            }
+          }).catch(() => setSheetsStatus('needs-reconnect'));
         }
       }
-      // remote === null → no Supabase data → treat as new user even if cache exists
-    } catch (e) {
-      console.warn('Forma: remote load failed', e);
-      // Network/DB error: fall back to cache so existing users aren't locked out offline
-      if (cached) { hasAnyData = true; loadedProfile = cached.profile ?? null; }
-    }
 
-    if (!hasAnyData) {
-      // New user or stale cache after account reset — clear everything and start fresh
-      setProfileRaw(EMPTY_PROFILE);
-      setPlanRaw(DEFAULT_PLAN);
-      setSettingsRaw(DEFAULT_SETTINGS);
-      setCompletedSessions([]);
-      setFoodLog({});
-      setActivities({});
-      setEventOverrides({});
-      setPlanSessionsDone({});
-      setCustomFoods([]);
-      // Stage 1: collect profile basics before anything else
-      setOnboardingStage('profile');
-    } else if (loadedProfile && !loadedProfile.goal) {
-      // Has profile but no goal set yet — send to Stage 2
-      setOnboardingStage('goals');
-    }
-
-    const status = getSheetsStatus();
-    setSheetsStatus(status);
-    if (status === 'connected') {
-      const connected = initFromCache();
-      if (connected) {
-        loadFromSheets().then(sheetsData => {
-          if (!sheetsData) return;
-          const localAt  = cached?.savedAt  ? new Date(cached.savedAt)       : new Date(0);
-          const sheetsAt = sheetsData.savedAt ? new Date(sheetsData.savedAt) : new Date(0);
-          if (sheetsAt > localAt) {
-            hydrateState(sheetsData);
-            saveToCache(sheetsData, sbUser.id);
-          }
-        }).catch(() => setSheetsStatus('needs-reconnect'));
+      // Route to the right starting screen based on the loaded profile
+      if (hasAnyData && loadedProfile) {
+        setScreen('weekly');
       }
+    } catch (e) {
+      console.error('Forma: bootstrapUser failed', e);
+    } finally {
+      setAuthState('app');
     }
-
-    // Route to the right starting screen based on the loaded profile
-    if (hasAnyData && loadedProfile) {
-      setScreen('weekly');
-    }
-
-    setAuthState('app');
   }, []);
 
   React.useEffect(() => {
-    // getSession() triggers the PKCE code exchange when returning from OAuth.
-    // Only bootstrap if a session is returned — never set 'login' here to avoid
-    // clobbering a SIGNED_IN that fires immediately after.
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) bootstrapUser(data.session);
     });
-
-    // Safety net: if auth state hasn't resolved in 6s, show login rather than hang on splash.
     const timeout = setTimeout(() => setAuthState(s => s === 'loading' ? 'login' : s), 6000);
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       clearTimeout(timeout);
-      if (session) {
-        bootstrapUser(session);
-      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
-        setAuthState('login');
-      }
+      if (session) { bootstrapUser(session); }
+      else if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') { setAuthState('login'); }
     });
     return () => { subscription.unsubscribe(); clearTimeout(timeout); };
   }, [bootstrapUser]);
