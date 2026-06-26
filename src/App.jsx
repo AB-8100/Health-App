@@ -41,6 +41,48 @@ const DEFAULT_SETTINGS = {
 };
 const DEFAULT_PLAN = { splitDays: null, todayIdx: 0, overrides: {} };
 
+// ─── Onboarding helpers ───────────────────────────────────────────────────────
+
+const DAY_KEY_TO_IDX = { monday:0, tuesday:1, wednesday:2, thursday:3, friday:4, saturday:5, sunday:6 };
+
+const ACTIVITY_DEFS = {
+  running:  { type:'run',   label:'Run',     emoji:'🏃', color:'#0090FF', duration:45 },
+  cycling:  { type:'cycle', label:'Cycle',   emoji:'🚴', color:'#9333EA', duration:60 },
+  swimming: { type:'swim',  label:'Swim',    emoji:'🏊', color:'#0369A1', duration:45 },
+  rowing:   { type:'other', label:'Row',     emoji:'🚣', color:'#4B5563', duration:45 },
+  yoga:     { type:'yoga',  label:'Yoga',    emoji:'🧘', color:'#6D4AAF', duration:60 },
+  hiit:     { type:'other', label:'HIIT',    emoji:'⚡', color:'#DC2626', duration:30 },
+  walking:  { type:'walk',  label:'Walk',    emoji:'🚶', color:'#15803D', duration:60 },
+  pilates:  { type:'other', label:'Pilates', emoji:'🤸', color:'#6D4AAF', duration:45 },
+  climbing: { type:'other', label:'Climb',   emoji:'🧗', color:'#854D0E', duration:90 },
+  dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
+};
+
+function generateActivitySchedule(goalsPayload) {
+  const { goals = [], trainingDays = [] } = goalsPayload;
+  const generalGoal = goals.find(g => g.type === 'general_fitness');
+  const selectedIds = generalGoal?.config?.activities || [];
+  if (!selectedIds.length || !trainingDays.length) return {};
+  const schedule = {};
+  trainingDays.forEach((day, i) => {
+    const dayIdx = DAY_KEY_TO_IDX[day];
+    if (dayIdx === undefined) return;
+    const def = ACTIVITY_DEFS[selectedIds[i % selectedIds.length]];
+    if (!def) return;
+    schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
+  });
+  return schedule;
+}
+
+function getAutoSplitDays(trainingDaysPerWeek, gymAccess) {
+  if (!gymAccess) return null;
+  if (trainingDaysPerWeek <= 1) return 1;
+  if (trainingDaysPerWeek === 2) return 2;
+  if (trainingDaysPerWeek === 3) return 3;
+  if (trainingDaysPerWeek === 4) return 4;
+  return 5;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Error boundary — catches render crashes so the app never goes fully blank
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,9 +258,8 @@ function App() {
     }
 
     // Route to the right starting screen based on the loaded profile
-    if (hasAnyData && loadedProfile && !loadedProfile.hasGym) {
-      if (loadedProfile.hasEventTraining || loadedProfile.hasTrainingActivities) setScreen('triathlon');
-      else setScreen('food');
+    if (hasAnyData && loadedProfile) {
+      setScreen('triathlon');
     }
 
     setAuthState('app');
@@ -366,13 +407,19 @@ function App() {
       gp.goals?.some(g => g.type === 'sport_activity' && g.config?.sportType) ||
       (gp.regularSports || []).length > 0;
 
+    const gymAccess = gp.gymAccess ?? profile.hasGym;
+    const autoSplitDays = getAutoSplitDays(gp.trainingDaysPerWeek || gp.trainingDays?.length || 3, gymAccess);
+
     const updatedProfile = {
       ...profile,
       goal: primaryGoalType,
-      hasGym: gp.gymAccess ?? profile.hasGym,
+      hasGym: gymAccess,
       hasEventTraining: hasEvent,
       hasTrainingActivities: !!hasTrainingActivities,
+      splitDays: autoSplitDays,
     };
+
+    const initialActivities = generateActivitySchedule(gp);
 
     // Persist intake to Supabase
     if (currentUserIdRef.current) {
@@ -380,13 +427,8 @@ function App() {
         .catch(e => console.warn('Forma: intake save failed', e));
     }
 
-    // Trigger plan regeneration if a draft plan already exists and intake is complete
-    if (!skipped && updatedProfile.splitDays) {
-      console.info('Forma: intake complete — plan regeneration triggered');
-    }
-
     setPendingGoalsPayload(null);
-    completeOnboarding(updatedProfile);
+    completeOnboarding(updatedProfile, initialActivities);
   };
 
   const handleSignOut = async () => {
@@ -523,25 +565,23 @@ function App() {
     else setScreen(target);
   };
 
-  const completeOnboarding = (newProfile) => {
+  const completeOnboarding = (newProfile, initialActivities = {}) => {
     const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setSettingsRaw(DEFAULT_SETTINGS);
+    setActivities(initialActivities);
     const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
-                       completedSessions: [], foodLog: {}, activities: {},
+                       completedSessions: [], foodLog: {}, activities: initialActivities,
                        savedAt: new Date().toISOString() };
     saveToCache(snapshot, currentUserIdRef.current);
     if (sheetsConnectedRef.current) saveToSheets(snapshot);
-    // Save to Supabase immediately so next login finds real remote data
     if (currentUserIdRef.current) {
       saveUserData(currentUserIdRef.current, snapshot).catch(e => console.warn('Forma: onboarding save failed', e));
     }
     setOnboarding(false);
     setOnboardingStage(null);
-    if (newProfile.hasGym) setScreen('gym-hub');
-    else if (newProfile.hasEventTraining || newProfile.hasTrainingActivities) setScreen('triathlon');
-    else setScreen('food');
+    setScreen('triathlon');
   };
 
   const handleConnectSheets = async () => {

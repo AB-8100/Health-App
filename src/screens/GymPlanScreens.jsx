@@ -1052,7 +1052,106 @@ function getWeekLabel(isoKey) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Gym Hub — the Gym tab landing page
+// Session view for non-gym users — shows today's scheduled activity
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function ActivitySessionView({ t, dayOfWeek, activities, onTapDay }) {
+  const todayActs = activities[dayOfWeek] || [];
+  const isRest = todayActs.length === 0;
+
+  // Find next scheduled day
+  let nextDayIdx = null;
+  if (isRest) {
+    for (let i = 1; i <= 7; i++) {
+      const idx = (dayOfWeek + i) % 7;
+      if ((activities[idx] || []).length > 0) { nextDayIdx = idx; break; }
+    }
+  }
+
+  return (
+    <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 24px' }} className="phone-scroll">
+      <div style={{ marginBottom:18 }}>
+        <div style={{ fontSize:9.5, letterSpacing:'.18em', textTransform:'uppercase', color:t.text3, marginBottom:3 }}>
+          Today · {DAY_NAMES[dayOfWeek]}
+        </div>
+        <div style={{ fontFamily:t.serif, fontSize:28, lineHeight:1, color:t.text }}>
+          {isRest ? 'Rest day' : 'Your session'}
+        </div>
+      </div>
+
+      {isRest ? (
+        <div>
+          <div style={{ background:t.surface, border:`1px solid ${t.border}`, borderRadius:18, padding:'20px 18px', marginBottom:14, textAlign:'center' }}>
+            <div style={{ fontSize:32, marginBottom:10 }}>😴</div>
+            <div style={{ fontFamily:t.serif, fontSize:18, color:t.text, marginBottom:6 }}>Recovery day</div>
+            <div style={{ fontSize:13, color:t.text3, lineHeight:1.6 }}>
+              Rest is part of your plan. Stay hydrated and enjoy the break.
+            </div>
+            {nextDayIdx !== null && (
+              <div style={{ marginTop:14, fontSize:12, color:t.text2 }}>
+                Next session: <strong>{DAY_NAMES[nextDayIdx]}</strong>
+                {' · '}{(activities[nextDayIdx] || []).map(a => `${a.emoji || ''} ${a.label}`).join(', ')}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => onTapDay && onTapDay(dayOfWeek)}
+            style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
+              border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
+              cursor:'pointer', fontFamily:t.sans }}
+          >
+            Log an activity anyway
+          </button>
+        </div>
+      ) : (
+        <div>
+          {todayActs.map((act, i) => (
+            <div key={i} style={{
+              background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+              padding:'18px 18px', marginBottom:12
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:14 }}>
+                <div style={{
+                  width:52, height:52, borderRadius:14, fontSize:26,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  background:(act.color || t.accent) + '18'
+                }}>{act.emoji || '🏃'}</div>
+                <div>
+                  <div style={{ fontFamily:t.serif, fontSize:22, color:t.text, lineHeight:1.1 }}>{act.label}</div>
+                  {act.duration && (
+                    <div style={{ fontSize:12, color:t.text3, marginTop:3 }}>{act.duration} min</div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => onTapDay && onTapDay(dayOfWeek)}
+                style={{
+                  width:'100%', padding:'13px 0', borderRadius:14,
+                  background:act.color || t.accent, border:'none',
+                  color:'#fff', fontSize:15, fontWeight:600,
+                  cursor:'pointer', fontFamily:t.sans
+                }}
+              >
+                Start session
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => onTapDay && onTapDay(dayOfWeek)}
+            style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
+              border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
+              cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
+          >
+            Log a different activity
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Gym Hub — the Session tab landing page
 function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
                        activities = {}, completedSessions = [],
@@ -1166,22 +1265,9 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
       </div>
 
       {!split ? (
-        <div style={{
-          flex:1, display:'flex', flexDirection:'column', alignItems:'center',
-          justifyContent:'center', gap:12, padding:'0 32px', textAlign:'center'
-        }}>
-          <div style={{
-            width:56, height:56, borderRadius:16, background:t.accent+'18',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            fontSize:26, marginBottom:4
-          }}>🏋️</div>
-          <div style={{ fontFamily:t.serif, fontSize:26, color:t.text, lineHeight:1.1 }}>
-            Gym plan
-          </div>
-          <div style={{ fontSize:13, color:t.text3, lineHeight:1.6 }}>
-            Your training split will appear here once it's set up.
-          </div>
-        </div>
+        <ActivitySessionView
+          t={t} dayOfWeek={dayOfWeek} activities={activities} onTapDay={onTapDay}
+        />
       ) : (
       <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 16px' }} className="phone-scroll">
 

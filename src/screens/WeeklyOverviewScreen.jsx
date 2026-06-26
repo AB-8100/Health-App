@@ -624,7 +624,7 @@ export function WeeklyOverviewScreen({
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 9.5, letterSpacing: '.18em', textTransform: 'uppercase', color: t.text3, marginBottom: 2 }}>
-              {hasEventTraining ? `Sprint Triathlon · Wk ${viewWeek}` : `Training · Wk ${viewWeek}`}
+              {hasEventTraining ? `Sprint Triathlon · Wk ${viewWeek}` : 'Your week at a glance'}
             </div>
             <div style={{ fontFamily: t.serif, fontSize: 26, lineHeight: 1, color: t.text }}>
               Weekly Overview
@@ -657,8 +657,8 @@ export function WeeklyOverviewScreen({
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }} className="phone-scroll">
 
-        {/* Phase bar */}
-        <PhaseBar phase={phase} viewWeek={viewWeek} t={t} />
+        {/* Phase bar — triathlon only */}
+        {hasEventTraining && <PhaseBar phase={phase} viewWeek={viewWeek} t={t} />}
 
         {/* Goals panel */}
         <GoalsPanel goals={activeGoals} isDraft={isDraft} t={t} expanded={goalsOpen} onToggle={() => setGoalsOpen(o => !o)} />
