@@ -587,7 +587,7 @@ function App() {
     setScreen('gym-session');
   };
 
-  const markSessionComplete = () => {
+  const markSessionComplete = ({ elapsed = 0, distance = null } = {}) => {
     const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
     const todayBase = split?.days?.[(plan.todayIdx || 0) % split.days.length];
     const today = (plan.overrides && todayBase && plan.overrides[todayBase.id]) || todayBase;
@@ -598,7 +598,8 @@ function App() {
       active: false,
       manuallyCompleted: true,
       workout: today ? today.name + ' day' : 'Session',
-      elapsed: 0,
+      elapsed,
+      distance,
       queue: null,
     };
     setCompletedSessions(prev => {
