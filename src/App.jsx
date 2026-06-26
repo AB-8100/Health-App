@@ -46,6 +46,7 @@ const DEFAULT_PLAN = { splitDays: null, todayIdx: 0, overrides: {} };
 const DAY_KEY_TO_IDX = { monday:0, tuesday:1, wednesday:2, thursday:3, friday:4, saturday:5, sunday:6 };
 
 const ACTIVITY_DEFS = {
+  gym:      { type:'gym',   label:'Gym',     emoji:'🏋️', color:'#BE5A38', duration:60, isGym: true },
   running:  { type:'run',   label:'Run',     emoji:'🏃', color:'#0090FF', duration:45 },
   cycling:  { type:'cycle', label:'Cycle',   emoji:'🚴', color:'#9333EA', duration:60 },
   swimming: { type:'swim',  label:'Swim',    emoji:'🏊', color:'#0369A1', duration:45 },
@@ -58,28 +59,58 @@ const ACTIVITY_DEFS = {
   dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
 };
 
+// Spreads selected activities across training days (capped at trainingDays.length).
+// Gym sessions are not stored in the activities state — they're tracked via plan.splitDays.
+// Returns { schedule, gymDayCount } so the caller can pick the right gym split.
 function generateActivitySchedule(goalsPayload) {
-  const { goals = [], trainingDays = [] } = goalsPayload;
+  const { goals = [], trainingDays = [], gymAccess = false } = goalsPayload;
   const generalGoal = goals.find(g => g.type === 'general_fitness');
-  const selectedIds = generalGoal?.config?.activities || [];
-  if (!selectedIds.length || !trainingDays.length) return {};
+  let selectedIds = [...(generalGoal?.config?.activities || [])];
+
+  // Ensure gym appears in the rotation whenever the user has gym access
+  if (gymAccess && !selectedIds.includes('gym')) {
+    selectedIds = ['gym', ...selectedIds];
+  }
+
+  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
+
+  // Only gym (or nothing selected) → all training days count as gym sessions
+  const nonGymActivities = selectedIds.filter(id => id !== 'gym');
+  if (!nonGymActivities.length) {
+    return { schedule: {}, gymDayCount: gymAccess ? trainingDays.length : 0 };
+  }
+
+  // Cycle through activity list (gym + others) across training days
   const schedule = {};
+  let gymDayCount = 0;
+
   trainingDays.forEach((day, i) => {
     const dayIdx = DAY_KEY_TO_IDX[day];
     if (dayIdx === undefined) return;
-    const def = ACTIVITY_DEFS[selectedIds[i % selectedIds.length]];
-    if (!def) return;
-    schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
+    const actId = selectedIds[i % selectedIds.length];
+
+    if (actId === 'gym') {
+      gymDayCount++;
+      // Gym days are represented by plan.splitDays — no entry needed in activities
+    } else {
+      const def = ACTIVITY_DEFS[actId];
+      if (def) {
+        schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
+      }
+    }
   });
-  return schedule;
+
+  return { schedule, gymDayCount };
 }
 
-function getAutoSplitDays(trainingDaysPerWeek, gymAccess) {
-  if (!gymAccess) return null;
-  if (trainingDaysPerWeek <= 1) return 1;
-  if (trainingDaysPerWeek === 2) return 2;
-  if (trainingDaysPerWeek === 3) return 3;
-  if (trainingDaysPerWeek === 4) return 4;
+// Gym split is determined by how many gym sessions are in the weekly plan,
+// not the total number of training days.
+function getAutoSplitDays(gymDayCount) {
+  if (!gymDayCount || gymDayCount <= 0) return null;
+  if (gymDayCount === 1) return 1;
+  if (gymDayCount === 2) return 2;
+  if (gymDayCount === 3) return 3;
+  if (gymDayCount === 4) return 4;
   return 5;
 }
 
@@ -403,7 +434,8 @@ function App() {
       (gp.regularSports || []).length > 0;
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
-    const autoSplitDays = getAutoSplitDays(gp.trainingDaysPerWeek || gp.trainingDays?.length || 3, gymAccess);
+    const { schedule: initialActivities, gymDayCount } = generateActivitySchedule({ ...gp, gymAccess });
+    const autoSplitDays = getAutoSplitDays(gymDayCount);
 
     const updatedProfile = {
       ...profile,
@@ -413,8 +445,6 @@ function App() {
       hasTrainingActivities: !!hasTrainingActivities,
       splitDays: autoSplitDays,
     };
-
-    const initialActivities = generateActivitySchedule(gp);
 
     // Persist intake to Supabase
     if (currentUserIdRef.current) {

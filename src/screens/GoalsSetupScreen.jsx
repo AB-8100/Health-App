@@ -31,6 +31,7 @@ const SPORT_TYPES = [
 const INTENSITY_LEVELS = ['Low', 'Moderate', 'High'];
 
 const GENERAL_ACTIVITIES = [
+  { id: 'gym',       label: 'Gym',       icon: '🏋️' },
   { id: 'running',   label: 'Running',   icon: '🏃' },
   { id: 'cycling',   label: 'Cycling',   icon: '🚴' },
   { id: 'swimming',  label: 'Swimming',  icon: '🏊' },

@@ -1208,6 +1208,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const restMobilityIds = isViewRest ? getMobilityForMuscles(prevDay?.muscles || '') : [];
 
   const viewExercises = viewDay ? SECTION_ORDER.flatMap(sec => (viewDay[sec] || []).map(id => ({ id, sec }))) : [];
+  const viewDayActs = activities[viewDayIdx] || [];
 
   // Weekly tracker data: group completedSessions by ISO week
   const weekMap = React.useMemo(() => {
@@ -1350,38 +1351,50 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                   }}>
                     {dayLetter}
                   </div>
-                  <div style={{
-                    position:'relative',
-                    width:32, height:32, borderRadius:8,
-                    background: hasCompleted
-                      ? '#0090FF'
-                      : isRest
-                        ? t.surface2
-                        : (isToday ? t.accent : (t.accent + '20')),
-                    border: isSelected
-                      ? `2px solid ${t.accent}`
-                      : hasCompleted
-                        ? '1.5px solid #0070CC'
-                        : isToday ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
-                    color: hasCompleted
-                      ? '#fff'
-                      : isToday ? t.accentText : (isRest ? t.text3 : t.accent),
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize: isRest || hasCompleted ? 11 : 14, fontWeight:600, fontFamily:t.mono,
-                    transition:'background .2s',
-                    boxShadow: isSelected ? `0 0 0 3px ${t.accent}25` : 'none',
-                  }}>
-                    {hasCompleted ? '✓' : isRest ? (dayActs.length ? '+' : '·') : '🏋️'}
-                    {dayActs.length > 0 && !hasCompleted && (
-                      <span style={{
-                        position:'absolute', top:-3, right:-3,
-                        width:10, height:10, borderRadius:'50%',
-                        background: '#0090FF', border:`2px solid ${t.surface}`,
-                        fontSize:7, color:'#fff', display:'flex',
-                        alignItems:'center', justifyContent:'center', lineHeight:1
-                      }}>{dayActs.length}</span>
-                    )}
-                  </div>
+                  {(() => {
+                    const actColor = dayActs[0]?.color;
+                    const actEmoji = dayActs[0]?.emoji;
+                    const hasActivity = isRest && dayActs.length > 0;
+                    return (
+                      <div style={{
+                        position:'relative',
+                        width:32, height:32, borderRadius:8,
+                        background: hasCompleted
+                          ? '#0090FF'
+                          : hasActivity
+                            ? (actColor ? actColor + '20' : t.surface2)
+                            : isRest
+                              ? t.surface2
+                              : (isToday ? t.accent : (t.accent + '20')),
+                        border: isSelected
+                          ? `2px solid ${t.accent}`
+                          : hasCompleted
+                            ? '1.5px solid #0070CC'
+                            : hasActivity
+                              ? `1px solid ${actColor ? actColor + '50' : t.border}`
+                              : isToday ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+                        color: hasCompleted
+                          ? '#fff'
+                          : isToday ? t.accentText : (isRest ? (actColor || t.text3) : t.accent),
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        fontSize: (isRest && !dayActs.length) || hasCompleted ? 11 : 14,
+                        fontWeight:600, fontFamily:t.mono,
+                        transition:'background .2s',
+                        boxShadow: isSelected ? `0 0 0 3px ${t.accent}25` : 'none',
+                      }}>
+                        {hasCompleted ? '✓' : hasActivity ? (actEmoji || '+') : isRest ? '·' : '🏋️'}
+                        {dayActs.length > 1 && !hasCompleted && (
+                          <span style={{
+                            position:'absolute', top:-3, right:-3,
+                            width:10, height:10, borderRadius:'50%',
+                            background: actColor || '#0090FF', border:`2px solid ${t.surface}`,
+                            fontSize:7, color:'#fff', display:'flex',
+                            alignItems:'center', justifyContent:'center', lineHeight:1
+                          }}>{dayActs.length}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1395,8 +1408,65 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           </div>
         </div>
 
-        {/* Day focus card — shows selected day's exercises or rest day advice */}
-        {isViewRest ? (
+        {/* Day focus card — shows selected day's exercises, activities, or rest day advice */}
+        {isViewRest && viewDayActs.length > 0 ? (
+          /* Activity session card — for non-gym sessions scheduled on this day */
+          <div style={{
+            background:t.surface,
+            border:`1.5px solid ${viewDayActs[0]?.color ? viewDayActs[0].color + '50' : t.border}`,
+            borderRadius:20, padding:'16px 18px 14px', marginBottom:14,
+            boxShadow: viewDayActs[0]?.color
+              ? `0 4px 14px ${viewDayActs[0].color}10`
+              : `0 4px 14px ${t.accent}08`,
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{
+                  fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
+                  color: viewDayActs[0]?.color || t.accent, marginBottom:3, fontWeight:600
+                }}>
+                  {WEEK_DAYS[viewDayIdx]} · {viewDayActs.length} session{viewDayActs.length !== 1 ? 's' : ''}
+                </div>
+                <div style={{ fontFamily:t.serif, fontSize:26, lineHeight:1.05, color:t.text }}>
+                  {viewDayActs.length === 1 ? viewDayActs[0].label : 'Training day'}
+                </div>
+              </div>
+              <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                padding:'6px 10px', borderRadius:8,
+                background:'transparent', border:`1px solid ${t.border2}`,
+                color:t.text2, fontSize:10.5, cursor:'pointer', fontFamily:t.sans,
+              }}>✎ Edit</button>
+            </div>
+
+            {/* Session rows */}
+            {viewDayActs.map((act, i) => (
+              <div key={i} style={{
+                display:'flex', alignItems:'center', gap:12, padding:'10px 0',
+                borderTop: i > 0 ? `1px solid ${t.border}` : 'none',
+              }}>
+                <div style={{
+                  width:44, height:44, borderRadius:12, flexShrink:0,
+                  background:(act.color || t.accent) + '18',
+                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:22,
+                }}>{act.emoji || '⚡'}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:t.text }}>{act.label}</div>
+                  {act.duration && (
+                    <div style={{ fontSize:11, color:t.text3, marginTop:2 }}>{act.duration} min</div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+              marginTop:14, width:'100%', padding:'13px', borderRadius:12, border:'none',
+              fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
+              background: viewDayActs[0]?.color || t.accent, color:'#fff',
+            }}>
+              Start session
+            </button>
+          </div>
+        ) : isViewRest ? (
           <div style={{
             background:t.surface, border:`1px solid ${t.border}`, borderRadius:20,
             padding:'16px 18px 14px', marginBottom:14
