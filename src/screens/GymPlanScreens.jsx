@@ -2688,7 +2688,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
         )}
       </div>
 
-      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
+      <BottomNav theme={theme} active="weekly" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
 
       {/* Add activity sheet */}
       {showAdd && (

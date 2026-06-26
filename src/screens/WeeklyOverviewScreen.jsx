@@ -8,8 +8,6 @@ import {
   getCurrentTriathlonWeek, getTriathlonWeekStart,
 } from '../data/triathlonPlan';
 import { SPLITS } from './GymPlanScreens';
-import { FORMA_GOALS, TIER_META } from '../data/formaGoals';
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TOTAL_WEEKS = 18;
@@ -53,7 +51,15 @@ function getPhase(wk) {
 }
 
 function actTypeToDisc(type) {
-  return { swimming: 'swim', cycling: 'bike', running: 'run', gym: 'gym' }[type] || 'conditioning';
+  const map = {
+    swim: 'swim', swimming: 'swim',
+    cycle: 'bike', cycling: 'bike', bike: 'bike',
+    run: 'run', running: 'run',
+    gym: 'gym',
+    walk: 'conditioning', yoga: 'conditioning',
+    other: 'conditioning',
+  };
+  return map[type] || 'conditioning';
 }
 
 function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining) {
@@ -237,24 +243,26 @@ function GoalsPanel({ goals, isDraft, t, expanded, onToggle }) {
   );
 }
 
-function SessionChip({ session, isDragging }) {
-  const color = DISC_COLOR[session.discipline] || DISC_COLOR.conditioning;
-  const emoji = DISC_EMOJI[session.discipline] || '🏃';
-  const label = DISC_LABEL[session.discipline] || session.discipline;
+function SessionBar({ session, isDragging }) {
+  const color  = DISC_COLOR[session.discipline] || DISC_COLOR.conditioning;
+  const emoji  = session.actData?.emoji || DISC_EMOJI[session.discipline] || '🏃';
+  const label  = session.actData?.label || session.label || DISC_LABEL[session.discipline] || session.discipline;
+  const detail = session.detail;
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      background: isDragging ? color + '30' : color + '16',
-      border: `1px solid ${color}${isDragging ? '60' : '35'}`,
-      borderRadius: 8, padding: '4px 8px',
-      boxShadow: isDragging ? `0 3px 10px ${color}40` : 'none',
-      transform: isDragging ? 'scale(1.04)' : 'none',
+      display: 'flex', alignItems: 'center', gap: 7,
+      background: isDragging ? color + '28' : color + '14',
+      border: `1px solid ${color}${isDragging ? '55' : '28'}`,
+      borderRadius: 9, padding: '6px 10px',
+      width: '100%', boxSizing: 'border-box',
+      boxShadow: isDragging ? `0 3px 10px ${color}35` : 'none',
+      transform: isDragging ? 'scale(1.02)' : 'none',
       transition: 'box-shadow .1s, transform .1s',
       cursor: 'grab', userSelect: 'none',
-      flexShrink: 0,
     }}>
-      <span style={{ fontSize: 11 }}>{emoji}</span>
-      <span style={{ fontSize: 10.5, fontWeight: 600, color, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 13, flexShrink: 0 }}>{emoji}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, color, flex: 1, minWidth: 0 }}>{label}</span>
+      {detail && <span style={{ fontSize: 10, color: color + 'BB', flexShrink: 0 }}>{detail}</span>}
     </div>
   );
 }
@@ -317,8 +325,8 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                 transition: 'background .15s',
               }}
             >
-              {/* Chips row */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+              {/* Sessions — full-width bars */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
                 {sessions.length === 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.4 }}>
                     <span style={{ fontSize: 11 }}>😴</span>
@@ -333,8 +341,9 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                           {...prov.draggableProps}
                           {...prov.dragHandleProps}
                           onClick={e => e.stopPropagation()}
+                          style={{ width: '100%' }}
                         >
-                          <SessionChip session={sess} isDragging={snap.isDragging} />
+                          <SessionBar session={sess} isDragging={snap.isDragging} />
                         </div>
                       )}
                     </Draggable>
@@ -512,7 +521,6 @@ export function WeeklyOverviewScreen({
   );
   const [warnings,      setWarnings]      = React.useState({});
   const [selectedDay,   setSelectedDay]   = React.useState(null);
-  const [goalsOpen,     setGoalsOpen]     = React.useState(false);
   const [refActivities, setRefActivities] = React.useState([]);
 
   React.useEffect(() => { getRefActivities().then(setRefActivities); }, []);
@@ -528,9 +536,6 @@ export function WeeklyOverviewScreen({
   const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
   const fmt       = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const weekLabel = `${fmt(weekStart)} – ${fmt(weekEnd)}`;
-
-  // Draft state: no goal set yet
-  const isDraft = !profile?.goal;
 
   // ── DnD ────────────────────────────────────────────────────────────────────
   const handleDragEnd = React.useCallback((result) => {
@@ -600,9 +605,9 @@ export function WeeklyOverviewScreen({
     }
   }, [weekData, triathlonOverrides, plan]);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const activeGoals = FORMA_GOALS.filter(g => !g.archived);
+  const isDraft = !profile?.goal;
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{
       width, height, background: t.bg, fontFamily: t.sans, color: t.text,
@@ -630,28 +635,7 @@ export function WeeklyOverviewScreen({
               Weekly Overview
             </div>
           </div>
-          {isDraft && (
-            <span style={{
-              marginTop: 6,
-              fontSize: 9.5, fontWeight: 700, color: '#D97706',
-              background: '#D9770618', border: '1px solid #D9770630',
-              borderRadius: 7, padding: '3px 8px', letterSpacing: '.06em',
-            }}>DRAFT</span>
-          )}
         </div>
-        {isDraft && (
-          <button
-            onClick={() => onNav?.('about-me')}
-            style={{
-              marginTop: 7, width: '100%', textAlign: 'left',
-              fontSize: 11.5, fontWeight: 600, color: t.accent,
-              background: t.accent + '10', border: `1px solid ${t.accent}28`,
-              borderRadius: 9, padding: '7px 12px', fontFamily: t.sans, cursor: 'pointer',
-            }}
-          >
-            Complete your profile to unlock your full plan →
-          </button>
-        )}
       </div>
 
       {/* Scrollable body */}
@@ -659,9 +643,6 @@ export function WeeklyOverviewScreen({
 
         {/* Phase bar — triathlon only */}
         {hasEventTraining && <PhaseBar phase={phase} viewWeek={viewWeek} t={t} />}
-
-        {/* Goals panel */}
-        <GoalsPanel goals={activeGoals} isDraft={isDraft} t={t} expanded={goalsOpen} onToggle={() => setGoalsOpen(o => !o)} />
 
         {/* Week navigator */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
