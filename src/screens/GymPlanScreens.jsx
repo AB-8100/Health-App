@@ -2447,15 +2447,23 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
                               tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const dayName = DAY_NAMES[dayIdx] || 'Day';
-  const dayActivities = activities[dayIdx] || [];
+  const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const todayWeekday = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
 
-  const [items, setItems] = React.useState([...dayActivities]);
+  const [currentDayIdx, setCurrentDayIdx] = React.useState(dayIdx);
+  const [items, setItems] = React.useState([...(activities[dayIdx] || [])]);
   const [showAdd, setShowAdd] = React.useState(false);
   const [addType, setAddType] = React.useState(null);
   const [duration, setDuration] = React.useState('45');
   const [time, setTime] = React.useState('07:00');
   const [deleteModal, setDeleteModal] = React.useState(null); // item id being deleted
+
+  // Reload items when switching days
+  React.useEffect(() => {
+    setItems([...(activities[currentDayIdx] || [])]);
+  }, [currentDayIdx]);
+
+  const dayName = DAY_NAMES[currentDayIdx] || 'Day';
 
   // Resolve the active schedule — respects plan.scheduleOverride when valid
   const split = SPLITS[plan.splitDays];
@@ -2463,13 +2471,13 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
   const scheduleOverrideIsValid = plan.scheduleOverride &&
     plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
   const activeSchedule = (scheduleOverrideIsValid ? plan.scheduleOverride : split?.schedule) || [];
-  const scheduledSlot = activeSchedule[dayIdx];
+  const scheduledSlot = activeSchedule[currentDayIdx];
   const baseDay = scheduledSlot && scheduledSlot !== '—'
     ? split.days.find(d => d.id === scheduledSlot) : null;
   // Also apply per-day exercise overrides the user may have saved
   const scheduledDay = baseDay ? (plan.overrides?.[baseDay.id] || baseDay) : null;
 
-  const recommendation = getGymRecommendation(plan, dayIdx);
+  const recommendation = getGymRecommendation(plan, currentDayIdx);
 
   const addActivity = () => {
     if (!addType) return;
@@ -2486,7 +2494,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
     };
     const updated = [...items, newItem];
     setItems(updated);
-    if (onSave) onSave(dayIdx, updated);
+    if (onSave) onSave(currentDayIdx, updated);
     setShowAdd(false);
     setAddType(null);
     setDuration('45');
@@ -2495,7 +2503,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
   const removeItem = (id) => {
     const updated = items.filter(i => i.id !== id);
     setItems(updated);
-    if (onSave) onSave(dayIdx, updated);
+    if (onSave) onSave(currentDayIdx, updated);
     setDeleteModal(null);
   };
 
@@ -2525,6 +2533,39 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
           }}>+ Add</button>
         }
       />
+
+      {/* Day selector strip */}
+      <div style={{
+        display:'flex', gap:2, padding:'8px 14px 8px',
+        borderBottom:`1px solid ${t.border}`, flexShrink:0
+      }}>
+        {DAY_SHORT.map((label, i) => {
+          const isToday = i === todayWeekday;
+          const isSelected = i === currentDayIdx;
+          const slotId = activeSchedule[i];
+          const hasSession = slotId && slotId !== '—';
+          return (
+            <button key={i} onClick={() => setCurrentDayIdx(i)} style={{
+              flex:1, padding:'5px 0', borderRadius:8, border:'none',
+              background: isSelected ? t.accent : 'transparent',
+              color: isSelected ? '#fff' : isToday ? t.accent : t.text3,
+              fontFamily:t.sans, fontSize:9.5,
+              fontWeight: isSelected ? 700 : isToday ? 600 : 400,
+              cursor:'pointer', position:'relative',
+            }}>
+              {label}
+              {hasSession && !isSelected && (
+                <div style={{
+                  width:4, height:4, borderRadius:'50%',
+                  background: isToday ? t.accent : t.text3,
+                  margin:'2px auto 0',
+                }} />
+              )}
+              {(!hasSession || isSelected) && <div style={{ height:6 }} />}
+            </button>
+          );
+        })}
+      </div>
 
       <div style={{ flex:1, overflowY:'auto', padding:'14px 18px 16px' }} className="phone-scroll">
 
