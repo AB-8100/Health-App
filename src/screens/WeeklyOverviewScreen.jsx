@@ -1,5 +1,6 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { checkWeek, checkDaySync, getRefActivities } from '../utils/overtrain';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import {
@@ -41,13 +42,6 @@ const DISC_LABEL = {
   conditioning: 'Cond', gym: 'Gym', rest: 'Rest',
 };
 
-// Load scores: 0=none 1=low 2=med 3=high
-const LOAD = {
-  cardio: { swim: 2, bike: 3, run: 3, brick: 3, conditioning: 2, gym: 1, rest: 0 },
-  leg:    { swim: 1, bike: 3, run: 3, brick: 3, conditioning: 2, gym: 3, rest: 0 },
-  upper:  { swim: 2, bike: 0, run: 0, brick: 1, conditioning: 2, gym: 3, rest: 0 },
-};
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function toDateKey(d) {
@@ -60,21 +54,6 @@ function getPhase(wk) {
 
 function actTypeToDisc(type) {
   return { swimming: 'swim', cycling: 'bike', running: 'run', gym: 'gym' }[type] || 'conditioning';
-}
-
-function checkOvertrain(sessions) {
-  const warnings = [];
-  let cardio = 0, leg = 0, upper = 0;
-  sessions.forEach(s => {
-    const d = s.discipline in LOAD.cardio ? s.discipline : 'conditioning';
-    cardio += LOAD.cardio[d];
-    leg    += LOAD.leg[d];
-    upper  += LOAD.upper[d];
-  });
-  if (cardio >= 5) warnings.push('High cardio load');
-  if (leg    >= 5) warnings.push('High leg load');
-  if (upper  >= 5) warnings.push('High upper load');
-  return warnings;
 }
 
 function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining) {
@@ -378,7 +357,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
   );
 }
 
-function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, onEditDay }) {
+function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, onEditDay, refActivities }) {
   const isDark = theme === 'dark';
   const { d, dk, sessions, dayIdx } = day;
 
@@ -386,7 +365,7 @@ function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, o
   const overlayBg = isDark ? 'rgba(0,0,0,.55)' : 'rgba(28,25,23,.35)';
 
   const dayName = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  const warnings = checkOvertrain(sessions);
+  const warnings = checkDaySync(sessions, refActivities || []);
 
   return (
     <div
@@ -527,13 +506,16 @@ export function WeeklyOverviewScreen({
   const t = themes[theme];
 
   const initWeek = getCurrentTriathlonWeek();
-  const [viewWeek, setViewWeek]       = React.useState(initWeek);
-  const [weekData, setWeekData]       = React.useState(() =>
+  const [viewWeek,      setViewWeek]      = React.useState(initWeek);
+  const [weekData,      setWeekData]      = React.useState(() =>
     buildWeekData(initWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining)
   );
-  const [warnings,    setWarnings]    = React.useState({});
-  const [selectedDay, setSelectedDay] = React.useState(null);
-  const [goalsOpen,   setGoalsOpen]   = React.useState(false);
+  const [warnings,      setWarnings]      = React.useState({});
+  const [selectedDay,   setSelectedDay]   = React.useState(null);
+  const [goalsOpen,     setGoalsOpen]     = React.useState(false);
+  const [refActivities, setRefActivities] = React.useState([]);
+
+  React.useEffect(() => { getRefActivities().then(setRefActivities); }, []);
 
   const phase = getPhase(viewWeek);
 
@@ -566,9 +548,28 @@ export function WeeklyOverviewScreen({
 
     setWeekData(newWeekData);
 
-    // Overtrain check on destination day
-    const newWarns = checkOvertrain(dstRow.sessions);
-    setWarnings(prev => ({ ...prev, [destination.droppableId]: newWarns }));
+    // Async overtrain check across the full updated week
+    const weekArray = newWeekData.map(row => ({
+      day:        DAY_SHORT[row.dayIdx],
+      date:       row.dk,
+      activities: row.sessions.map(s => ({
+        name:      s.label || s.discipline || '',
+        intensity: s.intensity || 'medium',
+        duration:  s.actData?.duration,
+      })),
+    }));
+    checkWeek(weekArray).then(conflicts => {
+      const built = {};
+      conflicts.forEach(c => {
+        if (c.day === 'week') return;
+        const row = newWeekData.find(r => DAY_SHORT[r.dayIdx] === c.day);
+        if (row) {
+          if (!built[row.dk]) built[row.dk] = [];
+          built[row.dk].push(c.message);
+        }
+      });
+      setWarnings(built);
+    });
 
     // Persist triathlon session moves
     if (moved.source === 'triathlon' && onUpdateOverrides) {
@@ -736,6 +737,7 @@ export function WeeklyOverviewScreen({
           day={selectedDay}
           t={t}
           theme={theme}
+          refActivities={refActivities}
           triathlonDone={triathlonDone}
           onToggleDone={(dk, si) => {
             const key  = `${dk}:${si}`;
