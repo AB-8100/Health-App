@@ -1,6 +1,6 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { checkWeek, checkDaySync, getRefActivities } from '../utils/overtrain';
+import { checkWeek } from '../utils/overtrain';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { EVENT_PLAN, getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
@@ -294,7 +294,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
         </button>
 
         {/* Sessions droppable area */}
-        <Droppable droppableId={dk} direction="horizontal">
+        <Droppable droppableId={dk} direction="vertical">
           {(provided, snapshot) => (
             <div
               ref={provided.innerRef}
@@ -325,7 +325,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                           {...prov.draggableProps}
                           {...prov.dragHandleProps}
                           onClick={e => e.stopPropagation()}
-                          style={{ width: '100%' }}
+                          style={{ ...prov.draggableProps.style, width: '100%' }}
                         >
                           <SessionBar session={sess} isDragging={snap.isDragging} />
                         </div>
@@ -350,140 +350,6 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
   );
 }
 
-function DayDetailPanel({ day, t, theme, planSessionsDone, onToggleDone, onClose, onEditDay, refActivities }) {
-  const isDark = theme === 'dark';
-  const { d, dk, sessions, dayIdx } = day;
-
-  const panelBg   = isDark ? '#1C1C24' : '#FFFFFF';
-  const overlayBg = isDark ? 'rgba(0,0,0,.55)' : 'rgba(28,25,23,.35)';
-
-  const dayName = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  const warnings = checkDaySync(sessions, refActivities || []);
-
-  return (
-    <div
-      style={{
-        position: 'absolute', inset: 0, zIndex: 50,
-        background: overlayBg,
-        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: panelBg, borderRadius: '20px 20px 0 0', padding: '0 0 32px',
-          maxHeight: '72%', display: 'flex', flexDirection: 'column',
-          animation: 'slideUp .24s cubic-bezier(.2,.8,.3,1) both',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 6 }}>
-          <div style={{ width: 36, height: 4, borderRadius: 99, background: t.border2 }} />
-        </div>
-
-        {/* Header */}
-        <div style={{ padding: '4px 20px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, lineHeight: 1.1 }}>{dayName}</div>
-            <div style={{ fontSize: 11, color: t.text3, marginTop: 3 }}>
-              {sessions.length === 0 ? 'Rest day' : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
-            </div>
-          </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: t.surface2, border: `1px solid ${t.border}`, cursor: 'pointer', fontSize: 14, color: t.text2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-        </div>
-
-        {/* Sessions list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }} className="phone-scroll">
-          {sessions.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', opacity: 0.5 }}>
-              <span style={{ fontSize: 22 }}>😴</span>
-              <span style={{ fontSize: 13, color: t.text2 }}>Rest day — no sessions planned</span>
-            </div>
-          ) : (
-            sessions.map((sess, si) => {
-              const { color, emoji, label: displayLabel } = getSessionDisplay(sess.actData, sess.type);
-              const label   = sess.label || displayLabel;
-              const doneKey = `${dk}:${si}`;
-              const isDone  = !!planSessionsDone?.[doneKey];
-              return (
-                <div key={sess.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
-                  borderBottom: si < sessions.length - 1 ? `1px solid ${t.border}` : 'none',
-                }}>
-                  {/* Completion toggle */}
-                  <button
-                    onClick={() => sess.source === 'event_plan' && onToggleDone?.(dk, si)}
-                    style={{
-                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: sess.source === 'event_plan' ? 'pointer' : 'default',
-                      border: isDone ? 'none' : `2px solid ${color}60`,
-                      background: isDone ? color : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: 0,
-                    }}
-                  >
-                    {isDone && (
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                        <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-
-                  {/* Icon */}
-                  <div style={{
-                    width: 34, height: 34, borderRadius: 10, background: color + '16', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-                    opacity: isDone ? 0.45 : 1,
-                  }}>{emoji}</div>
-
-                  {/* Text */}
-                  <div style={{ flex: 1, minWidth: 0, opacity: isDone ? 0.45 : 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color, textDecoration: isDone ? 'line-through' : 'none' }}>{label}</div>
-                    {sess.detail && <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>{sess.detail}</div>}
-                  </div>
-                </div>
-              );
-            })
-          )}
-
-          {/* Overtrain warnings */}
-          {warnings.length > 0 && (
-            <div style={{ marginTop: 8, padding: '8px 10px', background: '#DC262608', border: '1px solid #DC262625', borderRadius: 10 }}>
-              {warnings.map(w => (
-                <div key={w} style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                  <span style={{ fontSize: 11 }}>⚠️</span>
-                  <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>{w} — consider a rest day</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* CTA */}
-        <div style={{ padding: '14px 20px 0' }}>
-          <button
-            onClick={onEditDay}
-            style={{
-              width: '100%', padding: '12px', borderRadius: 12,
-              background: t.accent, color: '#fff', border: 'none',
-              fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-            }}
-          >
-            View Full Day →
-          </button>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes slideUp {
-          from { transform: translateY(100%); opacity: 0; }
-          to   { transform: translateY(0);    opacity: 1; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export function WeeklyOverviewScreen({
@@ -495,6 +361,7 @@ export function WeeklyOverviewScreen({
   planSessionsDone = {}, onToggleDone,
   eventPhasePlan = { phases: [], totalWeeks: 18 },
   onTapDay,
+  onUpdatePlan,
 }) {
   const t = themes[theme];
 
@@ -504,10 +371,6 @@ export function WeeklyOverviewScreen({
     buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining)
   );
   const [warnings,      setWarnings]      = React.useState({});
-  const [selectedDay,   setSelectedDay]   = React.useState(null);
-  const [refActivities, setRefActivities] = React.useState([]);
-
-  React.useEffect(() => { getRefActivities().then(setRefActivities); }, []);
 
   const { phases, totalWeeks } = eventPhasePlan;
 
@@ -581,9 +444,10 @@ export function WeeklyOverviewScreen({
         const tmp = sched[srcRow.dayIdx];
         sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
         sched[dstRow.dayIdx] = tmp;
+        onUpdatePlan?.(sched);
       }
     }
-  }, [weekData, eventOverrides, plan]);
+  }, [weekData, eventOverrides, plan, onUpdatePlan]);
 
   const isDraft = !profile?.goal;
 
@@ -681,7 +545,7 @@ export function WeeklyOverviewScreen({
                 i={i}
                 warnings={warnings[day.dk] || []}
                 t={t}
-                onClick={() => setSelectedDay(day)}
+                onClick={() => onTapDay?.(day.dayIdx)}
               />
             ))}
           </div>
@@ -693,28 +557,6 @@ export function WeeklyOverviewScreen({
         </div>
 
       </div>
-
-      {/* Slide-in day detail panel */}
-      {selectedDay && (
-        <DayDetailPanel
-          day={selectedDay}
-          t={t}
-          theme={theme}
-          refActivities={refActivities}
-          planSessionsDone={planSessionsDone}
-          onToggleDone={(dk, si) => {
-            const key  = `${dk}:${si}`;
-            const next = { ...planSessionsDone };
-            if (next[key]) delete next[key]; else next[key] = true;
-            onToggleDone?.(next);
-          }}
-          onClose={() => setSelectedDay(null)}
-          onEditDay={() => {
-            setSelectedDay(null);
-            onTapDay?.(selectedDay.dayIdx);
-          }}
-        />
-      )}
 
       <BottomNav
         theme={theme} active="weekly" onNav={onNav}
