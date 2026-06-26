@@ -1,18 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
-import { getCurrentTriathlonWeek } from '../data/triathlonPlan';
-
-const PHASE_META = [
-  { label: 'Foundation', weeks: [1,  6],  color: '#15803D' },
-  { label: 'Build',      weeks: [7,  14], color: '#0369A1' },
-  { label: 'Peak',       weeks: [15, 17], color: '#9333EA' },
-  { label: 'Taper',      weeks: [18, 18], color: '#DC2626' },
-];
-const TOTAL_PLAN_WEEKS = 18;
-
-function getPhase(wk) {
-  return PHASE_META.find(p => wk >= p.weeks[0] && wk <= p.weeks[1]) || PHASE_META[0];
-}
+import { getCurrentPlanWeek, computeEventPhases } from '../data/eventPlan';
 const CONNECTED_SERVICES = [
   { id: 'strava',   name: 'Strava',       scope: 'Runs · Rides · Workouts',  color: '#FC5200', glyph: 'S' },
   { id: 'apple',    name: 'Apple Health', scope: 'Steps · Sleep · Weight',   color: '#000',    glyph: 'A' },
@@ -153,11 +141,12 @@ function AboutScreen({
   const hasGym          = localProfile.hasGym !== false;
   const hasEventTraining = !!localProfile.hasEventTraining;
   const gymDays          = hasGym && plan.splitDays ? plan.splitDays : 0;
-  // Sprint triathlon plan = typically 5 structured sessions/week
   const eventDays        = hasEventTraining ? 5 : 0;
   const totalWeeklySessions = gymDays + eventDays;
-  const currentWeek      = getCurrentTriathlonWeek();
-  const currentPhase     = getPhase(currentWeek);
+  const currentWeek      = getCurrentPlanWeek();
+  const totalPlanWeeks   = localProfile.eventTotalWeeks || 18;
+  const phaseMeta        = computeEventPhases(totalPlanWeeks);
+  const currentPhase     = phaseMeta.find(p => currentWeek >= p.weeks[0] && currentWeek <= p.weeks[1]) || phaseMeta[0];
   const planDone         = !!localProfile.goal;
 
   const goals = ['strength', 'muscle', 'fat-loss', 'active', 'flexibility'];
@@ -428,7 +417,7 @@ function AboutScreen({
                 }}>🏁</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Sprint Triathlon</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Event Training Plan</span>
                     <span style={{
                       fontSize: 9, fontWeight: 700, color: currentPhase.color,
                       background: currentPhase.color + '18', border: `1px solid ${currentPhase.color}30`,
@@ -436,7 +425,7 @@ function AboutScreen({
                     }}>{currentPhase.label.toUpperCase()}</span>
                   </div>
                   <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>
-                    {TOTAL_PLAN_WEEKS}-week programme · Week {currentWeek}
+                    {totalPlanWeeks}-week programme · Week {currentWeek}
                   </div>
                 </div>
                 <span style={{
@@ -449,8 +438,8 @@ function AboutScreen({
               {/* Phase progress bar */}
               <div style={{ margin: '10px 0 8px' }}>
                 <div style={{ display: 'flex', gap: 2, height: 4, borderRadius: 99, overflow: 'hidden' }}>
-                  {PHASE_META.map(ph => {
-                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_PLAN_WEEKS) * 100;
+                  {phaseMeta.map(ph => {
+                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / totalPlanWeeks) * 100;
                     const isActive = ph.label === currentPhase.label;
                     const filled = isActive
                       ? ((currentWeek - ph.weeks[0]) / (ph.weeks[1] - ph.weeks[0] + 1)) * w
@@ -469,8 +458,8 @@ function AboutScreen({
                   })}
                 </div>
                 <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
-                  {PHASE_META.map(ph => {
-                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_PLAN_WEEKS) * 100;
+                  {phaseMeta.map(ph => {
+                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / totalPlanWeeks) * 100;
                     return (
                       <div key={ph.label} style={{
                         width: `${w}%`, fontSize: 8,
@@ -499,7 +488,7 @@ function AboutScreen({
                 ))}
               </div>
 
-              <button onClick={() => onNav?.('triathlon')} style={{
+              <button onClick={() => onNav?.('weekly')} style={{
                 width: '100%', padding: '9px', borderRadius: 10,
                 background: 'transparent', border: `1px solid ${t.border}`,
                 color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,

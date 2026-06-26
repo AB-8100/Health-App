@@ -15,7 +15,7 @@ const FREQ_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isTriathlonGoal(goals = []) {
+function isEventRaceGoal(goals = []) {
   return goals.some(g =>
     g.type === 'event_race' && (g.config?.raceType || '').toLowerCase().includes('triathlon')
   );
@@ -28,7 +28,7 @@ function isRaceGoal(goals = []) {
 function buildSteps(goals) {
   const steps = ['intro'];
   if (isRaceGoal(goals))       steps.push('run');
-  if (isTriathlonGoal(goals))  steps.push('swim', 'bike');
+  if (isEventRaceGoal(goals))  steps.push('swim', 'bike');
   steps.push('availability', 'injury', 'done');
   return steps;
 }
@@ -247,8 +247,8 @@ export function DeepQuestionnaireScreen({
               }}>What we'll cover</div>
               {[
                 isRaceGoal(goals)      && { icon: '🏃', label: 'Run baseline — times & weekly volume' },
-                isTriathlonGoal(goals) && { icon: '🏊', label: 'Swim baseline — pace & pool sessions' },
-                isTriathlonGoal(goals) && { icon: '🚴', label: 'Bike baseline — power & longest ride' },
+                isEventRaceGoal(goals) && { icon: '🏊', label: 'Swim baseline — pace & pool sessions' },
+                isEventRaceGoal(goals) && { icon: '🚴', label: 'Bike baseline — power & longest ride' },
                 { icon: '📅', label: 'Availability — holidays, one-off events, commitments' },
                 { icon: '🩺', label: 'Injury & health — past injuries, current niggles' },
               ].filter(Boolean).map((item, i, arr) => (
@@ -608,9 +608,9 @@ export function DeepQuestionnaireScreen({
                   { label: '5K PB', value: intake.runBaseline.time5k },
                 isRaceGoal(goals) && intake.runBaseline.weeklyRunsCount &&
                   { label: 'Runs / week', value: `${intake.runBaseline.weeklyRunsCount}×` },
-                isTriathlonGoal(goals) && intake.swimBaseline.time400m &&
+                isEventRaceGoal(goals) && intake.swimBaseline.time400m &&
                   { label: '400m swim', value: intake.swimBaseline.time400m },
-                isTriathlonGoal(goals) && intake.bikeBaseline.longestRideKm &&
+                isEventRaceGoal(goals) && intake.bikeBaseline.longestRideKm &&
                   { label: 'Longest ride', value: `${intake.bikeBaseline.longestRideKm} km` },
                 intake.availability.holidays.length &&
                   { label: 'Holidays', value: `${intake.availability.holidays.length} added` },

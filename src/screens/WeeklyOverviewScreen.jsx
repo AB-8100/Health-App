@@ -3,61 +3,51 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { checkWeek, checkDaySync, getRefActivities } from '../utils/overtrain';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
-import {
-  TRIATHLON_PLAN, DISCIPLINE_DISPLAY,
-  getCurrentTriathlonWeek, getTriathlonWeekStart,
-} from '../data/triathlonPlan';
+import { EVENT_PLAN, getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
 import { SPLITS } from './GymPlanScreens';
-import { FORMA_GOALS, TIER_META } from '../data/formaGoals';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const TOTAL_WEEKS = 18;
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const PHASES = [
-  { label: 'Foundation', weeks: [1, 6],  color: '#15803D' },
-  { label: 'Build',      weeks: [7, 14], color: '#0369A1' },
-  { label: 'Peak',       weeks: [15, 17], color: '#9333EA' },
-  { label: 'Taper',      weeks: [18, 18], color: '#DC2626' },
-];
-
-const DISC_COLOR = {
-  swim:         '#0369A1',
-  bike:         '#D97706',
-  run:          '#E8602C',
-  brick:        '#9333EA',
-  conditioning: '#0D9488',
-  gym:          '#4F46E5',
-  rest:         '#9CA3AF',
+// Display properties keyed by activity type.
+// Covers all types selectable during onboarding + event disciplines.
+// emoji/color are display-only (not stored in Supabase); extend from ref_activities
+// at runtime once the table is seeded.
+const SESSION_DISPLAY = {
+  swim:         { label: 'Swim',    emoji: '🏊', color: '#0369A1' },
+  run:          { label: 'Run',     emoji: '🏃', color: '#0090FF' },
+  cycle:        { label: 'Cycle',   emoji: '🚴', color: '#9333EA' },
+  bike:         { label: 'Bike',    emoji: '🚴', color: '#D97706' },
+  gym:          { label: 'Gym',     emoji: '🏋️', color: '#4F46E5' },
+  yoga:         { label: 'Yoga',    emoji: '🧘', color: '#6D4AAF' },
+  walk:         { label: 'Walk',    emoji: '🚶', color: '#15803D' },
+  row:          { label: 'Row',     emoji: '🚣', color: '#4B5563' },
+  hiit:         { label: 'HIIT',    emoji: '⚡', color: '#DC2626' },
+  pilates:      { label: 'Pilates', emoji: '🤸', color: '#7C3AED' },
+  climb:        { label: 'Climb',   emoji: '🧗', color: '#854D0E' },
+  dance:        { label: 'Dancing', emoji: '💃', color: '#EC4899' },
+  brick:        { label: 'Brick',   emoji: '🔥', color: '#9333EA' },
+  conditioning: { label: 'Cond',    emoji: '💪', color: '#0D9488' },
+  rest:         { label: 'Rest',    emoji: '😴', color: '#9CA3AF' },
+  other:        { label: 'Other',   emoji: '⚡', color: '#4B5563' },
 };
 
-const DISC_EMOJI = {
-  swim: '🏊', bike: '🚴', run: '🏃', brick: '🔥',
-  conditioning: '💪', gym: '🏋️', rest: '😴',
-};
-
-const DISC_LABEL = {
-  swim: 'Swim', bike: 'Bike', run: 'Run', brick: 'Brick',
-  conditioning: 'Cond', gym: 'Gym', rest: 'Rest',
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Resolve display for a session. Prefers the activity's own data (spread from
+// ACTIVITY_DEFS in App.jsx), then falls back to SESSION_DISPLAY keyed by type.
+function getSessionDisplay(actData, type) {
+  if (actData?.label && actData?.emoji && actData?.color) {
+    return { label: actData.label, emoji: actData.emoji, color: actData.color };
+  }
+  return SESSION_DISPLAY[type] || SESSION_DISPLAY.other;
+}
 
 function toDateKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return d.toISOString().slice(0, 10);
 }
 
-function getPhase(wk) {
-  return PHASES.find(p => wk >= p.weeks[0] && wk <= p.weeks[1]) || PHASES[0];
-}
-
-function actTypeToDisc(type) {
-  return { swimming: 'swim', cycling: 'bike', running: 'run', gym: 'gym' }[type] || 'conditioning';
-}
-
-function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining) {
-  const weekStart = getTriathlonWeekStart(viewWeek);
+function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining) {
+  const weekStart = getPlanWeekStart(viewWeek);
   const todayKey  = toDateKey(new Date());
 
   const split    = hasGym && plan.splitDays ? SPLITS[plan.splitDays] : null;
@@ -78,7 +68,7 @@ function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, h
       if (def) {
         sessions.push({
           id: `gym-${dk}`,
-          discipline: 'gym',
+          type: 'gym',
           label: def.name,
           detail: def.muscles || '',
           source: 'gym',
@@ -88,20 +78,19 @@ function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, h
       }
     }
 
-    // Triathlon sessions
+    // Event plan sessions
     if (hasEventTraining) {
-      const raw = Object.prototype.hasOwnProperty.call(triathlonOverrides, dk)
-        ? triathlonOverrides[dk]
-        : (TRIATHLON_PLAN[dk] || []).filter(s => s.discipline !== 'Rest');
+      const raw = Object.prototype.hasOwnProperty.call(eventOverrides, dk)
+        ? eventOverrides[dk]
+        : (EVENT_PLAN[dk] || []).filter(s => s.type !== 'rest');
       raw.forEach((s, si) => {
-        const disc = (s.discipline || '').toLowerCase().replace(/\s+/g, '_');
-        const mapped = disc in DISC_COLOR ? disc : 'conditioning';
+        const type = (s.type || 'conditioning').toLowerCase();
         sessions.push({
-          id: `tri-${dk}-${si}`,
-          discipline: mapped,
-          label: s.discipline || mapped,
+          id: `event-${dk}-${si}`,
+          type: SESSION_DISPLAY[type] ? type : 'conditioning',
+          label: s.label || type,
           detail: [s.sessionType, s.duration].filter(Boolean).join(' · '),
-          source: 'triathlon',
+          source: 'event_plan',
           raw: s,
           dayIdx: i,
         });
@@ -112,7 +101,7 @@ function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, h
     (activities[i] || []).forEach(act => {
       sessions.push({
         id: act.id || `act-${dk}-${act.label}`,
-        discipline: actTypeToDisc(act.type),
+        type: act.type || 'other',
         label: act.label || act.type || '',
         detail: act.duration ? `${act.duration}min` : '',
         source: 'activity',
@@ -127,7 +116,9 @@ function buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, h
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function PhaseBar({ phase, viewWeek, t }) {
+function PhaseBar({ phases, totalWeeks, viewWeek, t }) {
+  const phase = phases.find(ph => viewWeek >= ph.weeks[0] && viewWeek <= ph.weeks[1]) || phases[0];
+  if (!phase) return null;
   return (
     <div style={{
       background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14,
@@ -142,11 +133,11 @@ function PhaseBar({ phase, viewWeek, t }) {
           }}>{phase.label}</span>
           <span style={{ fontSize: 10.5, color: t.text2 }}>Wks {phase.weeks[0]}–{phase.weeks[1]}</span>
         </div>
-        <span style={{ fontSize: 10.5, color: t.text3 }}>Wk {viewWeek} / {TOTAL_WEEKS}</span>
+        <span style={{ fontSize: 10.5, color: t.text3 }}>Wk {viewWeek} / {totalWeeks}</span>
       </div>
       <div style={{ display: 'flex', gap: 2, height: 5, borderRadius: 99, overflow: 'hidden' }}>
-        {PHASES.map(ph => {
-          const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_WEEKS) * 100;
+        {phases.map(ph => {
+          const w = ((ph.weeks[1] - ph.weeks[0] + 1) / totalWeeks) * 100;
           const isActive = ph.label === phase.label;
           const filled = isActive
             ? ((viewWeek - ph.weeks[0]) / (ph.weeks[1] - ph.weeks[0] + 1)) * w
@@ -159,8 +150,8 @@ function PhaseBar({ phase, viewWeek, t }) {
         })}
       </div>
       <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
-        {PHASES.map(ph => {
-          const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_WEEKS) * 100;
+        {phases.map(ph => {
+          const w = ((ph.weeks[1] - ph.weeks[0] + 1) / totalWeeks) * 100;
           const isActive = ph.label === phase.label;
           return (
             <div key={ph.label} style={{ width: `${w}%`, fontSize: 8, color: isActive ? ph.color : t.text3, fontWeight: isActive ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden' }}>
@@ -237,24 +228,25 @@ function GoalsPanel({ goals, isDraft, t, expanded, onToggle }) {
   );
 }
 
-function SessionChip({ session, isDragging }) {
-  const color = DISC_COLOR[session.discipline] || DISC_COLOR.conditioning;
-  const emoji = DISC_EMOJI[session.discipline] || '🏃';
-  const label = DISC_LABEL[session.discipline] || session.discipline;
+function SessionBar({ session, isDragging }) {
+  const { color, emoji, label: displayLabel } = getSessionDisplay(session.actData, session.type);
+  const label  = session.label || displayLabel;
+  const detail = session.detail;
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      background: isDragging ? color + '30' : color + '16',
-      border: `1px solid ${color}${isDragging ? '60' : '35'}`,
-      borderRadius: 8, padding: '4px 8px',
-      boxShadow: isDragging ? `0 3px 10px ${color}40` : 'none',
-      transform: isDragging ? 'scale(1.04)' : 'none',
+      display: 'flex', alignItems: 'center', gap: 7,
+      background: isDragging ? color + '28' : color + '14',
+      border: `1px solid ${color}${isDragging ? '55' : '28'}`,
+      borderRadius: 9, padding: '6px 10px',
+      width: '100%', boxSizing: 'border-box',
+      boxShadow: isDragging ? `0 3px 10px ${color}35` : 'none',
+      transform: isDragging ? 'scale(1.02)' : 'none',
       transition: 'box-shadow .1s, transform .1s',
       cursor: 'grab', userSelect: 'none',
-      flexShrink: 0,
     }}>
-      <span style={{ fontSize: 11 }}>{emoji}</span>
-      <span style={{ fontSize: 10.5, fontWeight: 600, color, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 13, flexShrink: 0 }}>{emoji}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, color, flex: 1, minWidth: 0 }}>{label}</span>
+      {detail && <span style={{ fontSize: 10, color: color + 'BB', flexShrink: 0 }}>{detail}</span>}
     </div>
   );
 }
@@ -317,8 +309,8 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                 transition: 'background .15s',
               }}
             >
-              {/* Chips row */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+              {/* Sessions — full-width bars */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
                 {sessions.length === 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.4 }}>
                     <span style={{ fontSize: 11 }}>😴</span>
@@ -333,8 +325,9 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                           {...prov.draggableProps}
                           {...prov.dragHandleProps}
                           onClick={e => e.stopPropagation()}
+                          style={{ width: '100%' }}
                         >
-                          <SessionChip session={sess} isDragging={snap.isDragging} />
+                          <SessionBar session={sess} isDragging={snap.isDragging} />
                         </div>
                       )}
                     </Draggable>
@@ -357,7 +350,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
   );
 }
 
-function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, onEditDay, refActivities }) {
+function DayDetailPanel({ day, t, theme, planSessionsDone, onToggleDone, onClose, onEditDay, refActivities }) {
   const isDark = theme === 'dark';
   const { d, dk, sessions, dayIdx } = day;
 
@@ -409,11 +402,10 @@ function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, o
             </div>
           ) : (
             sessions.map((sess, si) => {
-              const color   = DISC_COLOR[sess.discipline] || DISC_COLOR.conditioning;
-              const emoji   = DISC_EMOJI[sess.discipline] || '🏃';
-              const label   = DISC_LABEL[sess.discipline] || sess.discipline;
+              const { color, emoji, label: displayLabel } = getSessionDisplay(sess.actData, sess.type);
+              const label   = sess.label || displayLabel;
               const doneKey = `${dk}:${si}`;
-              const isDone  = !!triathlonDone?.[doneKey];
+              const isDone  = !!planSessionsDone?.[doneKey];
               return (
                 <div key={sess.id} style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
@@ -421,9 +413,9 @@ function DayDetailPanel({ day, t, theme, triathlonDone, onToggleDone, onClose, o
                 }}>
                   {/* Completion toggle */}
                   <button
-                    onClick={() => sess.source === 'triathlon' && onToggleDone?.(dk, si)}
+                    onClick={() => sess.source === 'event_plan' && onToggleDone?.(dk, si)}
                     style={{
-                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: sess.source === 'triathlon' ? 'pointer' : 'default',
+                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: sess.source === 'event_plan' ? 'pointer' : 'default',
                       border: isDone ? 'none' : `2px solid ${color}60`,
                       background: isDone ? color : 'transparent',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -499,38 +491,35 @@ export function WeeklyOverviewScreen({
   onNav, profile = {},
   plan = {}, activities = {},
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
-  triathlonOverrides = {}, onUpdateOverrides,
-  triathlonDone = {}, onToggleDone,
+  eventOverrides = {}, onUpdateOverrides,
+  planSessionsDone = {}, onToggleDone,
+  eventPhasePlan = { phases: [], totalWeeks: 18 },
   onTapDay,
 }) {
   const t = themes[theme];
 
-  const initWeek = getCurrentTriathlonWeek();
+  const initWeek = getCurrentPlanWeek();
   const [viewWeek,      setViewWeek]      = React.useState(initWeek);
   const [weekData,      setWeekData]      = React.useState(() =>
-    buildWeekData(initWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining)
+    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining)
   );
   const [warnings,      setWarnings]      = React.useState({});
   const [selectedDay,   setSelectedDay]   = React.useState(null);
-  const [goalsOpen,     setGoalsOpen]     = React.useState(false);
   const [refActivities, setRefActivities] = React.useState([]);
 
   React.useEffect(() => { getRefActivities().then(setRefActivities); }, []);
 
-  const phase = getPhase(viewWeek);
+  const { phases, totalWeeks } = eventPhasePlan;
 
   React.useEffect(() => {
-    setWeekData(buildWeekData(viewWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining));
-  }, [viewWeek, plan, activities, triathlonOverrides, hasGym, hasEventTraining]);
+    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining));
+  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining]);
 
   // Week date range label
-  const weekStart = getTriathlonWeekStart(viewWeek);
+  const weekStart = getPlanWeekStart(viewWeek);
   const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
   const fmt       = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const weekLabel = `${fmt(weekStart)} – ${fmt(weekEnd)}`;
-
-  // Draft state: no goal set yet
-  const isDraft = !profile?.goal;
 
   // ── DnD ────────────────────────────────────────────────────────────────────
   const handleDragEnd = React.useCallback((result) => {
@@ -553,7 +542,7 @@ export function WeeklyOverviewScreen({
       day:        DAY_SHORT[row.dayIdx],
       date:       row.dk,
       activities: row.sessions.map(s => ({
-        name:      s.label || s.discipline || '',
+        name:      s.label || s.type || '',
         intensity: s.intensity || 'medium',
         duration:  s.actData?.duration,
       })),
@@ -571,12 +560,12 @@ export function WeeklyOverviewScreen({
       setWarnings(built);
     });
 
-    // Persist triathlon session moves
-    if (moved.source === 'triathlon' && onUpdateOverrides) {
-      const newOverrides = { ...triathlonOverrides };
+    // Persist event plan session moves
+    if (moved.source === 'event_plan' && onUpdateOverrides) {
+      const newOverrides = { ...eventOverrides };
       [srcRow, dstRow].forEach(row => {
         newOverrides[row.dk] = row.sessions
-          .filter(s => s.source === 'triathlon')
+          .filter(s => s.source === 'event_plan')
           .map(s => s.raw);
       });
       onUpdateOverrides(newOverrides);
@@ -589,20 +578,16 @@ export function WeeklyOverviewScreen({
         const splitIds = new Set(split.days.map(d => d.id));
         const overrideValid = plan.scheduleOverride?.every(s => s === '—' || splitIds.has(s));
         const sched = [...((overrideValid ? plan.scheduleOverride : null) || split.schedule)];
-        // Swap source and destination day slots
         const tmp = sched[srcRow.dayIdx];
         sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
         sched[dstRow.dayIdx] = tmp;
-        // Signal parent — WeeklyOverviewScreen receives setPlan via callback
-        // We surface it through a synthetic call if onUpdateOverrides is present
-        // (full gym schedule override needs parent integration — see App.jsx)
       }
     }
-  }, [weekData, triathlonOverrides, plan]);
+  }, [weekData, eventOverrides, plan]);
+
+  const isDraft = !profile?.goal;
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const activeGoals = FORMA_GOALS.filter(g => !g.archived);
-
   return (
     <div style={{
       width, height, background: t.bg, fontFamily: t.sans, color: t.text,
@@ -624,44 +609,22 @@ export function WeeklyOverviewScreen({
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 9.5, letterSpacing: '.18em', textTransform: 'uppercase', color: t.text3, marginBottom: 2 }}>
-              {hasEventTraining ? `Sprint Triathlon · Wk ${viewWeek}` : 'Your week at a glance'}
+              {hasEventTraining ? `Event Training · Wk ${viewWeek}` : 'Your week at a glance'}
             </div>
             <div style={{ fontFamily: t.serif, fontSize: 26, lineHeight: 1, color: t.text }}>
               Weekly Overview
             </div>
           </div>
-          {isDraft && (
-            <span style={{
-              marginTop: 6,
-              fontSize: 9.5, fontWeight: 700, color: '#D97706',
-              background: '#D9770618', border: '1px solid #D9770630',
-              borderRadius: 7, padding: '3px 8px', letterSpacing: '.06em',
-            }}>DRAFT</span>
-          )}
         </div>
-        {isDraft && (
-          <button
-            onClick={() => onNav?.('about-me')}
-            style={{
-              marginTop: 7, width: '100%', textAlign: 'left',
-              fontSize: 11.5, fontWeight: 600, color: t.accent,
-              background: t.accent + '10', border: `1px solid ${t.accent}28`,
-              borderRadius: 9, padding: '7px 12px', fontFamily: t.sans, cursor: 'pointer',
-            }}
-          >
-            Complete your profile to unlock your full plan →
-          </button>
-        )}
       </div>
 
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }} className="phone-scroll">
 
-        {/* Phase bar — triathlon only */}
-        {hasEventTraining && <PhaseBar phase={phase} viewWeek={viewWeek} t={t} />}
-
-        {/* Goals panel */}
-        <GoalsPanel goals={activeGoals} isDraft={isDraft} t={t} expanded={goalsOpen} onToggle={() => setGoalsOpen(o => !o)} />
+        {/* Phase bar — event training only */}
+        {hasEventTraining && phases.length > 0 && (
+          <PhaseBar phases={phases} totalWeeks={totalWeeks} viewWeek={viewWeek} t={t} />
+        )}
 
         {/* Week navigator */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
@@ -693,14 +656,14 @@ export function WeeklyOverviewScreen({
           </div>
 
           <button
-            onClick={() => setViewWeek(w => Math.min(TOTAL_WEEKS, w + 1))}
-            disabled={viewWeek === TOTAL_WEEKS}
+            onClick={() => setViewWeek(w => Math.min(totalWeeks || 52, w + 1))}
+            disabled={viewWeek === (totalWeeks || 52)}
             style={{
               width: 34, height: 34, borderRadius: 9, background: 'transparent',
-              border: `1px solid ${t.border}`, color: viewWeek === TOTAL_WEEKS ? t.text3 : t.text,
-              fontSize: 16, cursor: viewWeek === TOTAL_WEEKS ? 'default' : 'pointer',
+              border: `1px solid ${t.border}`, color: viewWeek === (totalWeeks || 52) ? t.text3 : t.text,
+              fontSize: 16, cursor: viewWeek === (totalWeeks || 52) ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: viewWeek === TOTAL_WEEKS ? 0.3 : 1,
+              opacity: viewWeek === (totalWeeks || 52) ? 0.3 : 1,
             }}
           >›</button>
         </div>
@@ -738,10 +701,10 @@ export function WeeklyOverviewScreen({
           t={t}
           theme={theme}
           refActivities={refActivities}
-          triathlonDone={triathlonDone}
+          planSessionsDone={planSessionsDone}
           onToggleDone={(dk, si) => {
             const key  = `${dk}:${si}`;
-            const next = { ...triathlonDone };
+            const next = { ...planSessionsDone };
             if (next[key]) delete next[key]; else next[key] = true;
             onToggleDone?.(next);
           }}
