@@ -2,173 +2,15 @@ import React from 'react';
 import themes from '../data/themes';
 import { supabase } from '../utils/supabase';
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
-
-function FormField({ label, children }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{
-        fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
-        color: '#A8A39C', fontWeight: 500, marginBottom: 6,
-      }}>
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function inputStyle(t) {
-  return {
-    width: '100%', padding: '12px 14px', borderRadius: 11,
-    border: `1px solid ${t.border2 || t.border}`, background: t.surface,
-    fontFamily: t.sans, fontSize: 14, color: t.text, outline: 'none',
-    boxSizing: 'border-box',
-  };
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.12 17.64 11.84 17.64 9.2z" fill="#4285F4"/>
-      <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
-      <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
-      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
-    </svg>
-  );
-}
-
-function StatusBar() {
-  return (
-    <div style={{
-      height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-      padding: '0 22px 8px', fontSize: 14, fontWeight: 600, position: 'relative',
-    }}>
-      <span>9:41</span>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11 }}>
-        <span>●●●</span><span>📶</span><span>🔋</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── Landing screen ───────────────────────────────────────────────────────────
-
-function LandingScreen({ width, height, theme, onContinueWithEmail, onGoogleLoading, googleLoading, googleError }) {
-  const t = themes[theme];
-
-  const handleGoogle = async () => {
-    onGoogleLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin + window.location.pathname },
-      });
-      if (error) throw error;
-    } catch (e) {
-      onGoogleLoading(false, e.message);
-    }
-  };
-
-  return (
-    <div style={{
-      width, height, background: t.bg, fontFamily: t.sans, color: t.text,
-      display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative',
-    }}>
-      {/* Ambient glows */}
-      <div style={{
-        position: 'absolute', top: -80, right: -60, width: 280, height: 280, borderRadius: '50%',
-        background: `radial-gradient(circle, ${t.accent}28, transparent 65%)`, pointerEvents: 'none',
-      }}/>
-      <div style={{
-        position: 'absolute', bottom: -100, left: -80, width: 300, height: 300, borderRadius: '50%',
-        background: `radial-gradient(circle, #6D4AAF18, transparent 65%)`, pointerEvents: 'none',
-      }}/>
-
-      <StatusBar />
-
-      {/* Hero */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 32px' }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: 20,
-          background: `linear-gradient(135deg, ${t.accent}, #6D4AAF)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: t.serif, fontSize: 38, color: '#fff',
-          marginBottom: 20,
-          boxShadow: `0 16px 48px ${t.accent}30`,
-        }}>F</div>
-        <div style={{ fontFamily: t.serif, fontSize: 38, color: t.text, letterSpacing: '-0.02em', marginBottom: 8 }}>
-          <span style={{ color: t.accent }}>Forma</span>
-        </div>
-        <div style={{ fontSize: 13, color: t.text2, textAlign: 'center', lineHeight: 1.5, maxWidth: 240 }}>
-          Your personal health &amp; training tracker
-        </div>
-      </div>
-
-      {/* CTA buttons */}
-      <div style={{ padding: '0 24px 48px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {googleError && (
-          <div style={{
-            padding: '10px 14px', borderRadius: 10,
-            background: '#EF444418', border: '1px solid #EF444438', color: '#DC2626',
-            fontSize: 12.5, lineHeight: 1.4, marginBottom: 4,
-          }}>
-            {googleError}
-          </div>
-        )}
-
-        <button
-          onClick={handleGoogle}
-          disabled={googleLoading}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 13,
-            background: t.surface, border: `1px solid ${t.border}`,
-            fontFamily: t.sans, fontSize: 14, fontWeight: 600, color: t.text,
-            cursor: googleLoading ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            opacity: googleLoading ? 0.6 : 1,
-          }}
-        >
-          <GoogleIcon />
-          {googleLoading ? 'Redirecting…' : 'Continue with Google'}
-        </button>
-
-        <button
-          onClick={onContinueWithEmail}
-          disabled={googleLoading}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 13,
-            background: t.accent, border: 'none',
-            fontFamily: t.sans, fontSize: 14, fontWeight: 600, color: t.accentText,
-            cursor: googleLoading ? 'default' : 'pointer',
-            opacity: googleLoading ? 0.6 : 1,
-          }}
-        >
-          Continue with email
-        </button>
-
-        <div style={{ textAlign: 'center', marginTop: 4 }}>
-          <span style={{ fontSize: 11.5, color: t.text3 }}>
-            By continuing you agree to our Terms &amp; Privacy Policy
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Email sign-on screen ─────────────────────────────────────────────────────
-
-function EmailSignOnScreen({ width, height, theme, onLogin, onSignUp, onBack }) {
+export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogin, onSignUp }) {
   const t = themes[theme];
   const [mode, setMode] = React.useState('login');
   const [form, setForm] = React.useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [googleLoading, setGoogleLoading] = React.useState(false);
 
   const update = (patch) => { setForm(f => ({ ...f, ...patch })); setError(''); };
-
-  const switchMode = (m) => { setMode(m); setError(''); setForm({ name: '', email: '', password: '', confirm: '' }); };
 
   const handleSubmit = async () => {
     if (loading) return;
@@ -193,41 +35,65 @@ function EmailSignOnScreen({ width, height, theme, onLogin, onSignUp, onBack }) 
     }
   };
 
+  const switchMode = (m) => { setMode(m); setError(''); setForm({ name: '', email: '', password: '', confirm: '' }); };
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin + window.location.pathname },
+      });
+      if (error) throw error;
+    } catch (e) {
+      setError(e.message);
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <div style={{
       width, height, background: t.bg, fontFamily: t.sans, color: t.text,
       display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative',
     }}>
-      {/* Ambient glow */}
+      {/* Ambient glows */}
       <div style={{
         position: 'absolute', top: -80, right: -60, width: 280, height: 280, borderRadius: '50%',
         background: `radial-gradient(circle, ${t.accent}28, transparent 65%)`, pointerEvents: 'none',
       }}/>
+      <div style={{
+        position: 'absolute', bottom: -100, left: -80, width: 300, height: 300, borderRadius: '50%',
+        background: `radial-gradient(circle, ${theme === 'dark' ? '#6D4AAF' : '#6D4AAF'}18, transparent 65%)`,
+        pointerEvents: 'none',
+      }}/>
 
-      <StatusBar />
-
-      {/* Header with back button */}
-      <div style={{ padding: '8px 20px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          onClick={onBack}
-          style={{
-            background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10,
-            padding: '8px 12px', cursor: 'pointer', fontFamily: t.sans,
-            fontSize: 13, fontWeight: 600, color: t.text2,
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}
-        >
-          ← Back
-        </button>
+      {/* Status bar */}
+      <div style={{
+        height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+        padding: '0 22px 8px', fontSize: 14, fontWeight: 600, position: 'relative',
+      }}>
+        <span>9:41</span>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11 }}>
+          <span>●●●</span><span>📶</span><span>🔋</span>
+        </div>
       </div>
 
-      {/* Title */}
-      <div style={{ padding: '20px 24px 12px' }}>
-        <div style={{ fontFamily: t.serif, fontSize: 28, color: t.text, letterSpacing: '-0.02em', marginBottom: 4 }}>
-          {mode === 'login' ? 'Welcome back' : 'Create account'}
+      {/* Logo area */}
+      <div style={{ padding: '28px 24px 20px', textAlign: 'center' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 18,
+          background: `linear-gradient(135deg, ${t.accent}, #6D4AAF)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: t.serif, fontSize: 34, color: '#fff',
+          margin: '0 auto 14px',
+          boxShadow: `0 14px 40px ${t.accent}30`,
+        }}>F</div>
+        <div style={{ fontFamily: t.serif, fontSize: 34, color: t.text, letterSpacing: '-0.02em' }}>
+          <span style={{ color: t.accent }}>Forma</span>
         </div>
-        <div style={{ fontSize: 13, color: t.text2 }}>
-          {mode === 'login' ? 'Sign in with your email and password' : 'Join Forma to start tracking'}
+        <div style={{ fontSize: 12.5, color: t.text2, marginTop: 5, lineHeight: 1.4 }}>
+          Your personal health tracker
         </div>
       </div>
 
@@ -336,41 +202,65 @@ function EmailSignOnScreen({ width, height, theme, onLogin, onSignUp, onBack }) 
             }}>Sign up</button>
           </div>
         )}
+
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 0' }}>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
+          <span style={{ fontSize: 11, color: t.text3 }}>or</span>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
+        </div>
+
+        {/* Google sign-in */}
+        <button
+          onClick={handleGoogle}
+          disabled={googleLoading || loading}
+          style={{
+            width: '100%', padding: '13px', borderRadius: 13, marginTop: 12,
+            background: t.surface, border: `1px solid ${t.border}`,
+            fontFamily: t.sans, fontSize: 13.5, fontWeight: 600, color: t.text,
+            cursor: (googleLoading || loading) ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            opacity: (googleLoading || loading) ? 0.6 : 1,
+          }}
+        >
+          <GoogleIcon />
+          {googleLoading ? 'Redirecting…' : 'Continue with Google'}
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── Public export — orchestrates landing → email screens ─────────────────────
-
-export function LoginScreen({ width = 390, height = 820, theme = 'light', onLogin, onSignUp }) {
-  const [view, setView] = React.useState('landing'); // 'landing' | 'email'
-  const [googleLoading, setGoogleLoading] = React.useState(false);
-  const [googleError, setGoogleError] = React.useState('');
-
-  const handleGoogleLoading = (loading, error = '') => {
-    setGoogleLoading(loading);
-    setGoogleError(error);
-  };
-
-  if (view === 'email') {
-    return (
-      <EmailSignOnScreen
-        width={width} height={height} theme={theme}
-        onLogin={onLogin}
-        onSignUp={onSignUp}
-        onBack={() => setView('landing')}
-      />
-    );
-  }
-
+function GoogleIcon() {
   return (
-    <LandingScreen
-      width={width} height={height} theme={theme}
-      onContinueWithEmail={() => setView('email')}
-      googleLoading={googleLoading}
-      googleError={googleError}
-      onGoogleLoading={handleGoogleLoading}
-    />
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.12 17.64 11.84 17.64 9.2z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+      <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+    </svg>
   );
+}
+
+function FormField({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{
+        fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
+        color: '#A8A39C', fontWeight: 500, marginBottom: 6,
+      }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function inputStyle(t) {
+  return {
+    width: '100%', padding: '12px 14px', borderRadius: 11,
+    border: `1px solid ${t.border2 || t.border}`, background: t.surface,
+    fontFamily: t.sans, fontSize: 14, color: t.text, outline: 'none',
+    boxSizing: 'border-box',
+  };
 }
