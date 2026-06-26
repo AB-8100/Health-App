@@ -735,6 +735,7 @@ function App() {
                onBack={() => setScreen('gym-hub')}
                onNav={navigate}
                onSignOut={handleSignOut}
+               onSetupTrainingPlan={() => { setOnboardingStage('goals'); setOnboarding(false); }}
                tracksCycle={profile.tracksCycle}
                sheetsStatus={sheetsStatus}
                sheetsError={sheetsError}

@@ -1,5 +1,18 @@
 import React from 'react';
 import themes from '../data/themes';
+import { getCurrentTriathlonWeek } from '../data/triathlonPlan';
+
+const PHASE_META = [
+  { label: 'Foundation', weeks: [1,  6],  color: '#15803D' },
+  { label: 'Build',      weeks: [7,  14], color: '#0369A1' },
+  { label: 'Peak',       weeks: [15, 17], color: '#9333EA' },
+  { label: 'Taper',      weeks: [18, 18], color: '#DC2626' },
+];
+const TOTAL_PLAN_WEEKS = 18;
+
+function getPhase(wk) {
+  return PHASE_META.find(p => wk >= p.weeks[0] && wk <= p.weeks[1]) || PHASE_META[0];
+}
 const CONNECTED_SERVICES = [
   { id: 'strava',   name: 'Strava',       scope: 'Runs · Rides · Workouts',  color: '#FC5200', glyph: 'S' },
   { id: 'apple',    name: 'Apple Health', scope: 'Steps · Sleep · Weight',   color: '#000',    glyph: 'A' },
@@ -96,7 +109,8 @@ function AboutScreen({
   width = 390, height = 820, theme = 'light',
   profile = {}, userSettings = {}, plan = {},
   onSaveProfile, onSaveSettings,
-  onBack, onNav, onSignOut, tracksCycle = true,
+  onBack, onNav, onSignOut, onSetupTrainingPlan,
+  tracksCycle = true,
   sheetsStatus = 'disconnected', sheetsError = null, sheetUrl = null,
   onConnectSheets, onDisconnectSheets, onReconnectSheets,
 }) {
@@ -135,6 +149,16 @@ function AboutScreen({
     setConnected(next);
     updateProfile('connected', [...next]);
   };
+
+  const hasGym          = localProfile.hasGym !== false;
+  const hasEventTraining = !!localProfile.hasEventTraining;
+  const gymDays          = hasGym && plan.splitDays ? plan.splitDays : 0;
+  // Sprint triathlon plan = typically 5 structured sessions/week
+  const eventDays        = hasEventTraining ? 5 : 0;
+  const totalWeeklySessions = gymDays + eventDays;
+  const currentWeek      = getCurrentTriathlonWeek();
+  const currentPhase     = getPhase(currentWeek);
+  const planDone         = !!localProfile.goal;
 
   const goals = ['strength', 'muscle', 'fat-loss', 'active', 'flexibility'];
 
@@ -186,7 +210,9 @@ function AboutScreen({
             <div style={{ fontSize: 11, color: t.text3, marginTop: 3 }}>
               {GOAL_LABELS[localProfile.goal] || 'No goal set'}
               {' · '}
-              {plan.splitDays || 3}-day split
+              {totalWeeklySessions > 0
+                ? `${totalWeeklySessions} sessions/wk`
+                : 'No plan set up'}
             </div>
           </div>
         </div>
@@ -386,21 +412,149 @@ function AboutScreen({
           </div>
         </Section>
 
-        {/* Default split */}
-        <Section title="Default training split" theme={theme}>
+        {/* Training plan */}
+        <Section title="Training plan" theme={theme}>
+          {hasEventTraining ? (
+            <>
+              {/* Active event plan card */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 0', borderBottom: `1px solid ${t.border}`,
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                  background: currentPhase.color + '18',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+                }}>🏁</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Sprint Triathlon</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, color: currentPhase.color,
+                      background: currentPhase.color + '18', border: `1px solid ${currentPhase.color}30`,
+                      borderRadius: 4, padding: '1px 5px', letterSpacing: '.06em',
+                    }}>{currentPhase.label.toUpperCase()}</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>
+                    {TOTAL_PLAN_WEEKS}-week programme · Week {currentWeek}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 700, color: '#16A34A',
+                  background: '#16A34A18', border: '1px solid #16A34A30',
+                  borderRadius: 5, padding: '2px 7px',
+                }}>ACTIVE</span>
+              </div>
+
+              {/* Phase progress bar */}
+              <div style={{ margin: '10px 0 8px' }}>
+                <div style={{ display: 'flex', gap: 2, height: 4, borderRadius: 99, overflow: 'hidden' }}>
+                  {PHASE_META.map(ph => {
+                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_PLAN_WEEKS) * 100;
+                    const isActive = ph.label === currentPhase.label;
+                    const filled = isActive
+                      ? ((currentWeek - ph.weeks[0]) / (ph.weeks[1] - ph.weeks[0] + 1)) * w
+                      : currentWeek > ph.weeks[1] ? w : 0;
+                    return (
+                      <div key={ph.label} style={{
+                        width: `${w}%`, height: '100%', borderRadius: 99,
+                        background: ph.color + '25', position: 'relative', overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          position: 'absolute', left: 0, top: 0, height: '100%',
+                          width: `${(filled / w) * 100}%`, background: ph.color, borderRadius: 99,
+                        }} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+                  {PHASE_META.map(ph => {
+                    const w = ((ph.weeks[1] - ph.weeks[0] + 1) / TOTAL_PLAN_WEEKS) * 100;
+                    return (
+                      <div key={ph.label} style={{
+                        width: `${w}%`, fontSize: 8,
+                        color: ph.label === currentPhase.label ? ph.color : t.text3,
+                        fontWeight: ph.label === currentPhase.label ? 700 : 400,
+                        whiteSpace: 'nowrap', overflow: 'hidden',
+                      }}>{ph.label}</div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Stats row */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                {[
+                  { label: 'Event sessions', value: `${eventDays}/wk` },
+                  { label: 'Disciplines', value: 'Swim · Bike · Run' },
+                ].map(stat => (
+                  <div key={stat.label} style={{
+                    flex: 1, background: t.surface2, border: `1px solid ${t.border}`,
+                    borderRadius: 9, padding: '7px 10px',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{stat.value}</div>
+                    <div style={{ fontSize: 9.5, color: t.text3 }}>{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => onNav?.('triathlon')} style={{
+                width: '100%', padding: '9px', borderRadius: 10,
+                background: 'transparent', border: `1px solid ${t.border}`,
+                color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+              }}>View weekly overview →</button>
+            </>
+          ) : (
+            <>
+              <div style={{
+                display: 'flex', gap: 12, alignItems: 'flex-start',
+                padding: '8px 12px', borderRadius: 10,
+                background: t.surface2, border: `1px solid ${t.border}`,
+                marginBottom: 10,
+              }}>
+                <span style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>📋</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 2 }}>
+                    {!planDone ? 'Complete your profile' : 'No event training plan'}
+                  </div>
+                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5 }}>
+                    {!planDone
+                      ? 'Finish setting up your goals and training intake to unlock a personalised plan.'
+                      : 'Add a race or event goal to unlock the 18-week Weekly Overview plan with conflict detection.'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onSetupTrainingPlan}
+                style={{
+                  width: '100%', padding: '10px', borderRadius: 10,
+                  background: t.accent, color: '#fff', border: 'none',
+                  fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                {!planDone ? 'Complete your profile →' : 'Set up training plan →'}
+              </button>
+            </>
+          )}
+        </Section>
+
+        {/* Training split */}
+        <Section title="Training split" theme={theme}>
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
-            Your standard training frequency. You can override this week-by-week from the Gym tab.
+            Gym sessions per week. Tap a number or open the picker to adjust your schedule and exercises.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
             {[1, 2, 3, 4, 5].map(n => {
-              const isActive = (plan.splitDays || 3) === n;
+              const isActive = (plan.splitDays || 0) === n;
               return (
-                <button key={n} style={{
+                <button key={n} onClick={() => onNav?.('gym-split')} style={{
                   padding: '12px 0 8px', borderRadius: 11,
                   background: isActive ? t.text : t.surface2,
                   color: isActive ? '#fff' : t.text,
                   border: `1px solid ${isActive ? t.text : t.border}`,
-                  fontFamily: t.serif, fontSize: 20, lineHeight: 1, cursor: 'default',
+                  fontFamily: t.serif, fontSize: 20, lineHeight: 1, cursor: 'pointer',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                 }}>
                   {n}
@@ -414,9 +568,38 @@ function AboutScreen({
               );
             })}
           </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: t.text3 }}>
-            Change from the Gym → Split picker.
-          </div>
+
+          {/* Combined weekly session count */}
+          {totalWeeklySessions > 0 && (
+            <div style={{
+              marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
+            }}>
+              {gymDays > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600, color: '#4F46E5',
+                  background: '#4F46E508', border: '1px solid #4F46E520',
+                  borderRadius: 5, padding: '2px 7px',
+                }}>🏋️ {gymDays} gym</span>
+              )}
+              {eventDays > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600, color: '#0369A1',
+                  background: '#0369A108', border: '1px solid #0369A120',
+                  borderRadius: 5, padding: '2px 7px',
+                }}>🏊 {eventDays} event</span>
+              )}
+              <span style={{ fontSize: 10.5, color: t.text3 }}>
+                = <strong style={{ color: t.text }}>{totalWeeklySessions} sessions/week</strong> total
+              </span>
+            </div>
+          )}
+
+          <button onClick={() => onNav?.('gym-split')} style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 9,
+            background: 'transparent', border: `1px solid ${t.border}`,
+            color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
+            cursor: 'pointer',
+          }}>Open split picker →</button>
         </Section>
 
         {/* Connected apps */}
