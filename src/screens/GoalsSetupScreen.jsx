@@ -149,7 +149,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
     });
   };
 
-  const isTriathlonGoal = selectedGoals.includes('event_race') &&
+  const isEventRaceGoal = selectedGoals.includes('event_race') &&
     (goalConfigs['event_race']?.raceType || '').toLowerCase().includes('triathlon');
 
   const addSport = () => {
@@ -169,8 +169,8 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
       trainingDaysPerWeek,
       unavailableDays,
       gymAccess,
-      poolAccess: isTriathlonGoal ? poolAccess : false,
-      poolDays:   (isTriathlonGoal && poolAccess) ? poolDays : [],
+      poolAccess: isEventRaceGoal ? poolAccess : false,
+      poolDays:   (isEventRaceGoal && poolAccess) ? poolDays : [],
       regularSports,
       savedAt: new Date().toISOString(),
     };
@@ -650,7 +650,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
               active={gymAccess} onToggle={() => setGymAccess(v => !v)} t={t}
             />
 
-            {isTriathlonGoal && (
+            {isEventRaceGoal && (
               <>
                 <ToggleCard
                   icon="🏊" title="Pool access" sub="Regular access to a swimming pool"
@@ -828,7 +828,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
               {[
                 { label: 'Training days', value: trainingDays.length > 0 ? trainingDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ') : '—' },
                 gymAccess ? { label: 'Gym access', value: '✓ Yes' } : null,
-                (isTriathlonGoal && poolAccess) ? { label: 'Pool access', value: '✓ Yes' } : null,
+                (isEventRaceGoal && poolAccess) ? { label: 'Pool access', value: '✓ Yes' } : null,
                 unavailableDays.length ? { label: 'Days blocked', value: unavailableDays.length + ' days' } : null,
                 regularSports.length ? { label: 'Regular sports', value: regularSports.length + (regularSports.length === 1 ? ' sport' : ' sports') } : null,
               ].filter(Boolean).map((row, i) => (

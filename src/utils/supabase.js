@@ -73,9 +73,8 @@ export async function loadUserData(userId) {
     foodLog,
     customFoods:        (customFoods ?? []).map(dbToCustomFood),
     activities:         activitiesMap,
-    // App currently uses triathlon plan; keyed by training_type for future plans
-    triathlonOverrides: trainingPlans?.find(p => p.training_type === 'triathlon')?.overrides ?? {},
-    triathlonDone:      trainingPlans?.find(p => p.training_type === 'triathlon')?.done      ?? {},
+    eventOverrides:    trainingPlans?.find(p => p.training_type === 'event')?.overrides ?? {},
+    planSessionsDone:  trainingPlans?.find(p => p.training_type === 'event')?.done      ?? {},
     trainingPlans:      trainingPlans ?? [],
     savedAt:            profile?.updated_at ?? new Date().toISOString(),
   };
@@ -135,12 +134,12 @@ export async function saveUserData(userId, snapshot) {
       )
     );
   }
-  if (snapshot.triathlonOverrides !== undefined || snapshot.triathlonDone !== undefined) {
+  if (snapshot.eventOverrides !== undefined || snapshot.planSessionsDone !== undefined) {
     ops.push(supabase.from('training_plans').upsert({
       user_id:       userId,
-      training_type: 'triathlon',
-      overrides:     snapshot.triathlonOverrides ?? {},
-      done:          snapshot.triathlonDone      ?? {},
+      training_type: 'event',
+      overrides:     snapshot.eventOverrides   ?? {},
+      done:          snapshot.planSessionsDone ?? {},
       updated_at:    new Date().toISOString(),
     }));
   }

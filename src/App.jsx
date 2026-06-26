@@ -12,8 +12,8 @@ import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
-import { TriathlonScreen } from './screens/TriathlonScreen';
 import { WeeklyOverviewScreen } from './screens/WeeklyOverviewScreen';
+import { computeEventPhases } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -172,8 +172,8 @@ function App() {
   const [editingDayId, setEditingDayId]   = React.useState(null);
   const [editingDayIdx, setEditingDayIdx] = React.useState(null);
   const [activities, setActivities]             = React.useState({});
-  const [triathlonOverrides, setTriathlonOverrides] = React.useState({});
-  const [triathlonDone, setTriathlonDone]           = React.useState({});
+  const [eventOverrides, setEventOverrides] = React.useState({});
+  const [planSessionsDone, setPlanSessionsDone]           = React.useState({});
   const [session, setSession]             = React.useState({
     active: false, paused: false, elapsed: 0, workout: '', queue: null,
   });
@@ -230,8 +230,8 @@ function App() {
       setCompletedSessions([]);
       setFoodLog({});
       setActivities({});
-      setTriathlonOverrides({});
-      setTriathlonDone({});
+      setEventOverrides({});
+      setPlanSessionsDone({});
       setCustomFoods([]);
       // Stage 1: collect profile basics before anything else
       setOnboardingStage('profile');
@@ -318,8 +318,8 @@ function App() {
     if (data.completedSessions) setCompletedSessions(data.completedSessions);
     if (data.foodLog)           setFoodLog(data.foodLog);
     if (data.activities)           setActivities(data.activities);
-    if (data.triathlonOverrides)   setTriathlonOverrides(data.triathlonOverrides);
-    if (data.triathlonDone)        setTriathlonDone(data.triathlonDone);
+    if (data.eventOverrides)   setEventOverrides(data.eventOverrides);
+    if (data.planSessionsDone)        setPlanSessionsDone(data.planSessionsDone);
     if (data.customFoods)          setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
@@ -327,7 +327,7 @@ function App() {
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
-    triathlonOverrides, triathlonDone,
+    eventOverrides, planSessionsDone,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -369,8 +369,8 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
-    setTriathlonOverrides({});
-    setTriathlonDone({});
+    setEventOverrides({});
+    setPlanSessionsDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboardingStage('profile');
@@ -442,8 +442,8 @@ function App() {
     setCompletedSessions([]);
     setFoodLog({});
     setActivities({});
-    setTriathlonOverrides({});
-    setTriathlonDone({});
+    setEventOverrides({});
+    setPlanSessionsDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(false);
@@ -659,6 +659,11 @@ function App() {
   const hasEventTraining = !!profile.hasEventTraining;
   const hasTrainingActivities = !!profile.hasTrainingActivities;
 
+  const eventPhasePlan = React.useMemo(() => {
+    const totalWeeks = profile.eventTotalWeeks || 18;
+    return { phases: computeEventPhases(totalWeeks), totalWeeks };
+  }, [profile.eventTotalWeeks]);
+
   const renderScreen = (s) => {
     if (onboardingStage === 'profile')
       return <ProfileSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
@@ -797,16 +802,17 @@ function App() {
                activities={activities}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
-               triathlonOverrides={triathlonOverrides}
+               eventOverrides={eventOverrides}
                onUpdateOverrides={(next) => {
-                 setTriathlonOverrides(next);
-                 setTimeout(() => scheduleSave({ triathlonOverrides: next }), 0);
+                 setEventOverrides(next);
+                 setTimeout(() => scheduleSave({ eventOverrides: next }), 0);
                }}
-               triathlonDone={triathlonDone}
+               planSessionsDone={planSessionsDone}
                onToggleDone={(next) => {
-                 setTriathlonDone(next);
-                 setTimeout(() => scheduleSave({ triathlonDone: next }), 0);
+                 setPlanSessionsDone(next);
+                 setTimeout(() => scheduleSave({ planSessionsDone: next }), 0);
                }}
+               eventPhasePlan={eventPhasePlan}
                onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
