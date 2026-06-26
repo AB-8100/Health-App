@@ -587,6 +587,28 @@ function App() {
     setScreen('gym-session');
   };
 
+  const markSessionComplete = ({ elapsed = 0, distance = null } = {}) => {
+    const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
+    const todayBase = split?.days?.[(plan.todayIdx || 0) % split.days.length];
+    const today = (plan.overrides && todayBase && plan.overrides[todayBase.id]) || todayBase;
+    const completed = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      endedAt: Date.now(),
+      active: false,
+      manuallyCompleted: true,
+      workout: today ? today.name + ' day' : 'Session',
+      elapsed,
+      distance,
+      queue: null,
+    };
+    setCompletedSessions(prev => {
+      const next = [...prev, completed];
+      setTimeout(() => scheduleSave({ completedSessions: next }), 0);
+      return next;
+    });
+  };
+
   const finishSession = (final) => {
     const completed = { ...session, ...final, id: Date.now().toString(), date: new Date().toISOString(), endedAt: Date.now() };
     setLastSession(completed);
@@ -781,6 +803,7 @@ function App() {
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onNav={navigate}
                onStartSession={startSession}
+               onMarkComplete={markSessionComplete}
                onResumeSession={() => setScreen('gym-session')}
                onChangeSplit={() => setScreen('gym-split')}
                onEditDay={(dayId) => { setEditingDayId(dayId); setTimeout(() => setScreen('gym-edit'), 0); }}

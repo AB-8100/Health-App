@@ -319,6 +319,79 @@ function EditSessionSheet({ theme, session, onClose, onSave }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Quick "mark as complete" sheet — optionally capture time + distance
+function MarkCompleteSheet({ theme, onClose, onSave }) {
+  const t = themes[theme];
+  const [hours, setHours] = React.useState('');
+  const [minutes, setMinutes] = React.useState('');
+  const [distance, setDistance] = React.useState('');
+
+  const handleSave = () => {
+    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
+    onSave({
+      elapsed: totalSecs,
+      distance: distance !== '' ? Number(distance) : null,
+    });
+  };
+
+  const inputStyle = {
+    padding:'9px 12px', borderRadius:10, border:`1px solid ${t.border}`,
+    background:t.surface, fontFamily:t.mono, fontSize:15, color:t.text,
+    outline:'none', width:'100%', boxSizing:'border-box'
+  };
+  const labelStyle = { fontSize:11, color:t.text3, marginBottom:5, textTransform:'uppercase', letterSpacing:.4 };
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
+      display:'flex', alignItems:'flex-end', zIndex:60
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', background:t.surface,
+        borderTopLeftRadius:22, borderTopRightRadius:22,
+        padding:'16px 20px 32px',
+        display:'flex', flexDirection:'column', gap:0
+      }}>
+        <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 16px' }}/>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>Mark as complete</div>
+          <button onClick={onClose} style={{
+            padding:'4px 10px', borderRadius:7, background:'transparent',
+            border:`1px solid ${t.border}`, color:t.text2,
+            fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+          }}>Cancel</button>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+          <div>
+            <div style={labelStyle}>Hours</div>
+            <input type="number" min="0" placeholder="0" value={hours}
+              onChange={e => setHours(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Minutes</div>
+            <input type="number" min="0" max="59" placeholder="0" value={minutes}
+              onChange={e => setMinutes(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <div style={labelStyle}>Distance (km) <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
+          <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
+            onChange={e => setDistance(e.target.value)} style={inputStyle} />
+        </div>
+
+        <button onClick={handleSave} style={{
+          width:'100%', padding:'13px', borderRadius:12, border:'none',
+          fontFamily:t.sans, fontSize:13, fontWeight:600,
+          background:t.green, color:'#fff', cursor:'pointer'
+        }}>✓ Mark complete</button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Add a gym session manually for a past day
 function AddSessionSheet({ theme, day, date, onClose, onSave }) {
   const t = themes[theme];
@@ -1154,7 +1227,7 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay }) {
 function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
                        activities = {}, completedSessions = [],
-                       onNav, onStartSession, onResumeSession,
+                       onNav, onStartSession, onMarkComplete, onResumeSession,
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
                        onReorderSchedule, onImportSessions, onEditSession,
@@ -1177,6 +1250,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [showImport, setShowImport] = React.useState(false);
   const [editingSession, setEditingSession] = React.useState(null);
   const [showAddSession, setShowAddSession] = React.useState(false);
+  const [showMarkComplete, setShowMarkComplete] = React.useState(false);
 
   // Compute the actual calendar date for the currently viewed day slot
   const now = new Date();
@@ -1630,12 +1704,21 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                 );
               }
               return (
-                <button onClick={onStartSession} style={{
-                  width:'100%', padding:'12px', borderRadius:11,
-                  background:t.accent, color:t.accentText,
-                  border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:6
-                }}>Start session →</button>
+                <div style={{ display:'flex', gap:7 }}>
+                  <button onClick={onStartSession} style={{
+                    flex:1, padding:'12px', borderRadius:11,
+                    background:t.accent, color:t.accentText,
+                    border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:6
+                  }}>Start session →</button>
+                  <button onClick={() => setShowMarkComplete(true)} style={{
+                    padding:'12px 14px', borderRadius:11, background:'transparent',
+                    border:`1.5px solid ${t.green}60`, color:t.green,
+                    fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                    whiteSpace:'nowrap'
+                  }}>✓ Mark complete</button>
+                </div>
               );
             })() : isViewDayPast ? (() => {
               if (viewDayCompleted) {
@@ -1971,6 +2054,14 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           date={viewDayDate}
           onClose={() => setShowAddSession(false)}
           onSave={(session) => { onImportSessions && onImportSessions([session]); setShowAddSession(false); }}
+        />
+      )}
+
+      {showMarkComplete && (
+        <MarkCompleteSheet
+          theme={theme}
+          onClose={() => setShowMarkComplete(false)}
+          onSave={(extras) => { onMarkComplete && onMarkComplete(extras); setShowMarkComplete(false); }}
         />
       )}
     </div>
