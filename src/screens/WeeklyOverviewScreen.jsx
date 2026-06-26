@@ -294,7 +294,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
         </button>
 
         {/* Sessions droppable area */}
-        <Droppable droppableId={dk} direction="horizontal">
+        <Droppable droppableId={dk} direction="vertical">
           {(provided, snapshot) => (
             <div
               ref={provided.innerRef}
@@ -325,7 +325,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                           {...prov.draggableProps}
                           {...prov.dragHandleProps}
                           onClick={e => e.stopPropagation()}
-                          style={{ width: '100%' }}
+                          style={{ ...prov.draggableProps.style, width: '100%' }}
                         >
                           <SessionBar session={sess} isDragging={snap.isDragging} />
                         </div>
@@ -495,6 +495,7 @@ export function WeeklyOverviewScreen({
   planSessionsDone = {}, onToggleDone,
   eventPhasePlan = { phases: [], totalWeeks: 18 },
   onTapDay,
+  onUpdatePlan,
 }) {
   const t = themes[theme];
 
@@ -581,9 +582,10 @@ export function WeeklyOverviewScreen({
         const tmp = sched[srcRow.dayIdx];
         sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
         sched[dstRow.dayIdx] = tmp;
+        onUpdatePlan?.(sched);
       }
     }
-  }, [weekData, eventOverrides, plan]);
+  }, [weekData, eventOverrides, plan, onUpdatePlan]);
 
   const isDraft = !profile?.goal;
 

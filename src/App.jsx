@@ -808,7 +808,8 @@ function App() {
                  setTimeout(() => scheduleSave({ planSessionsDone: next }), 0);
                }}
                eventPhasePlan={eventPhasePlan}
-               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }} />;
+               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }}
+               onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
