@@ -13,6 +13,7 @@ import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { TriathlonScreen } from './screens/TriathlonScreen';
+import { WeeklyOverviewScreen } from './screens/WeeklyOverviewScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -742,8 +743,11 @@ function App() {
                onDisconnectSheets={handleDisconnectSheets}
                onReconnectSheets={handleReconnectSheets} />;
     if (s === 'triathlon')
-      return <TriathlonScreen width={contentW} height={contentH} theme={tweaks.theme}
+      return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
+               profile={profile}
+               plan={plan}
+               activities={activities}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining}
                triathlonOverrides={triathlonOverrides}
@@ -755,7 +759,8 @@ function App() {
                onToggleDone={(next) => {
                  setTriathlonDone(next);
                  setTimeout(() => scheduleSave({ triathlonDone: next }), 0);
-               }} />;
+               }}
+               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
@@ -834,7 +839,7 @@ function App() {
               { value: 'gym-edit',    label: 'Gym · Session editor' },
               { value: 'gym-day',     label: 'Gym · Day activities' },
               { value: 'gym-library', label: 'Gym · Exercise library' },
-              { value: 'triathlon',   label: 'Triathlon · Plan' },
+              { value: 'triathlon',   label: 'Weekly Overview' },
               { value: 'gym-session', label: 'Gym · In session' },
               { value: 'gym-summary', label: 'Gym · Summary' },
               { value: 'food',        label: 'Food · Weekly tracker' },
