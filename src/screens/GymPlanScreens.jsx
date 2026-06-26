@@ -1154,7 +1154,7 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay }) {
 function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
                        activities = {}, completedSessions = [],
-                       onNav, onStartSession, onResumeSession,
+                       onNav, onStartSession, onMarkComplete, onResumeSession,
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
                        onReorderSchedule, onImportSessions, onEditSession,
@@ -1630,12 +1630,21 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                 );
               }
               return (
-                <button onClick={onStartSession} style={{
-                  width:'100%', padding:'12px', borderRadius:11,
-                  background:t.accent, color:t.accentText,
-                  border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:6
-                }}>Start session →</button>
+                <div style={{ display:'flex', gap:7 }}>
+                  <button onClick={onStartSession} style={{
+                    flex:1, padding:'12px', borderRadius:11,
+                    background:t.accent, color:t.accentText,
+                    border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:6
+                  }}>Start session →</button>
+                  <button onClick={() => onMarkComplete && onMarkComplete()} style={{
+                    padding:'12px 14px', borderRadius:11, background:'transparent',
+                    border:`1.5px solid ${t.green}60`, color:t.green,
+                    fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                    whiteSpace:'nowrap'
+                  }}>✓ Mark complete</button>
+                </div>
               );
             })() : isViewDayPast ? (() => {
               if (viewDayCompleted) {
