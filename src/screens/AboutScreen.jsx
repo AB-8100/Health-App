@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { getCurrentPlanWeek, computeEventPhases } from '../data/eventPlan';
+import { DraftPlanBanner } from '../components/SharedUI';
 const CONNECTED_SERVICES = [
   { id: 'strava',   name: 'Strava',       scope: 'Runs · Rides · Workouts',  color: '#FC5200', glyph: 'S' },
   { id: 'apple',    name: 'Apple Health', scope: 'Steps · Sleep · Weight',   color: '#000',    glyph: 'A' },
@@ -101,6 +102,9 @@ function AboutScreen({
   tracksCycle = true,
   sheetsStatus = 'disconnected', sheetsError = null, sheetUrl = null,
   onConnectSheets, onDisconnectSheets, onReconnectSheets,
+  intakeCompleted = false,
+  intakeDraft = false,
+  onStartQuestionnaire,
 }) {
   const t = themes[theme];
 
@@ -205,6 +209,17 @@ function AboutScreen({
             </div>
           </div>
         </div>
+
+        {/* Draft plan banner */}
+        {!intakeCompleted && (
+          <div style={{ marginBottom: 12 }}>
+            <DraftPlanBanner
+              theme={theme}
+              hasDraft={intakeDraft}
+              onAction={onStartQuestionnaire}
+            />
+          </div>
+        )}
 
         {/* Google Sheets sync */}
         <Section title="Data sync" theme={theme}>

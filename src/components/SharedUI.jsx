@@ -245,4 +245,52 @@ function Sparkline({ data, color = "#16A34A", width = 60, height = 22, strokeWid
   document.head.appendChild(s);
 })();
 
-export { AnimatedNumber, StackedRings, PulseDot, BottomNav };
+// Banner shown when the deep questionnaire hasn't been completed.
+// `hasDraft` = user has started but not finished (shows "Continue" vs "Fill in").
+function DraftPlanBanner({ theme = 'light', onAction, hasDraft = false }) {
+  const isDark = theme === 'dark';
+  const bg       = isDark ? '#2A1F0E' : '#FFF7ED';
+  const border   = isDark ? '#7C4A1E55' : '#F59E0B44';
+  const iconBg   = isDark ? '#7C4A1E44' : '#FEF3C7';
+  const text     = isDark ? '#FCD34D' : '#92400E';
+  const text2    = isDark ? '#FCA25A' : '#B45309';
+  const btnBg    = isDark ? '#F59E0B22' : '#F59E0B18';
+  const btnBorder= isDark ? '#F59E0B55' : '#F59E0B44';
+
+  return (
+    <div style={{
+      margin: '0 16px 8px',
+      background: bg,
+      border: `1px solid ${border}`,
+      borderRadius: 14,
+      padding: '12px 14px',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10,
+    }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: 9, background: iconBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 15, flexShrink: 0,
+      }}>📋</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: text, lineHeight: 1.35, marginBottom: 5 }}>
+          Your plan is based on limited info — fill in the full questionnaire for a more accurate training plan.
+        </div>
+        <button
+          onClick={onAction}
+          style={{
+            padding: '5px 10px', borderRadius: 7,
+            background: btnBg, border: `1px solid ${btnBorder}`,
+            color: text2, fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {hasDraft ? 'Continue questionnaire →' : 'Fill in questionnaire →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export { AnimatedNumber, StackedRings, PulseDot, BottomNav, DraftPlanBanner };

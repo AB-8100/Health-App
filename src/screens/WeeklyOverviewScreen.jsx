@@ -2,7 +2,7 @@ import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { checkWeek } from '../utils/overtrain';
 import themes from '../data/themes';
-import { BottomNav } from '../components/SharedUI';
+import { BottomNav, DraftPlanBanner } from '../components/SharedUI';
 import { EVENT_PLAN, getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
 import { SPLITS } from './GymPlanScreens';
 
@@ -362,6 +362,9 @@ export function WeeklyOverviewScreen({
   eventPhasePlan = { phases: [], totalWeeks: 18 },
   onTapDay,
   onUpdatePlan,
+  intakeCompleted = false,
+  intakeDraft = false,
+  onStartQuestionnaire,
 }) {
   const t = themes[theme];
 
@@ -557,6 +560,14 @@ export function WeeklyOverviewScreen({
         </div>
 
       </div>
+
+      {!intakeCompleted && (
+        <DraftPlanBanner
+          theme={theme}
+          hasDraft={intakeDraft}
+          onAction={onStartQuestionnaire}
+        />
+      )}
 
       <BottomNav
         theme={theme} active="weekly" onNav={onNav}

@@ -64,6 +64,7 @@ export function DeepQuestionnaireScreen({
   width = 390, height = 820, theme = 'light',
   goalsPayload,   // from Stage 2
   onComplete,     // (intakePayload, skipped: bool) => void
+  onExit,         // () => void — save draft and go back without completing
   userId,
   initialIntake,  // for re-opening from settings
 }) {
@@ -107,6 +108,12 @@ export function DeepQuestionnaireScreen({
     const payload = { ...intake, status: 'draft', completedAt: null };
     persist(payload);
     onComplete(payload, true);
+  };
+
+  const handleExit = () => {
+    const payload = { ...intake, status: 'draft', completedAt: null };
+    persist(payload);
+    onExit?.();
   };
 
   const handleComplete = (skipped = false) => {
@@ -210,7 +217,25 @@ export function DeepQuestionnaireScreen({
               <span style={{ textTransform: 'uppercase' }}>{labelFor(current)}</span>
             </div>
           </div>
-          <div style={{ width: 32 }} />
+
+          {onExit ? (
+            <button onClick={handleExit} style={{
+              width: 32, height: 32, borderRadius: 9, background: 'transparent',
+              border: `1px solid ${t.border}`, color: t.text3, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0,
+            }}>×</button>
+          ) : <div style={{ width: 32 }} />}
+        </div>
+      )}
+
+      {/* Exit button on intro step when opened from settings */}
+      {current === 'intro' && onExit && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 20px 4px' }}>
+          <button onClick={handleExit} style={{
+            width: 32, height: 32, borderRadius: 9, background: 'transparent',
+            border: `1px solid ${t.border}`, color: t.text3, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+          }}>×</button>
         </div>
       )}
 
