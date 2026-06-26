@@ -623,6 +623,11 @@ function App() {
     }
   };
 
+  const eventPhasePlan = React.useMemo(() => {
+    const totalWeeks = profile.eventTotalWeeks || 18;
+    return { phases: computeEventPhases(totalWeeks), totalWeeks };
+  }, [profile.eventTotalWeeks]);
+
   if (authState === 'loading') {
     return (
       <div className="stage">
@@ -658,11 +663,6 @@ function App() {
   const hasGym = profile.hasGym !== false;
   const hasEventTraining = !!profile.hasEventTraining;
   const hasTrainingActivities = !!profile.hasTrainingActivities;
-
-  const eventPhasePlan = React.useMemo(() => {
-    const totalWeeks = profile.eventTotalWeeks || 18;
-    return { phases: computeEventPhases(totalWeeks), totalWeeks };
-  }, [profile.eventTotalWeeks]);
 
   const renderScreen = (s) => {
     if (onboardingStage === 'profile')
