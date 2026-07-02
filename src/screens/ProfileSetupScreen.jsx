@@ -149,8 +149,8 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
       };
 
       const [{ error: profileErr }, { error: settingsErr }] = await Promise.all([
-        supabase.from('profiles').upsert(profileRow),
-        supabase.from('user_settings').upsert(settingsRow),
+        supabase.from('profiles').upsert(profileRow, { onConflict: 'user_id' }),
+        supabase.from('user_settings').upsert(settingsRow, { onConflict: 'user_id' }),
       ]);
 
       if (profileErr) throw profileErr;

@@ -90,13 +90,13 @@ export async function saveUserData(userId, snapshot) {
   const ops = [];
 
   if (snapshot.profile) {
-    ops.push(supabase.from('profiles').upsert({ user_id: userId, ...profileToDb(snapshot.profile), updated_at: new Date().toISOString() }));
+    ops.push(supabase.from('profiles').upsert({ user_id: userId, ...profileToDb(snapshot.profile), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }));
   }
   if (snapshot.userSettings) {
-    ops.push(supabase.from('user_settings').upsert({ user_id: userId, ...settingsToDb(snapshot.userSettings), updated_at: new Date().toISOString() }));
+    ops.push(supabase.from('user_settings').upsert({ user_id: userId, ...settingsToDb(snapshot.userSettings), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }));
   }
   if (snapshot.plan) {
-    ops.push(supabase.from('gym_plans').upsert({ user_id: userId, ...planToDb(snapshot.plan), updated_at: new Date().toISOString() }));
+    ops.push(supabase.from('gym_plans').upsert({ user_id: userId, ...planToDb(snapshot.plan), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }));
   }
   if (snapshot.completedSessions) {
     // Replace all sessions for this user
@@ -148,7 +148,7 @@ export async function saveUserData(userId, snapshot) {
       phases:        snapshot.eventPlan?.phases,
       sessions:      snapshot.eventPlan?.sessions,
       updated_at:    new Date().toISOString(),
-    }));
+    }, { onConflict: 'user_id,training_type' }));
   }
 
   const results = await Promise.all(ops);
@@ -254,7 +254,7 @@ export async function saveUserGoals(userId, goalsPayload) {
     regular_sports:         goalsPayload.regularSports ?? [],
     primary_goal_type:      goalsPayload.goals?.[0]?.type ?? null,
     updated_at:             new Date().toISOString(),
-  });
+  }, { onConflict: 'user_id' });
   if (error) throw error;
 }
 
@@ -271,7 +271,7 @@ export async function saveUserIntake(userId, intakePayload) {
     injury:               intakePayload.injury ?? {},
     completed_at:         intakePayload.completedAt ?? null,
     updated_at:           new Date().toISOString(),
-  });
+  }, { onConflict: 'user_id' });
   if (error) throw error;
 }
 
