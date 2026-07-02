@@ -105,6 +105,8 @@ function AboutScreen({
   intakeCompleted = false,
   intakeDraft = false,
   onStartQuestionnaire,
+  eventPlan = { meta: {}, phases: [], sessions: {} },
+  onUploadTrainingPlan,
 }) {
   const t = themes[theme];
 
@@ -147,13 +149,62 @@ function AboutScreen({
   const gymDays          = hasGym && plan.splitDays ? plan.splitDays : 0;
   const eventDays        = hasEventTraining ? 5 : 0;
   const totalWeeklySessions = gymDays + eventDays;
-  const currentWeek      = getCurrentPlanWeek();
-  const totalPlanWeeks   = localProfile.eventTotalWeeks || 18;
-  const phaseMeta        = computeEventPhases(totalPlanWeeks);
+  const totalPlanWeeks   = eventPlan.meta?.totalWeeks || localProfile.eventTotalWeeks || 18;
+  const currentWeek      = getCurrentPlanWeek(eventPlan.meta?.startDate, totalPlanWeeks);
+  const phaseMeta        = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(totalPlanWeeks);
   const currentPhase     = phaseMeta.find(p => currentWeek >= p.weeks[0] && currentWeek <= p.weeks[1]) || phaseMeta[0];
   const planDone         = !!localProfile.goal;
 
   const goals = ['strength', 'muscle', 'fat-loss', 'active', 'flexibility'];
+
+  // ── Training plan upload ──────────────────────────────────────────────────
+  const fileInputRef = React.useRef(null);
+  const [importState, setImportState] = React.useState('idle'); // idle | parsing | confirm | error
+  const [importError, setImportError] = React.useState(null);
+  const [pendingPlan, setPendingPlan] = React.useState(null);
+
+  const handlePickFile = () => fileInputRef.current?.click();
+
+  // onUploadTrainingPlan already persists profile.hasEventTraining upstream —
+  // this just mirrors it into localProfile, which (unlike the other fields on
+  // this screen) is only ever seeded from the `profile` prop at mount, so
+  // without this it'd keep showing "no plan" here until the screen remounts.
+  const applyUploadedPlan = (parsed) => {
+    onUploadTrainingPlan?.(parsed);
+    setLP(prev => ({ ...prev, hasEventTraining: true, eventTotalWeeks: parsed.meta?.totalWeeks || prev.eventTotalWeeks }));
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportError(null);
+    setImportState('parsing');
+    try {
+      const { parseTrainingPlanWorkbook } = await import('../utils/trainingPlanImport');
+      const parsed = await parseTrainingPlanWorkbook(file);
+      if (hasEventTraining) {
+        setPendingPlan(parsed);
+        setImportState('confirm');
+      } else {
+        applyUploadedPlan(parsed);
+        setImportState('idle');
+      }
+    } catch (err) {
+      setImportError(err.message || "Couldn't read that file — check it matches the expected format.");
+      setImportState('error');
+    }
+  };
+
+  const confirmImport = () => {
+    applyUploadedPlan(pendingPlan);
+    setPendingPlan(null);
+    setImportState('idle');
+  };
+  const cancelImport = () => {
+    setPendingPlan(null);
+    setImportState('idle');
+  };
 
   return (
     <div style={{
@@ -441,6 +492,7 @@ function AboutScreen({
                   </div>
                   <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>
                     {totalPlanWeeks}-week programme · Week {currentWeek}
+                    {eventPlan.meta?.eventDistances ? ` · ${eventPlan.meta.eventDistances}` : ''}
                   </div>
                 </div>
                 <span style={{
@@ -542,6 +594,68 @@ function AboutScreen({
               </button>
             </>
           )}
+
+          {/* Upload / overwrite from spreadsheet */}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+
+            {importState === 'confirm' && pendingPlan ? (
+              <div style={{
+                padding: '10px 12px', borderRadius: 10,
+                background: '#F59E0B12', border: '1px solid #F59E0B35',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
+                  Replace your current plan?
+                </div>
+                <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+                  {pendingPlan.meta.totalWeeks}-week plan
+                  {pendingPlan.meta.eventDistances ? ` · ${pendingPlan.meta.eventDistances}` : ''}
+                  {' '}from {pendingPlan.sourceFileName}. This overwrites your existing event plan and clears any manual schedule changes.
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={cancelImport} style={{
+                    flex: 1, padding: '8px', borderRadius: 8,
+                    background: 'transparent', border: `1px solid ${t.border}`,
+                    color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}>Cancel</button>
+                  <button onClick={confirmImport} style={{
+                    flex: 1, padding: '8px', borderRadius: 8,
+                    background: '#DC2626', border: 'none',
+                    color: '#fff', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}>Overwrite plan</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={handlePickFile}
+                  disabled={importState === 'parsing'}
+                  style={{
+                    width: '100%', padding: '9px', borderRadius: 10,
+                    background: 'transparent', border: `1px solid ${t.border}`,
+                    color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
+                    cursor: importState === 'parsing' ? 'default' : 'pointer',
+                    opacity: importState === 'parsing' ? 0.6 : 1,
+                  }}
+                >
+                  {importState === 'parsing'
+                    ? 'Reading file…'
+                    : hasEventTraining ? 'Upload new plan (.xlsx) →' : 'Upload training plan (.xlsx) →'}
+                </button>
+                {importState === 'error' && importError && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#DC2626', lineHeight: 1.5 }}>
+                    {importError}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </Section>
 
         {/* Training split */}

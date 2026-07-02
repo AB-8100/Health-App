@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   heightUnit: 'cm',
 };
 const DEFAULT_PLAN = { splitDays: null, todayIdx: 0, overrides: {} };
+const DEFAULT_EVENT_PLAN = { meta: {}, phases: [], sessions: {} };
 
 // ─── Onboarding helpers ───────────────────────────────────────────────────────
 
@@ -209,6 +210,7 @@ function App() {
   const [activities, setActivities]             = React.useState({});
   const [eventOverrides, setEventOverrides] = React.useState({});
   const [planSessionsDone, setPlanSessionsDone]           = React.useState({});
+  const [eventPlan, setEventPlan]         = React.useState(DEFAULT_EVENT_PLAN);
   const [session, setSession]             = React.useState({
     active: false, paused: false, elapsed: 0, workout: '', queue: null,
   });
@@ -268,6 +270,7 @@ function App() {
         setActivities({});
         setEventOverrides({});
         setPlanSessionsDone({});
+        setEventPlan(DEFAULT_EVENT_PLAN);
         setCustomFoods([]);
         // Stage 1: collect profile basics before anything else
         setOnboardingStage('profile');
@@ -350,6 +353,7 @@ function App() {
     if (data.activities)           setActivities(data.activities);
     if (data.eventOverrides)   setEventOverrides(data.eventOverrides);
     if (data.planSessionsDone)        setPlanSessionsDone(data.planSessionsDone);
+    if (data.eventPlan)        setEventPlan(data.eventPlan);
     if (data.customFoods)          setCustomFoods(data.customFoods);
     setOnboarding(!data.profile || !data.profile.name);
   };
@@ -357,7 +361,7 @@ function App() {
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
-    eventOverrides, planSessionsDone,
+    eventOverrides, planSessionsDone, eventPlan,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -412,6 +416,7 @@ function App() {
     setActivities({});
     setEventOverrides({});
     setPlanSessionsDone({});
+    setEventPlan(DEFAULT_EVENT_PLAN);
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboardingStage('profile');
@@ -721,9 +726,27 @@ function App() {
   };
 
   const eventPhasePlan = React.useMemo(() => {
-    const totalWeeks = profile.eventTotalWeeks || 18;
-    return { phases: computeEventPhases(totalWeeks), totalWeeks };
-  }, [profile.eventTotalWeeks]);
+    const totalWeeks = eventPlan.meta?.totalWeeks || profile.eventTotalWeeks || 18;
+    const phases = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(totalWeeks);
+    return { phases, totalWeeks, startDate: eventPlan.meta?.startDate || null, sessions: eventPlan.sessions || {} };
+  }, [eventPlan, profile.eventTotalWeeks]);
+
+  // Replaces the whole event training plan from an uploaded spreadsheet.
+  // Clears any per-day overrides/completion state tied to the old plan.
+  const handleUploadTrainingPlan = (parsed) => {
+    setEventPlan(parsed);
+    setEventOverrides({});
+    setPlanSessionsDone({});
+    const nextProfile = {
+      ...profile,
+      hasEventTraining: true,
+      eventTotalWeeks: parsed.meta?.totalWeeks || profile.eventTotalWeeks,
+    };
+    setProfileRaw(nextProfile);
+    setTimeout(() => scheduleSave({
+      eventPlan: parsed, eventOverrides: {}, planSessionsDone: {}, profile: nextProfile,
+    }), 0);
+  };
 
   if (authState === 'loading') {
     return (
@@ -895,7 +918,9 @@ function App() {
                onReconnectSheets={handleReconnectSheets}
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
-               onStartQuestionnaire={() => handleStartQuestionnaire('about-me')} />;
+               onStartQuestionnaire={() => handleStartQuestionnaire('about-me')}
+               eventPlan={eventPlan}
+               onUploadTrainingPlan={handleUploadTrainingPlan} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
