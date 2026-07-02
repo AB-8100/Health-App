@@ -28,11 +28,16 @@ const SESSION_DISPLAY = {
   climb:        { label: 'Climb',   emoji: '🧗', color: '#854D0E' },
   dance:        { label: 'Dancing', emoji: '💃', color: '#EC4899' },
   brick:        { label: 'Brick',   emoji: '🔥', color: '#9333EA' },
+  sprint:       { label: 'Sprint',  emoji: '⏱️', color: '#F59E0B' },
   conditioning: { label: 'Cond',    emoji: '💪', color: '#0D9488' },
   race:         { label: 'Race',    emoji: '🏁', color: '#DC2626' },
   rest:         { label: 'Rest',    emoji: '😴', color: '#9CA3AF' },
   other:        { label: 'Other',   emoji: '⚡', color: '#4B5563' },
 };
+
+// Types offered when manually adding a session — a curated subset of
+// SESSION_DISPLAY covering the common training-plan disciplines.
+const ADD_SESSION_TYPES = ['swim', 'run', 'bike', 'brick', 'sprint', 'conditioning', 'gym', 'race', 'other'];
 
 // Resolve display for a session. Prefers the activity's own data (spread from
 // ACTIVITY_DEFS in App.jsx), then falls back to SESSION_DISPLAY keyed by type.
@@ -89,11 +94,13 @@ function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEv
       }
     }
 
-    // Event plan sessions
-    if (hasEventTraining) {
+    // Event plan sessions + manually-added sessions (stored the same way,
+    // keyed by date) — checked regardless of hasEventTraining so a session
+    // can be added to the week even without an uploaded plan.
+    {
       const raw = Object.prototype.hasOwnProperty.call(eventOverrides, dk)
         ? eventOverrides[dk]
-        : (eventSessions[dk] || []).filter(s => s.type !== 'rest');
+        : (hasEventTraining ? (eventSessions[dk] || []).filter(s => s.type !== 'rest') : []);
       raw.forEach((s, si) => {
         const type = (s.type || 'conditioning').toLowerCase();
         sessions.push({
@@ -280,6 +287,98 @@ function WarningChip({ text }) {
   );
 }
 
+function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
+  const [dayIdx, setDayIdx] = React.useState(null);
+  const [type, setType] = React.useState(null);
+  const [label, setLabel] = React.useState('');
+  const [duration, setDuration] = React.useState('');
+
+  const canSubmit = dayIdx !== null;
+  const inputStyle = {
+    padding: '8px 10px', borderRadius: 8,
+    border: `1px solid ${t.border}`, background: t.surface2,
+    color: t.text, fontFamily: t.sans, fontSize: 11.5, outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{
+      background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14,
+      padding: '12px 14px', marginBottom: 10,
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 10 }}>Add a session</div>
+
+      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Day</div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+        {weekData.map((day, i) => (
+          <button key={day.dk} onClick={() => setDayIdx(i)} style={{
+            flex: 1, padding: '6px 0', borderRadius: 8,
+            background: dayIdx === i ? t.accent : 'transparent',
+            border: `1px solid ${dayIdx === i ? t.accent : t.border}`,
+            color: dayIdx === i ? '#fff' : t.text2,
+            fontFamily: t.sans, fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
+          }}>
+            {DAY_SHORT[i]}
+            <div style={{ fontSize: 9, opacity: .8, fontWeight: 500 }}>{day.d.getUTCDate()}</div>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Type (optional)</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+        {ADD_SESSION_TYPES.map(id => {
+          const info = SESSION_DISPLAY[id];
+          const active = type === id;
+          return (
+            <button key={id} onClick={() => setType(active ? null : id)} style={{
+              padding: '5px 9px', borderRadius: 7,
+              background: active ? info.color + '20' : 'transparent',
+              border: `1px solid ${active ? info.color : t.border}`,
+              color: active ? info.color : t.text2,
+              fontFamily: t.sans, fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <span>{info.emoji}</span>{info.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input
+          value={label} onChange={e => setLabel(e.target.value)}
+          placeholder="Description (optional)"
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <input
+          value={duration} onChange={e => setDuration(e.target.value)}
+          placeholder="30min"
+          style={{ ...inputStyle, width: 72 }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onCancel} style={{
+          flex: 1, padding: '9px', borderRadius: 9, background: 'transparent',
+          border: `1px solid ${t.border}`, color: t.text2, fontFamily: t.sans,
+          fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}>Cancel</button>
+        <button
+          disabled={!canSubmit}
+          onClick={() => onAdd({ dayIdx, type, label, duration })}
+          style={{
+            flex: 1, padding: '9px', borderRadius: 9,
+            background: canSubmit ? t.accent : t.border,
+            border: 'none', color: canSubmit ? '#fff' : t.text3,
+            fontFamily: t.sans, fontSize: 12, fontWeight: 700,
+            cursor: canSubmit ? 'pointer' : 'default',
+          }}
+        >Add session</button>
+      </div>
+    </div>
+  );
+}
+
 function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
   return (
     <div
@@ -392,10 +491,35 @@ export function WeeklyOverviewScreen({
     buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions)
   );
   const [warnings,      setWarnings]      = React.useState({});
+  const [addOpen,       setAddOpen]       = React.useState(false);
 
   React.useEffect(() => {
     setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions));
   }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions]);
+
+  // Adds a one-off session to a specific date in the currently-viewed week,
+  // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
+  // so it survives independently of any gym split or recurring activity.
+  const handleAddSession = ({ dayIdx, type, label, duration }) => {
+    const row = weekData[dayIdx];
+    if (!row || !onUpdateOverrides) return;
+    const typeKey = type || 'other';
+    const typeInfo = SESSION_DISPLAY[typeKey] || SESSION_DISPLAY.other;
+    const newSession = {
+      type: typeKey,
+      label: label.trim() || typeInfo.label,
+      sessionType: '',
+      duration: duration.trim(),
+      flag: '',
+      done: false,
+      source: 'manual',
+    };
+    const existing = Object.prototype.hasOwnProperty.call(eventOverrides, row.dk)
+      ? eventOverrides[row.dk]
+      : (hasEventTraining ? (eventSessions[row.dk] || []).filter(s => s.type !== 'rest') : []);
+    onUpdateOverrides({ ...eventOverrides, [row.dk]: [...existing, newSession] });
+    setAddOpen(false);
+  };
 
   // Week date range label
   const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
@@ -550,6 +674,26 @@ export function WeeklyOverviewScreen({
             }}
           >›</button>
         </div>
+
+        {/* Add session */}
+        {addOpen ? (
+          <AddSessionPanel
+            weekData={weekData}
+            t={t}
+            onAdd={handleAddSession}
+            onCancel={() => setAddOpen(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setAddOpen(true)}
+            style={{
+              width: '100%', padding: '9px', borderRadius: 10, marginBottom: 10,
+              background: 'transparent', border: `1px dashed ${t.border}`,
+              color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >+ Add session</button>
+        )}
 
         {/* 7-day strip */}
         <DragDropContext onDragEnd={handleDragEnd}>
