@@ -592,17 +592,21 @@ function App() {
     setScreen('gym-session');
   };
 
-  const markSessionComplete = ({ elapsed = 0, distance = null } = {}) => {
-    const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
-    const todayBase = split?.days?.[(plan.todayIdx || 0) % split.days.length];
-    const today = (plan.overrides && todayBase && plan.overrides[todayBase.id]) || todayBase;
+  const markSessionComplete = ({ elapsed = 0, distance = null, workout = null } = {}) => {
+    let workoutName = workout;
+    if (!workoutName) {
+      const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
+      const todayBase = split?.days?.[(plan.todayIdx || 0) % split.days.length];
+      const today = (plan.overrides && todayBase && plan.overrides[todayBase.id]) || todayBase;
+      workoutName = today ? today.name + ' day' : 'Session';
+    }
     const completed = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
       endedAt: Date.now(),
       active: false,
       manuallyCompleted: true,
-      workout: today ? today.name + ' day' : 'Session',
+      workout: workoutName,
       elapsed,
       distance,
       queue: null,
