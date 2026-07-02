@@ -383,7 +383,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, planSessionsDone, eventPlan]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
