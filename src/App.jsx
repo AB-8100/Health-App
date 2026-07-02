@@ -731,12 +731,16 @@ function App() {
     return { phases, totalWeeks, startDate: eventPlan.meta?.startDate || null, sessions: eventPlan.sessions || {} };
   }, [eventPlan, profile.eventTotalWeeks]);
 
-  // Replaces the whole event training plan from an uploaded spreadsheet.
-  // Clears any per-day overrides/completion state tied to the old plan.
+  // Replaces the whole event training plan from an uploaded spreadsheet, and
+  // wipes every other source that feeds sessions into the Weekly Overview
+  // (gym split, manually-added activities, per-day overrides/completion
+  // state) so the planner shows nothing but the freshly uploaded plan.
   const handleUploadTrainingPlan = (parsed) => {
     setEventPlan(parsed);
     setEventOverrides({});
     setPlanSessionsDone({});
+    setActivities({});
+    setPlanRaw(DEFAULT_PLAN);
     const nextProfile = {
       ...profile,
       hasEventTraining: true,
@@ -744,7 +748,8 @@ function App() {
     };
     setProfileRaw(nextProfile);
     setTimeout(() => scheduleSave({
-      eventPlan: parsed, eventOverrides: {}, planSessionsDone: {}, profile: nextProfile,
+      eventPlan: parsed, eventOverrides: {}, planSessionsDone: {}, activities: {},
+      plan: DEFAULT_PLAN, profile: nextProfile,
     }), 0);
   };
 
