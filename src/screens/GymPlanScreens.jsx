@@ -320,7 +320,7 @@ function EditSessionSheet({ theme, session, onClose, onSave }) {
 
 // ────────────────────────────────────────────────────────────
 // Quick "mark as complete" sheet — optionally capture time + distance
-function MarkCompleteSheet({ theme, onClose, onSave }) {
+function MarkCompleteSheet({ theme, workoutLabel, onClose, onSave }) {
   const t = themes[theme];
   const [hours, setHours] = React.useState('');
   const [minutes, setMinutes] = React.useState('');
@@ -354,7 +354,9 @@ function MarkCompleteSheet({ theme, onClose, onSave }) {
       }}>
         <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 16px' }}/>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
-          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>Mark as complete</div>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>
+            {workoutLabel ? `Record ${workoutLabel}` : 'Mark as complete'}
+          </div>
           <button onClick={onClose} style={{
             padding:'4px 10px', borderRadius:7, background:'transparent',
             border:`1px solid ${t.border}`, color:t.text2,
@@ -1127,7 +1129,7 @@ function getWeekLabel(isoKey) {
 // Session view for non-gym users — shows today's scheduled activity
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-function ActivitySessionView({ t, dayOfWeek, activities, onTapDay }) {
+function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSession }) {
   const todayActs = activities[dayOfWeek] || [];
   const isRest = todayActs.length === 0;
 
@@ -1195,17 +1197,30 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay }) {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => onTapDay && onTapDay(dayOfWeek)}
-                style={{
-                  width:'100%', padding:'13px 0', borderRadius:14,
-                  background:act.color || t.accent, border:'none',
-                  color:'#fff', fontSize:15, fontWeight:600,
-                  cursor:'pointer', fontFamily:t.sans
-                }}
-              >
-                Start session
-              </button>
+              <div style={{ display:'flex', gap:7 }}>
+                <button
+                  onClick={() => onTapDay && onTapDay(dayOfWeek)}
+                  style={{
+                    flex:1, padding:'13px 0', borderRadius:14,
+                    background:act.color || t.accent, border:'none',
+                    color:'#fff', fontSize:15, fontWeight:600,
+                    cursor:'pointer', fontFamily:t.sans
+                  }}
+                >
+                  Start session
+                </button>
+                <button
+                  onClick={() => onRecordSession && onRecordSession(act)}
+                  style={{
+                    padding:'13px 16px', borderRadius:14, background:'transparent',
+                    border:`1.5px solid ${t.green}60`, color:t.green,
+                    fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans,
+                    whiteSpace:'nowrap'
+                  }}
+                >
+                  ✓ Record
+                </button>
+              </div>
             </div>
           ))}
           <button
@@ -1251,6 +1266,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [editingSession, setEditingSession] = React.useState(null);
   const [showAddSession, setShowAddSession] = React.useState(false);
   const [showMarkComplete, setShowMarkComplete] = React.useState(false);
+  const [markCompleteWorkout, setMarkCompleteWorkout] = React.useState(null);
 
   // Compute the actual calendar date for the currently viewed day slot
   const now = new Date();
@@ -1341,6 +1357,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
       {!split ? (
         <ActivitySessionView
           t={t} dayOfWeek={dayOfWeek} activities={activities} onTapDay={onTapDay}
+          onRecordSession={(act) => { setMarkCompleteWorkout(act.label); setShowMarkComplete(true); }}
         />
       ) : (
       <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 16px' }} className="phone-scroll">
@@ -2060,8 +2077,13 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
       {showMarkComplete && (
         <MarkCompleteSheet
           theme={theme}
-          onClose={() => setShowMarkComplete(false)}
-          onSave={(extras) => { onMarkComplete && onMarkComplete(extras); setShowMarkComplete(false); }}
+          workoutLabel={markCompleteWorkout}
+          onClose={() => { setShowMarkComplete(false); setMarkCompleteWorkout(null); }}
+          onSave={(extras) => {
+            onMarkComplete && onMarkComplete(markCompleteWorkout ? { ...extras, workout: markCompleteWorkout } : extras);
+            setShowMarkComplete(false);
+            setMarkCompleteWorkout(null);
+          }}
         />
       )}
     </div>
