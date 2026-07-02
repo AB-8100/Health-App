@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { checkWeek } from '../utils/overtrain';
 import themes from '../data/themes';
 import { BottomNav, DraftPlanBanner } from '../components/SharedUI';
-import { EVENT_PLAN, getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
+import { getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
 import { SPLITS } from './GymPlanScreens';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -29,6 +29,7 @@ const SESSION_DISPLAY = {
   dance:        { label: 'Dancing', emoji: '💃', color: '#EC4899' },
   brick:        { label: 'Brick',   emoji: '🔥', color: '#9333EA' },
   conditioning: { label: 'Cond',    emoji: '💪', color: '#0D9488' },
+  race:         { label: 'Race',    emoji: '🏁', color: '#DC2626' },
   rest:         { label: 'Rest',    emoji: '😴', color: '#9CA3AF' },
   other:        { label: 'Other',   emoji: '⚡', color: '#4B5563' },
 };
@@ -42,13 +43,23 @@ function getSessionDisplay(actData, type) {
   return SESSION_DISPLAY[type] || SESSION_DISPLAY.other;
 }
 
+// Plan dates are UTC-midnight-anchored (see data/eventPlan.js), so date keys
+// are read via toISOString rather than local getters to avoid off-by-one
+// days for users east/west of UTC.
 function toDateKey(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining) {
-  const weekStart = getPlanWeekStart(viewWeek);
-  const todayKey  = toDateKey(new Date());
+// "Today" is a local concept (what day is it for the user right now), unlike
+// plan dates, so it's keyed from local Y/M/D rather than toISOString.
+function todayDateKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions) {
+  const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
+  const todayKey  = todayDateKey();
 
   const split    = hasGym && plan.splitDays ? SPLITS[plan.splitDays] : null;
   const splitIds = new Set((split?.days || []).map(d => d.id));
@@ -57,7 +68,7 @@ function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEv
 
   return Array.from({ length: 7 }, (_, i) => {
     const d  = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
+    d.setUTCDate(weekStart.getUTCDate() + i);
     const dk = toDateKey(d);
     const sessions = [];
 
@@ -82,14 +93,14 @@ function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEv
     if (hasEventTraining) {
       const raw = Object.prototype.hasOwnProperty.call(eventOverrides, dk)
         ? eventOverrides[dk]
-        : (EVENT_PLAN[dk] || []).filter(s => s.type !== 'rest');
+        : (eventSessions[dk] || []).filter(s => s.type !== 'rest');
       raw.forEach((s, si) => {
         const type = (s.type || 'conditioning').toLowerCase();
         sessions.push({
           id: `event-${dk}-${si}`,
           type: SESSION_DISPLAY[type] ? type : 'conditioning',
           label: s.label || type,
-          detail: [s.sessionType, s.duration].filter(Boolean).join(' · '),
+          detail: [s.sessionType, s.duration, s.flag].filter(Boolean).join(' · '),
           source: 'event_plan',
           raw: s,
           dayIdx: i,
@@ -245,8 +256,13 @@ function SessionBar({ session, isDragging }) {
       cursor: 'grab', userSelect: 'none',
     }}>
       <span style={{ fontSize: 13, flexShrink: 0 }}>{emoji}</span>
-      <span style={{ fontSize: 11.5, fontWeight: 600, color, flex: 1, minWidth: 0 }}>{label}</span>
-      {detail && <span style={{ fontSize: 10, color: color + 'BB', flexShrink: 0 }}>{detail}</span>}
+      <span style={{ fontSize: 11.5, fontWeight: 600, color, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
+      {detail && (
+        <span style={{
+          fontSize: 10, color: color + 'BB', flex: 1, minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{detail}</span>
+      )}
     </div>
   );
 }
@@ -286,10 +302,10 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
             {DAY_SHORT[i]}
           </div>
           <div style={{ fontSize: 14, fontWeight: isToday ? 700 : 400, color: isToday ? t.accent : t.text, lineHeight: 1.2 }}>
-            {d.getDate()}
+            {d.getUTCDate()}
           </div>
           <div style={{ fontSize: 8.5, color: t.text3 }}>
-            {d.toLocaleDateString('en-GB', { month: 'short' })}
+            {d.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}
           </div>
         </button>
 
@@ -359,7 +375,7 @@ export function WeeklyOverviewScreen({
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
   eventOverrides = {}, onUpdateOverrides,
   planSessionsDone = {}, onToggleDone,
-  eventPhasePlan = { phases: [], totalWeeks: 18 },
+  eventPhasePlan = { phases: [], totalWeeks: 18, startDate: null, sessions: {} },
   onTapDay,
   onUpdatePlan,
   intakeCompleted = false,
@@ -368,23 +384,23 @@ export function WeeklyOverviewScreen({
 }) {
   const t = themes[theme];
 
-  const initWeek = getCurrentPlanWeek();
+  const { phases, totalWeeks, startDate: eventStartDate, sessions: eventSessions = {} } = eventPhasePlan;
+
+  const initWeek = getCurrentPlanWeek(eventStartDate, totalWeeks);
   const [viewWeek,      setViewWeek]      = React.useState(initWeek);
   const [weekData,      setWeekData]      = React.useState(() =>
-    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining)
+    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions)
   );
   const [warnings,      setWarnings]      = React.useState({});
 
-  const { phases, totalWeeks } = eventPhasePlan;
-
   React.useEffect(() => {
-    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining));
-  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining]);
+    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions));
+  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions]);
 
   // Week date range label
-  const weekStart = getPlanWeekStart(viewWeek);
-  const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
-  const fmt       = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
+  const weekEnd   = new Date(weekStart); weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+  const fmt       = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
   const weekLabel = `${fmt(weekStart)} – ${fmt(weekEnd)}`;
 
   // ── DnD ────────────────────────────────────────────────────────────────────

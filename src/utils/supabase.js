@@ -75,6 +75,10 @@ export async function loadUserData(userId) {
     activities:         activitiesMap,
     eventOverrides:    trainingPlans?.find(p => p.training_type === 'event')?.overrides ?? {},
     planSessionsDone:  trainingPlans?.find(p => p.training_type === 'event')?.done      ?? {},
+    eventPlan: (() => {
+      const row = trainingPlans?.find(p => p.training_type === 'event');
+      return row ? { meta: row.meta ?? {}, phases: row.phases ?? [], sessions: row.sessions ?? {} } : undefined;
+    })(),
     trainingPlans:      trainingPlans ?? [],
     savedAt:            profile?.updated_at ?? new Date().toISOString(),
   };
@@ -134,12 +138,15 @@ export async function saveUserData(userId, snapshot) {
       )
     );
   }
-  if (snapshot.eventOverrides !== undefined || snapshot.planSessionsDone !== undefined) {
+  if (snapshot.eventOverrides !== undefined || snapshot.planSessionsDone !== undefined || snapshot.eventPlan !== undefined) {
     ops.push(supabase.from('training_plans').upsert({
       user_id:       userId,
       training_type: 'event',
       overrides:     snapshot.eventOverrides   ?? {},
       done:          snapshot.planSessionsDone ?? {},
+      meta:          snapshot.eventPlan?.meta,
+      phases:        snapshot.eventPlan?.phases,
+      sessions:      snapshot.eventPlan?.sessions,
       updated_at:    new Date().toISOString(),
     }));
   }
