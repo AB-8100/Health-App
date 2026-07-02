@@ -658,23 +658,33 @@ function AboutScreen({
           </div>
         </Section>
 
-        {/* Training split */}
+        {/* Training split — disabled while an uploaded event plan is driving
+            the Weekly Overview, since a configured split would inject gym
+            sessions alongside the plan's own sessions. */}
         <Section title="Training split" theme={theme}>
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
-            Gym sessions per week. Tap a number or open the picker to adjust your schedule and exercises.
+            {hasEventTraining
+              ? "Disabled while your uploaded training plan is active. Add one-off sessions from the Weekly Overview's + Add session button instead."
+              : 'Gym sessions per week. Tap a number or open the picker to adjust your schedule and exercises.'}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, opacity: hasEventTraining ? 0.45 : 1 }}>
             {[1, 2, 3, 4, 5].map(n => {
               const isActive = (plan.splitDays || 0) === n;
               return (
-                <button key={n} onClick={() => onNav?.('gym-split')} style={{
-                  padding: '12px 0 8px', borderRadius: 11,
-                  background: isActive ? t.text : t.surface2,
-                  color: isActive ? '#fff' : t.text,
-                  border: `1px solid ${isActive ? t.text : t.border}`,
-                  fontFamily: t.serif, fontSize: 20, lineHeight: 1, cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                }}>
+                <button
+                  key={n}
+                  disabled={hasEventTraining}
+                  onClick={() => onNav?.('gym-split')}
+                  style={{
+                    padding: '12px 0 8px', borderRadius: 11,
+                    background: isActive ? t.text : t.surface2,
+                    color: isActive ? '#fff' : t.text,
+                    border: `1px solid ${isActive ? t.text : t.border}`,
+                    fontFamily: t.serif, fontSize: 20, lineHeight: 1,
+                    cursor: hasEventTraining ? 'not-allowed' : 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                  }}
+                >
                   {n}
                   <span style={{
                     fontFamily: t.sans, fontSize: 8.5, letterSpacing: '.08em',
@@ -712,12 +722,28 @@ function AboutScreen({
             </div>
           )}
 
-          <button onClick={() => onNav?.('gym-split')} style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 9,
-            background: 'transparent', border: `1px solid ${t.border}`,
-            color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
-            cursor: 'pointer',
-          }}>Open split picker →</button>
+          <button
+            disabled={hasEventTraining}
+            onClick={() => onNav?.('gym-split')}
+            style={{
+              marginTop: 10, padding: '8px 12px', borderRadius: 9,
+              background: 'transparent', border: `1px solid ${t.border}`,
+              color: hasEventTraining ? t.text3 : t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
+              cursor: hasEventTraining ? 'not-allowed' : 'pointer',
+              opacity: hasEventTraining ? 0.45 : 1,
+            }}
+          >Open split picker →</button>
+
+          {hasEventTraining && (
+            <button
+              onClick={() => updateProfile('hasEventTraining', false)}
+              style={{
+                width: '100%', marginTop: 10, padding: '9px', borderRadius: 10,
+                background: 'transparent', border: `1px solid ${t.border}`,
+                color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >Switch to training split instead →</button>
+          )}
         </Section>
 
         {/* Connected apps */}
