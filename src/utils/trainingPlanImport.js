@@ -13,6 +13,16 @@ import JSZip from 'jszip';
 const REQUIRED_HEADERS = ['date', 'wk', 'phase', 'discipline'];
 const SS_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 
+// Excel "Done" cells come through as either a real boolean (checkbox-style
+// cell) or free text ("TRUE"/"FALSE", "Yes"/"No", "1"/"0", "x"/""). A plain
+// `Boolean(str.trim())` treats any non-empty string as true — including the
+// literal word "FALSE" — so explicitly recognise the falsy tokens instead.
+const FALSY_DONE_TOKENS = new Set(['', 'false', 'no', 'n', '0']);
+function parseDoneCell(raw) {
+  if (typeof raw === 'boolean') return raw;
+  return !FALSY_DONE_TOKENS.has(String(raw ?? '').trim().toLowerCase());
+}
+
 const PHASE_COLORS = { Foundation: '#15803D', Build: '#0369A1', Peak: '#9333EA', Taper: '#DC2626' };
 const PHASE_COLOR_FALLBACK = ['#15803D', '#0369A1', '#9333EA', '#DC2626', '#D97706', '#0D9488'];
 
@@ -225,7 +235,7 @@ function buildPlanFromRows(rows, colMap, sourceFileName) {
     const durationRaw = colMap.duration !== undefined ? String(row[colMap.duration] ?? '').trim() : '';
     const sessionType = colMap.sessionType !== undefined ? String(row[colMap.sessionType] ?? '').trim() : '';
     const flag = colMap.flag !== undefined ? String(row[colMap.flag] ?? '').trim() : '';
-    const done = colMap.done !== undefined ? Boolean(String(row[colMap.done] ?? '').trim()) : false;
+    const done = colMap.done !== undefined ? parseDoneCell(row[colMap.done]) : false;
 
     if (!minDate || dateKey < minDate) minDate = dateKey;
     if (!maxDate || dateKey > maxDate) maxDate = dateKey;
