@@ -2,6 +2,8 @@ import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
+import { getTodayDateKey } from '../data/eventPlan';
+import { getSessionDisplay } from '../data/sessionDisplay';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -1129,11 +1131,12 @@ function getWeekLabel(isoKey) {
 // Session view for non-gym users — shows today's scheduled activity
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSession }) {
-  const todayActs = activities[dayOfWeek] || [];
+function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], activeSession, onResumeSession, onStartActivity, onRecordSession }) {
+  const todayActs = [...todayEventActs, ...(activities[dayOfWeek] || [])];
   const isRest = todayActs.length === 0;
 
-  // Find next scheduled day
+  // Find next scheduled day (recurring activities only — event-plan sessions
+  // are date-keyed, not weekday-keyed, so there's no simple "next day" to show).
   let nextDayIdx = null;
   if (isRest) {
     for (let i = 1; i <= 7; i++) {
@@ -1153,6 +1156,17 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSessi
         </div>
       </div>
 
+      {activeSession && (
+        <button
+          onClick={onResumeSession}
+          style={{ width:'100%', padding:'13px 0', borderRadius:14, marginBottom:14,
+            background:t.accent, border:'none', color:'#fff', fontSize:14, fontWeight:600,
+            cursor:'pointer', fontFamily:t.sans }}
+        >
+          ● Resume session in progress →
+        </button>
+      )}
+
       {isRest ? (
         <div>
           <div style={{ background:t.surface, border:`1px solid ${t.border}`, borderRadius:18, padding:'20px 18px', marginBottom:14, textAlign:'center' }}>
@@ -1169,12 +1183,12 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSessi
             )}
           </div>
           <button
-            onClick={() => onTapDay && onTapDay(dayOfWeek)}
+            onClick={() => onRecordSession && onRecordSession(null)}
             style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
               border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
               cursor:'pointer', fontFamily:t.sans }}
           >
-            Log an activity anyway
+            ✓ Log an activity anyway
           </button>
         </div>
       ) : (
@@ -1192,19 +1206,27 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSessi
                 }}>{act.emoji || '🏃'}</div>
                 <div>
                   <div style={{ fontFamily:t.serif, fontSize:22, color:t.text, lineHeight:1.1 }}>{act.label}</div>
-                  {act.duration && (
-                    <div style={{ fontSize:12, color:t.text3, marginTop:3 }}>{act.duration} min</div>
+                  {(act.duration || act.sessionType) && (
+                    <div style={{ fontSize:12, color:t.text3, marginTop:3 }}>
+                      {/* Recurring activities store duration as a plain number of
+                          minutes; event-plan/manual sessions store it as a
+                          free-text string that may already carry its own unit
+                          (e.g. "45 min", "5km") — only append "min" for the former. */}
+                      {[act.sessionType, act.duration ? (typeof act.duration === 'number' ? `${act.duration}min` : act.duration) : null].filter(Boolean).join(' · ')}
+                    </div>
                   )}
                 </div>
               </div>
               <div style={{ display:'flex', gap:7 }}>
                 <button
-                  onClick={() => onTapDay && onTapDay(dayOfWeek)}
+                  onClick={() => onStartActivity && onStartActivity(act)}
+                  disabled={!!activeSession}
                   style={{
                     flex:1, padding:'13px 0', borderRadius:14,
                     background:act.color || t.accent, border:'none',
                     color:'#fff', fontSize:15, fontWeight:600,
-                    cursor:'pointer', fontFamily:t.sans
+                    cursor: activeSession ? 'default' : 'pointer', opacity: activeSession ? 0.5 : 1,
+                    fontFamily:t.sans
                   }}
                 >
                   Start session
@@ -1224,12 +1246,12 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSessi
             </div>
           ))}
           <button
-            onClick={() => onTapDay && onTapDay(dayOfWeek)}
+            onClick={() => onRecordSession && onRecordSession(null)}
             style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
               border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
               cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
           >
-            Log a different activity
+            ✓ Log a different activity
           </button>
         </div>
       )}
@@ -1242,13 +1264,36 @@ function ActivitySessionView({ t, dayOfWeek, activities, onTapDay, onRecordSessi
 function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
                        activities = {}, completedSessions = [],
-                       onNav, onStartSession, onMarkComplete, onResumeSession,
+                       eventOverrides = {}, eventPhasePlan = { sessions: {} },
+                       onNav, onStartSession, onStartActivity, onMarkComplete, onResumeSession,
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
                        onReorderSchedule, onImportSessions, onEditSession,
                        tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const split = plan?.splitDays ? SPLITS[plan.splitDays] : null;
+
+  // Today's event-plan session(s) — read the same way the Weekly Overview
+  // does (per-day override wins, else the uploaded plan minus rest days) so
+  // the Session tab shows real sessions instead of falling back to "rest"
+  // just because there's no gym split or recurring activity configured.
+  const todayKey = getTodayDateKey();
+  const eventSessionsToday = hasEventTraining
+    ? (Object.prototype.hasOwnProperty.call(eventOverrides, todayKey)
+        ? eventOverrides[todayKey]
+        : (eventPhasePlan.sessions?.[todayKey] || []).filter(s => s.type !== 'rest'))
+    : [];
+  const todayEventActs = eventSessionsToday.map((s, i) => {
+    const disp = getSessionDisplay(null, (s.type || 'other').toLowerCase());
+    return {
+      id: `event-${todayKey}-${i}`,
+      label: s.label || disp.label,
+      emoji: disp.emoji,
+      color: disp.color,
+      duration: s.duration,
+      sessionType: s.sessionType,
+    };
+  });
 
   // Use plan.scheduleOverride only if all its day IDs still exist in the current split.
   const splitDayIds = split ? new Set(split.days.map(d => d.id)) : new Set();
@@ -1356,8 +1401,10 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
 
       {!split ? (
         <ActivitySessionView
-          t={t} dayOfWeek={dayOfWeek} activities={activities} onTapDay={onTapDay}
-          onRecordSession={(act) => { setMarkCompleteWorkout(act.label); setShowMarkComplete(true); }}
+          t={t} dayOfWeek={dayOfWeek} activities={activities} todayEventActs={todayEventActs}
+          activeSession={activeSession} onResumeSession={onResumeSession}
+          onStartActivity={onStartActivity}
+          onRecordSession={(act) => { setMarkCompleteWorkout(act?.label ?? null); setShowMarkComplete(true); }}
         />
       ) : (
       <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 16px' }} className="phone-scroll">

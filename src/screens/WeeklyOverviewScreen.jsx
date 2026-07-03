@@ -1,52 +1,15 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { checkWeek } from '../utils/overtrain';
+import { checkWeek, getRefActivities } from '../utils/overtrain';
 import themes from '../data/themes';
 import { BottomNav, DraftPlanBanner } from '../components/SharedUI';
-import { getCurrentPlanWeek, getPlanWeekStart } from '../data/eventPlan';
+import { getCurrentPlanWeek, getPlanWeekStart, getTodayDateKey } from '../data/eventPlan';
 import { SPLITS } from './GymPlanScreens';
+import { SESSION_DISPLAY, getSessionDisplay } from '../data/sessionDisplay';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-// Display properties keyed by activity type.
-// Covers all types selectable during onboarding + event disciplines.
-// emoji/color are display-only (not stored in Supabase); extend from ref_activities
-// at runtime once the table is seeded.
-const SESSION_DISPLAY = {
-  swim:         { label: 'Swim',    emoji: '🏊', color: '#0369A1' },
-  run:          { label: 'Run',     emoji: '🏃', color: '#0090FF' },
-  cycle:        { label: 'Cycle',   emoji: '🚴', color: '#9333EA' },
-  bike:         { label: 'Bike',    emoji: '🚴', color: '#D97706' },
-  gym:          { label: 'Gym',     emoji: '🏋️', color: '#4F46E5' },
-  yoga:         { label: 'Yoga',    emoji: '🧘', color: '#6D4AAF' },
-  walk:         { label: 'Walk',    emoji: '🚶', color: '#15803D' },
-  row:          { label: 'Row',     emoji: '🚣', color: '#4B5563' },
-  hiit:         { label: 'HIIT',    emoji: '⚡', color: '#DC2626' },
-  pilates:      { label: 'Pilates', emoji: '🤸', color: '#7C3AED' },
-  climb:        { label: 'Climb',   emoji: '🧗', color: '#854D0E' },
-  dance:        { label: 'Dancing', emoji: '💃', color: '#EC4899' },
-  brick:        { label: 'Brick',   emoji: '🔥', color: '#9333EA' },
-  sprint:       { label: 'Sprint',  emoji: '⏱️', color: '#F59E0B' },
-  conditioning: { label: 'Cond',    emoji: '💪', color: '#0D9488' },
-  race:         { label: 'Race',    emoji: '🏁', color: '#DC2626' },
-  rest:         { label: 'Rest',    emoji: '😴', color: '#9CA3AF' },
-  other:        { label: 'Other',   emoji: '⚡', color: '#4B5563' },
-};
-
-// Types offered when manually adding a session — a curated subset of
-// SESSION_DISPLAY covering the common training-plan disciplines.
-const ADD_SESSION_TYPES = ['swim', 'run', 'bike', 'brick', 'sprint', 'conditioning', 'gym', 'race', 'other'];
-
-// Resolve display for a session. Prefers the activity's own data (spread from
-// ACTIVITY_DEFS in App.jsx), then falls back to SESSION_DISPLAY keyed by type.
-function getSessionDisplay(actData, type) {
-  if (actData?.label && actData?.emoji && actData?.color) {
-    return { label: actData.label, emoji: actData.emoji, color: actData.color };
-  }
-  return SESSION_DISPLAY[type] || SESSION_DISPLAY.other;
-}
 
 // Plan dates are UTC-midnight-anchored (see data/eventPlan.js), so date keys
 // are read via toISOString rather than local getters to avoid off-by-one
@@ -55,16 +18,9 @@ function toDateKey(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// "Today" is a local concept (what day is it for the user right now), unlike
-// plan dates, so it's keyed from local Y/M/D rather than toISOString.
-function todayDateKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions) {
   const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
-  const todayKey  = todayDateKey();
+  const todayKey  = getTodayDateKey();
 
   const split    = hasGym && plan.splitDays ? SPLITS[plan.splitDays] : null;
   const splitIds = new Set((split?.days || []).map(d => d.id));
@@ -289,11 +245,23 @@ function WarningChip({ text }) {
 
 function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
   const [dayIdx, setDayIdx] = React.useState(null);
-  const [type, setType] = React.useState(null);
-  const [label, setLabel] = React.useState('');
+  const [activityName, setActivityName] = React.useState('');
+  const [sessionType, setSessionType] = React.useState('');
   const [duration, setDuration] = React.useState('');
+  const [refActivities, setRefActivities] = React.useState([]);
 
-  const canSubmit = dayIdx !== null;
+  // Activities (rugby, run, swim, ...) come from the Supabase ref_activities
+  // table rather than a hardcoded list, so the picker always reflects what's
+  // actually seeded there.
+  const [activitiesLoaded, setActivitiesLoaded] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    getRefActivities().then(rows => { if (!cancelled) { setRefActivities(rows); setActivitiesLoaded(true); } });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedActivity = refActivities.find(a => a.name === activityName);
+  const canSubmit = dayIdx !== null && !!activityName;
   const inputStyle = {
     padding: '8px 10px', borderRadius: 8,
     border: `1px solid ${t.border}`, background: t.surface2,
@@ -324,30 +292,33 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
         ))}
       </div>
 
-      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Type (optional)</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-        {ADD_SESSION_TYPES.map(id => {
-          const info = SESSION_DISPLAY[id];
-          const active = type === id;
-          return (
-            <button key={id} onClick={() => setType(active ? null : id)} style={{
-              padding: '5px 9px', borderRadius: 7,
-              background: active ? info.color + '20' : 'transparent',
-              border: `1px solid ${active ? info.color : t.border}`,
-              color: active ? info.color : t.text2,
-              fontFamily: t.sans, fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}>
-              <span>{info.emoji}</span>{info.label}
-            </button>
-          );
-        })}
-      </div>
+      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Activity</div>
+      {activitiesLoaded && refActivities.length === 0 ? (
+        // Fall back to free text if the ref_activities table couldn't be
+        // reached or is empty, so a picker outage doesn't block session creation.
+        <input
+          value={activityName} onChange={e => setActivityName(e.target.value)}
+          placeholder="Activity name, e.g. Rugby"
+          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+        />
+      ) : (
+        <select
+          value={activityName}
+          onChange={e => setActivityName(e.target.value)}
+          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+        >
+          <option value="">{activitiesLoaded ? 'Select an activity…' : 'Loading activities…'}</option>
+          {refActivities.map(a => (
+            <option key={a.name} value={a.name}>{a.name}</option>
+          ))}
+        </select>
+      )}
 
+      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Type (optional)</div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input
-          value={label} onChange={e => setLabel(e.target.value)}
-          placeholder="Description (optional)"
+          value={sessionType} onChange={e => setSessionType(e.target.value)}
+          placeholder="Describe what was done, e.g. 5k tempo run"
           style={{ ...inputStyle, flex: 1 }}
         />
         <input
@@ -365,7 +336,7 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
         }}>Cancel</button>
         <button
           disabled={!canSubmit}
-          onClick={() => onAdd({ dayIdx, type, label, duration })}
+          onClick={() => onAdd({ dayIdx, activityName, category: selectedActivity?.category, sessionType, duration })}
           style={{
             flex: 1, padding: '9px', borderRadius: 9,
             background: canSubmit ? t.accent : t.border,
@@ -470,7 +441,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
 export function WeeklyOverviewScreen({
   width = 390, height = 820, theme = 'light',
   onNav, profile = {},
-  plan = {}, activities = {},
+  plan = {}, activities = {}, onUpdateActivities,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
   eventOverrides = {}, onUpdateOverrides,
   planSessionsDone = {}, onToggleDone,
@@ -500,15 +471,14 @@ export function WeeklyOverviewScreen({
   // Adds a one-off session to a specific date in the currently-viewed week,
   // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
   // so it survives independently of any gym split or recurring activity.
-  const handleAddSession = ({ dayIdx, type, label, duration }) => {
+  const handleAddSession = ({ dayIdx, activityName, category, sessionType, duration }) => {
     const row = weekData[dayIdx];
-    if (!row || !onUpdateOverrides) return;
-    const typeKey = type || 'other';
-    const typeInfo = SESSION_DISPLAY[typeKey] || SESSION_DISPLAY.other;
+    if (!row || !onUpdateOverrides || !activityName) return;
+    const typeKey = SESSION_DISPLAY[category] ? category : 'other';
     const newSession = {
       type: typeKey,
-      label: label.trim() || typeInfo.label,
-      sessionType: '',
+      label: activityName,
+      sessionType: sessionType.trim(),
       duration: duration.trim(),
       flag: '',
       done: false,
@@ -590,7 +560,19 @@ export function WeeklyOverviewScreen({
         onUpdatePlan?.(sched);
       }
     }
-  }, [weekData, eventOverrides, plan, onUpdatePlan]);
+
+    // Persist recurring-activity moves — these live in `activities`, keyed by
+    // weekday index (not date), unlike event-plan sessions.
+    if (moved.source === 'activity' && onUpdateActivities) {
+      const newActivities = { ...activities };
+      [srcRow, dstRow].forEach(row => {
+        newActivities[row.dayIdx] = row.sessions
+          .filter(s => s.source === 'activity')
+          .map(s => s.actData);
+      });
+      onUpdateActivities(newActivities);
+    }
+  }, [weekData, eventOverrides, plan, onUpdatePlan, activities, onUpdateActivities]);
 
   const isDraft = !profile?.goal;
 
@@ -708,7 +690,7 @@ export function WeeklyOverviewScreen({
                 i={i}
                 warnings={warnings[day.dk] || []}
                 t={t}
-                onClick={() => onTapDay?.(day.dayIdx)}
+                onClick={() => onTapDay?.(day)}
               />
             ))}
           </div>
@@ -721,7 +703,7 @@ export function WeeklyOverviewScreen({
 
       </div>
 
-      {!intakeCompleted && (
+      {!intakeCompleted && !hasEventTraining && (
         <DraftPlanBanner
           theme={theme}
           hasDraft={intakeDraft}

@@ -9,10 +9,11 @@ import {
 } from './utils/googleSheets';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakSelect, TweakButton } from './components/tweaks/TweaksPanel';
 import { themes, RefinedHome } from './screens/HomeScreen';
-import { GymSessionScreen, GymSummaryScreen, PlaceholderScreen } from './screens/GymSessionScreen';
+import { GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen } from './screens/WeeklyOverviewScreen';
+import { SessionDetailScreen } from './screens/SessionDetailScreen';
 import { computeEventPhases } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
@@ -207,6 +208,7 @@ function App() {
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
   const [editingDayId, setEditingDayId]   = React.useState(null);
   const [editingDayIdx, setEditingDayIdx] = React.useState(null);
+  const [viewingDay, setViewingDay] = React.useState(null);
   const [activities, setActivities]             = React.useState({});
   const [eventOverrides, setEventOverrides] = React.useState({});
   const [planSessionsDone, setPlanSessionsDone]           = React.useState({});
@@ -585,11 +587,46 @@ function App() {
       };
     }));
     setSession(s => ({
-      ...s, active: true, paused: false, elapsed: 0, exIdx: 0,
+      ...s, active: true, paused: false, elapsed: 0, exIdx: 0, kind: 'gym',
       workout: today.name + ' day',
       queue: queue.length ? queue : null,
     }));
     setScreen('gym-session');
+  };
+
+  // Starts a plain elapsed-time timer for a non-gym session (run, swim, a
+  // scheduled event-plan discipline, etc.) — no exercise queue, just
+  // start/pause/stop, unlike the gym flow above.
+  const startActivitySession = (act) => {
+    setSession({
+      active: true, paused: false, elapsed: 0, kind: 'activity',
+      workout: act?.label || act?.type || 'Session', queue: null,
+    });
+    setScreen('activity-session');
+  };
+
+  const finishActivitySession = ({ distance = null } = {}) => {
+    const completed = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      endedAt: Date.now(),
+      workout: session.workout,
+      elapsed: session.elapsed,
+      distance,
+      queue: null,
+    };
+    setCompletedSessions(prev => {
+      const next = [...prev, completed];
+      setTimeout(() => scheduleSave({ completedSessions: next }), 0);
+      return next;
+    });
+    setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
+    setScreen('gym-hub');
+  };
+
+  const discardActivitySession = () => {
+    setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
+    setScreen('gym-hub');
   };
 
   const markSessionComplete = ({ elapsed = 0, distance = null, workout = null } = {}) => {
@@ -667,7 +704,7 @@ function App() {
   });
 
   const navigate = (target) => {
-    if (target === 'gym') setScreen(session.active ? 'gym-session' : 'gym-hub');
+    if (target === 'gym') setScreen(session.active ? (session.kind === 'activity' ? 'activity-session' : 'gym-session') : 'gym-hub');
     else setScreen(target);
   };
 
@@ -820,7 +857,7 @@ function App() {
                onNav={navigate}
                onStartSession={startSession}
                activeSession={session.active ? session : null}
-               onResumeSession={() => setScreen('gym-session')}
+               onResumeSession={() => setScreen(session.kind === 'activity' ? 'activity-session' : 'gym-session')}
                onOpenAbout={() => setScreen('about-me')}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-hub')
@@ -831,12 +868,15 @@ function App() {
                activities={activities}
                completedSessions={completedSessions}
                activeSession={session.active ? session : null}
+               eventOverrides={eventOverrides}
+               eventPhasePlan={eventPhasePlan}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onNav={navigate}
                onStartSession={startSession}
+               onStartActivity={startActivitySession}
                onMarkComplete={markSessionComplete}
-               onResumeSession={() => setScreen('gym-session')}
+               onResumeSession={() => setScreen(session.kind === 'activity' ? 'activity-session' : 'gym-session')}
                onChangeSplit={() => setScreen('gym-split')}
                onEditDay={(dayId) => { setEditingDayId(dayId); setTimeout(() => setScreen('gym-edit'), 0); }}
                onSelectDay={(i) => { setPlan(p => ({ ...p, todayIdx: i })); }}
@@ -936,6 +976,10 @@ function App() {
                profile={profile}
                plan={plan}
                activities={activities}
+               onUpdateActivities={(next) => {
+                 setActivities(next);
+                 setTimeout(() => scheduleSave({ activities: next }), 0);
+               }}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                eventOverrides={eventOverrides}
@@ -949,11 +993,21 @@ function App() {
                  setTimeout(() => scheduleSave({ planSessionsDone: next }), 0);
                }}
                eventPhasePlan={eventPhasePlan}
-               onTapDay={(dayIdx) => { setEditingDayIdx(dayIdx); setScreen('gym-day'); }}
+               onTapDay={(day) => { setViewingDay(day); setScreen('session-detail'); }}
                onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))}
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
                onStartQuestionnaire={() => handleStartQuestionnaire('weekly')} />;
+    if (s === 'session-detail')
+      return <SessionDetailScreen width={contentW} height={contentH} theme={tweaks.theme}
+               day={viewingDay}
+               completedSessions={completedSessions}
+               onBack={() => setScreen('weekly')}
+               onNav={navigate}
+               onStartActivity={(sess) => startActivitySession(sess)}
+               onGoToGymTab={() => setScreen('gym-hub')}
+               tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
                tracksCycle={profile.tracksCycle}
@@ -968,6 +1022,14 @@ function App() {
                onNav={navigate}
                onExit={() => { setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null }); setScreen('gym-hub'); }}
                onComplete={finishSession} />;
+    if (s === 'activity-session')
+      return <ActivityTimerScreen width={contentW} height={contentH} theme={tweaks.theme}
+               session={session} setSession={setSession}
+               onFinish={finishActivitySession}
+               onDiscard={discardActivitySession}
+               onNav={navigate}
+               tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-summary')
       return <GymSummaryScreen width={contentW} height={contentH} theme={tweaks.theme}
                session={lastSession}
