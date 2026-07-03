@@ -316,8 +316,20 @@ function App() {
     const timeout = setTimeout(() => setAuthState(s => s === 'loading' ? 'login' : s), 6000);
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       clearTimeout(timeout);
-      if (session) { bootstrapUser(session); }
-      else if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') { setAuthState('login'); }
+      // Supabase fires this listener on TOKEN_REFRESHED/USER_UPDATED too —
+      // those happen automatically in the background while the user is
+      // active in the app (a refresh every ~50min, plus on tab focus).
+      // Re-running the full bootstrap for them re-fetches from Supabase and
+      // overwrites in-memory state with whatever was last saved there, which
+      // can race with an in-flight local save and make recent edits (e.g. a
+      // dragged session) appear to revert. Only actual sign-in transitions
+      // need the full reload.
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session) bootstrapUser(session);
+        else setAuthState('login');
+      } else if (event === 'SIGNED_OUT') {
+        setAuthState('login');
+      }
     });
     return () => { subscription.unsubscribe(); clearTimeout(timeout); };
   }, [bootstrapUser]);
