@@ -653,8 +653,9 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
   const t = themes[theme];
   const elapsed = session.elapsed || 0;
   const paused  = session.paused  || false;
-  const [showFinish, setShowFinish] = React.useState(false);
-  const [distance, setDistance]     = React.useState('');
+  const [showFinish, setShowFinish]   = React.useState(false);
+  const [showDiscard, setShowDiscard] = React.useState(false);
+  const [distance, setDistance]       = React.useState('');
 
   const fmt = (s) => {
     const h = Math.floor(s / 3600);
@@ -687,7 +688,7 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 20px 0' }}>
-        <button onClick={onDiscard} style={{
+        <button onClick={() => setShowDiscard(true)} style={{
           background: 'transparent', border: 'none', color: t.text3,
           fontFamily: t.sans, fontSize: 13, cursor: 'pointer', padding: '6px 0',
         }}>Discard</button>
@@ -759,6 +760,33 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
                   background: t.green, color: '#fff', fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                 }}
               >✓ Finish</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDiscard && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}
+          onClick={() => setShowDiscard(false)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: '16px 20px 32px',
+          }}>
+            <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 16px' }} />
+            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 6 }}>Discard this session?</div>
+            <div style={{ fontSize: 12.5, color: t.text3, marginBottom: 16 }}>
+              {fmt(elapsed)} of recorded time will be lost.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowDiscard(false)} style={{
+                flex: 1, padding: '12px', borderRadius: 12, background: 'transparent',
+                border: `1px solid ${t.border}`, color: t.text2, fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Keep going</button>
+              <button onClick={onDiscard} style={{
+                flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                background: '#DC2626', color: '#fff', fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              }}>Discard</button>
             </div>
           </div>
         </div>

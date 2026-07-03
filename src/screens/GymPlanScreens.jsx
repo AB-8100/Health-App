@@ -1208,7 +1208,11 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
                   <div style={{ fontFamily:t.serif, fontSize:22, color:t.text, lineHeight:1.1 }}>{act.label}</div>
                   {(act.duration || act.sessionType) && (
                     <div style={{ fontSize:12, color:t.text3, marginTop:3 }}>
-                      {[act.sessionType, act.duration ? `${act.duration}min` : null].filter(Boolean).join(' · ')}
+                      {/* Recurring activities store duration as a plain number of
+                          minutes; event-plan/manual sessions store it as a
+                          free-text string that may already carry its own unit
+                          (e.g. "45 min", "5km") — only append "min" for the former. */}
+                      {[act.sessionType, act.duration ? (typeof act.duration === 'number' ? `${act.duration}min` : act.duration) : null].filter(Boolean).join(' · ')}
                     </div>
                   )}
                 </div>

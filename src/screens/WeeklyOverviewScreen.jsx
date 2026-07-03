@@ -253,9 +253,10 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
   // Activities (rugby, run, swim, ...) come from the Supabase ref_activities
   // table rather than a hardcoded list, so the picker always reflects what's
   // actually seeded there.
+  const [activitiesLoaded, setActivitiesLoaded] = React.useState(false);
   React.useEffect(() => {
     let cancelled = false;
-    getRefActivities().then(rows => { if (!cancelled) setRefActivities(rows); });
+    getRefActivities().then(rows => { if (!cancelled) { setRefActivities(rows); setActivitiesLoaded(true); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -292,16 +293,26 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
       </div>
 
       <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Activity</div>
-      <select
-        value={activityName}
-        onChange={e => setActivityName(e.target.value)}
-        style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
-      >
-        <option value="">{refActivities.length ? 'Select an activity…' : 'Loading activities…'}</option>
-        {refActivities.map(a => (
-          <option key={a.name} value={a.name}>{a.name}</option>
-        ))}
-      </select>
+      {activitiesLoaded && refActivities.length === 0 ? (
+        // Fall back to free text if the ref_activities table couldn't be
+        // reached or is empty, so a picker outage doesn't block session creation.
+        <input
+          value={activityName} onChange={e => setActivityName(e.target.value)}
+          placeholder="Activity name, e.g. Rugby"
+          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+        />
+      ) : (
+        <select
+          value={activityName}
+          onChange={e => setActivityName(e.target.value)}
+          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+        >
+          <option value="">{activitiesLoaded ? 'Select an activity…' : 'Loading activities…'}</option>
+          {refActivities.map(a => (
+            <option key={a.name} value={a.name}>{a.name}</option>
+          ))}
+        </select>
+      )}
 
       <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Type (optional)</div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
