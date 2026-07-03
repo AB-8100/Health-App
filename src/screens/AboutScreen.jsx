@@ -2,6 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { getCurrentPlanWeek, computeEventPhases } from '../data/eventPlan';
 import { DraftPlanBanner } from '../components/SharedUI';
+import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
 const CONNECTED_SERVICES = [
   { id: 'strava',   name: 'Strava',       scope: 'Runs · Rides · Workouts',  color: '#FC5200', glyph: 'S' },
   { id: 'apple',    name: 'Apple Health', scope: 'Steps · Sleep · Weight',   color: '#000',    glyph: 'A' },
@@ -181,7 +182,6 @@ function AboutScreen({
     setImportError(null);
     setImportState('parsing');
     try {
-      const { parseTrainingPlanWorkbook } = await import('../utils/trainingPlanImport');
       const parsed = await parseTrainingPlanWorkbook(file);
       if (hasEventTraining) {
         setPendingPlan(parsed);
