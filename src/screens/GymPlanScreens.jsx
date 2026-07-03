@@ -1131,9 +1131,19 @@ function getWeekLabel(isoKey) {
 // Session view for non-gym users — shows today's scheduled activity
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], activeSession, onResumeSession, onStartActivity, onRecordSession }) {
+function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], activeSession, onResumeSession, onStartActivity, onRecordSession, completedSessions = [], onViewSummary, onOpenEditSession }) {
   const todayActs = [...todayEventActs, ...(activities[dayOfWeek] || [])];
   const isRest = todayActs.length === 0;
+
+  // Sessions already logged today (via "Start session" finishing, or "Mark
+  // complete"/"Record"), so a completed activity shows its log instead of
+  // Start/Record again.
+  const todaysCompleted = completedSessions.filter(s => {
+    const sd = new Date(s.date);
+    const now = new Date();
+    return sd.toDateString() === now.toDateString();
+  });
+  const findCompleted = (act) => todaysCompleted.find(s => s.workout === act.label) || null;
 
   // Find next scheduled day (recurring activities only — event-plan sessions
   // are date-keyed, not weekday-keyed, so there's no simple "next day" to show).
@@ -1182,18 +1192,39 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
               </div>
             )}
           </div>
-          <button
-            onClick={() => onRecordSession && onRecordSession(null)}
-            style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
-              border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
-              cursor:'pointer', fontFamily:t.sans }}
-          >
-            ✓ Log an activity anyway
-          </button>
+          {todaysCompleted.length > 0 ? (
+            <div style={{ display:'flex', gap:7 }}>
+              <button
+                onClick={() => onViewSummary && onViewSummary(todaysCompleted[0])}
+                style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
+                  border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
+              >
+                ✓ Session logged — view
+              </button>
+              <button
+                onClick={() => onOpenEditSession && onOpenEditSession(todaysCompleted[0])}
+                style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
+                  border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
+              >
+                ✎ Edit
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => onRecordSession && onRecordSession(null)}
+              style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
+                border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
+                cursor:'pointer', fontFamily:t.sans }}
+            >
+              ✓ Log an activity anyway
+            </button>
+          )}
         </div>
       ) : (
         <div>
-          {todayActs.map((act, i) => (
+          {todayActs.map((act, i) => {
+            const completed = findCompleted(act);
+            return (
             <div key={i} style={{
               background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
               padding:'18px 18px', marginBottom:12
@@ -1217,34 +1248,54 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
                   )}
                 </div>
               </div>
-              <div style={{ display:'flex', gap:7 }}>
-                <button
-                  onClick={() => onStartActivity && onStartActivity(act)}
-                  disabled={!!activeSession}
-                  style={{
-                    flex:1, padding:'13px 0', borderRadius:14,
-                    background:act.color || t.accent, border:'none',
-                    color:'#fff', fontSize:15, fontWeight:600,
-                    cursor: activeSession ? 'default' : 'pointer', opacity: activeSession ? 0.5 : 1,
-                    fontFamily:t.sans
-                  }}
-                >
-                  Start session
-                </button>
-                <button
-                  onClick={() => onRecordSession && onRecordSession(act)}
-                  style={{
-                    padding:'13px 16px', borderRadius:14, background:'transparent',
-                    border:`1.5px solid ${t.green}60`, color:t.green,
-                    fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans,
-                    whiteSpace:'nowrap'
-                  }}
-                >
-                  ✓ Record
-                </button>
-              </div>
+              {completed ? (
+                <div style={{ display:'flex', gap:7 }}>
+                  <button
+                    onClick={() => onViewSummary && onViewSummary(completed)}
+                    style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
+                      border:`1.5px solid ${t.green}40`, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
+                  >
+                    ✓ Logged — view
+                  </button>
+                  <button
+                    onClick={() => onOpenEditSession && onOpenEditSession(completed)}
+                    style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
+                      border:`1px solid ${t.border}`, color:t.accent, fontSize:14, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
+                  >
+                    ✎ Edit
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display:'flex', gap:7 }}>
+                  <button
+                    onClick={() => onStartActivity && onStartActivity(act)}
+                    disabled={!!activeSession}
+                    style={{
+                      flex:1, padding:'13px 0', borderRadius:14,
+                      background:act.color || t.accent, border:'none',
+                      color:'#fff', fontSize:15, fontWeight:600,
+                      cursor: activeSession ? 'default' : 'pointer', opacity: activeSession ? 0.5 : 1,
+                      fontFamily:t.sans
+                    }}
+                  >
+                    Start session
+                  </button>
+                  <button
+                    onClick={() => onRecordSession && onRecordSession(act)}
+                    style={{
+                      padding:'13px 16px', borderRadius:14, background:'transparent',
+                      border:`1.5px solid ${t.green}60`, color:t.green,
+                      fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans,
+                      whiteSpace:'nowrap'
+                    }}
+                  >
+                    ✓ Record
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
           <button
             onClick={() => onRecordSession && onRecordSession(null)}
             style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
@@ -1405,6 +1456,9 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           activeSession={activeSession} onResumeSession={onResumeSession}
           onStartActivity={onStartActivity}
           onRecordSession={(act) => { setMarkCompleteWorkout(act?.label ?? null); setShowMarkComplete(true); }}
+          completedSessions={completedSessions}
+          onViewSummary={onViewSummary}
+          onOpenEditSession={setEditingSession}
         />
       ) : (
       <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 16px' }} className="phone-scroll">
@@ -1596,13 +1650,40 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               </div>
             ))}
 
-            <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
-              marginTop:14, width:'100%', padding:'13px', borderRadius:12, border:'none',
-              fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
-              background: viewDayActs[0]?.color || t.accent, color:'#fff',
-            }}>
-              Start session
-            </button>
+            {viewDayCompleted ? (
+              <div style={{ display:'flex', gap:7, marginTop:14 }}>
+                <button onClick={() => onViewSummary && onViewSummary(viewDayCompleted)} style={{
+                  flex:1, padding:'13px', borderRadius:12,
+                  background:t.green+'18', color:t.green,
+                  border:`1.5px solid ${t.green}40`,
+                  fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
+                }}>✓ Session logged — view</button>
+                <button onClick={() => setEditingSession(viewDayCompleted)} style={{
+                  padding:'13px 16px', borderRadius:12, background:'transparent',
+                  border:`1px solid ${t.border}`, color:t.accent,
+                  fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500,
+                }}>✎ Edit</button>
+              </div>
+            ) : viewDayIdx === dayOfWeek ? (
+              <div style={{ display:'flex', gap:7, marginTop:14 }}>
+                <button onClick={() => onStartActivity && onStartActivity(viewDayActs[0])} style={{
+                  flex:1, padding:'13px', borderRadius:12, border:'none',
+                  fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
+                  background: viewDayActs[0]?.color || t.accent, color:'#fff',
+                }}>Start session</button>
+                <button onClick={() => { setMarkCompleteWorkout(viewDayActs[0]?.label ?? null); setShowMarkComplete(true); }} style={{
+                  padding:'13px 16px', borderRadius:12, background:'transparent',
+                  border:`1.5px solid ${t.green}60`, color:t.green,
+                  fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
+                }}>✓ Mark complete</button>
+              </div>
+            ) : (
+              <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                marginTop:14, width:'100%', padding:'13px', borderRadius:12,
+                background:'transparent', border:`1px solid ${t.border2}`,
+                color:t.text2, fontFamily:t.sans, fontSize:13, cursor:'pointer',
+              }}>View day activities ›</button>
+            )}
           </div>
         ) : isViewRest ? (
           <div style={{
