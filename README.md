@@ -14,13 +14,13 @@ Forma is a React app (built with Vite) that tracks:
 - **Coaching nudges** — context-aware daily focus cards (workout targets, nutrition, recovery)
 - **Cycle-aware coaching** — optional cycle tracking that adjusts content for hormonal context
 
-It is designed to feel like a native iPhone app and is deployed to GitHub Pages.
+It is designed to feel like a native iPhone app and is deployed to Vercel.
 
 ---
 
 ## Live app
 
-**[https://ab-8100.github.io/Health-App/](https://ab-8100.github.io/Health-App/)**
+**[https://your-app.vercel.app/](https://your-app.vercel.app/)** *(update with your actual Vercel deployment URL)*
 
 ---
 
@@ -126,17 +126,18 @@ npm install
 npm run dev
 ```
 
-App is served at `http://localhost:5173/Health-App/`.
+App is served at `http://localhost:5173/`.
 
 ---
 
 ## Deployment
 
-The app is deployed automatically to GitHub Pages via GitHub Actions on every push to `main`. The workflow (`.github/workflows/deploy.yml`) installs dependencies, runs `vite build`, and uploads the `dist/` folder.
+The app is deployed to [Vercel](https://vercel.com/), which builds and hosts it from the root domain (`base: '/'` in `vite.config.js`). A `vercel.json` provides an SPA rewrite so all paths serve `index.html`.
 
-To deploy to your own GitHub Pages:
+To deploy your own copy:
 1. Fork the repo
-2. Go to **Settings → Pages → Source** and select **GitHub Actions**
-3. Push to `main` — the workflow handles the rest
+2. Import it into Vercel (**Add New → Project**) and select the repo
+3. Configure the required environment variables in the Vercel project settings (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_CLIENT_ID`, etc.)
+4. Push to `main` — Vercel deploys automatically
 
-The live URL will be `https://<your-username>.github.io/Health-App/`.
+If you use Supabase Auth (email confirmation, OAuth) or Google Identity Services, make sure your Vercel deployment domain is added to Supabase's Redirect URLs allow-list and Google Cloud Console's Authorized JavaScript origins, respectively.
