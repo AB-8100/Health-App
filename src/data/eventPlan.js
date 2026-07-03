@@ -14,6 +14,13 @@ function parseUTCDate(dateStr) {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+// "Today" is a local concept (what day is it for the user right now), unlike
+// plan dates, so it's keyed from local Y/M/D rather than UTC getters.
+export function getTodayDateKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Returns the plan week currently active, based on the plan's real start
 // date. Falls back to week 1 when no plan has been uploaded yet.
 export function getCurrentPlanWeek(startDate, totalWeeks = 18) {

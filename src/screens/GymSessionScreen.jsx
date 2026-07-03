@@ -646,6 +646,128 @@ function NumberInput({ value, onChange, step = 1, prefix = '', suffix = '', them
 }
 
 // ────────────────────────────────────────────────────────────
+// Generic elapsed-time timer for non-gym sessions (run, swim, rugby, ...) —
+// no exercise queue, just start/pause/stop with an optional distance on finish.
+function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', session, setSession, onFinish, onDiscard, onNav,
+                               tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
+  const t = themes[theme];
+  const elapsed = session.elapsed || 0;
+  const paused  = session.paused  || false;
+  const [showFinish, setShowFinish] = React.useState(false);
+  const [distance, setDistance]     = React.useState('');
+
+  const fmt = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+      : `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
+  const inputStyle = {
+    padding: '9px 12px', borderRadius: 10, border: `1px solid ${t.border}`,
+    background: t.surface2, fontFamily: t.mono, fontSize: 15, color: t.text,
+    outline: 'none', width: '100%', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{
+      width, height, background: t.bg, fontFamily: t.sans, color: t.text,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative',
+    }}>
+      <div style={{
+        height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+        padding: '0 22px 8px', fontSize: 14, fontWeight: 600,
+      }}>
+        <span>9:41</span>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11 }}>
+          <span>●●●</span><span>📶</span><span>🔋</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 20px 0' }}>
+        <button onClick={onDiscard} style={{
+          background: 'transparent', border: 'none', color: t.text3,
+          fontFamily: t.sans, fontSize: 13, cursor: 'pointer', padding: '6px 0',
+        }}>Discard</button>
+        {!paused && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <PulseDot color={t.green} />
+            <span style={{ fontSize: 11, color: t.text2, fontWeight: 600 }}>Recording</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <div style={{ fontSize: 13, letterSpacing: '.16em', textTransform: 'uppercase', color: t.text3 }}>
+          {session.workout || 'Session'}
+        </div>
+        <div style={{ fontFamily: t.mono, fontSize: 56, fontWeight: 600, color: t.text, letterSpacing: '.02em' }}>
+          {fmt(elapsed)}
+        </div>
+        {paused && <div style={{ fontSize: 12, color: t.text3 }}>Paused</div>}
+      </div>
+
+      <div style={{ padding: '0 24px 28px', display: 'flex', gap: 12 }}>
+        <button
+          onClick={() => setSession(s => ({ ...s, paused: !s.paused }))}
+          style={{
+            flex: 1, padding: '16px', borderRadius: 16, border: `1.5px solid ${t.border}`,
+            background: t.surface, color: t.text, fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}
+        >{paused ? '▶ Resume' : '⏸ Pause'}</button>
+        <button
+          onClick={() => setShowFinish(true)}
+          style={{
+            flex: 1, padding: '16px', borderRadius: 16, border: 'none',
+            background: '#DC2626', color: '#fff', fontFamily: t.sans, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+          }}
+        >■ Stop</button>
+      </div>
+
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
+
+      {showFinish && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}
+          onClick={() => setShowFinish(false)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: '16px 20px 32px',
+          }}>
+            <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 16px' }} />
+            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 14 }}>
+              Finish {session.workout || 'session'}?
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 }}>
+                Distance (km) <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none' }}>— optional</span>
+              </div>
+              <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
+                onChange={e => setDistance(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowFinish(false)} style={{
+                flex: 1, padding: '12px', borderRadius: 12, background: 'transparent',
+                border: `1px solid ${t.border}`, color: t.text2, fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Keep going</button>
+              <button
+                onClick={() => onFinish({ distance: distance !== '' ? Number(distance) : null })}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                  background: t.green, color: '#fff', fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}
+              >✓ Finish</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Simple stubs for Food + Cycle so the bottom nav doesn't dead-end
 function PlaceholderScreen({ width, height, theme, screen, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
@@ -877,4 +999,4 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
   );
 }
 
-export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, PlaceholderScreen, NumberInput };
+export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen, NumberInput };

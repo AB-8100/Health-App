@@ -261,8 +261,9 @@ function AboutScreen({
           </div>
         </div>
 
-        {/* Draft plan banner */}
-        {!intakeCompleted && (
+        {/* Draft plan banner — only nag when there's neither a completed
+            questionnaire nor an uploaded training plan to fall back on */}
+        {!intakeCompleted && !hasEventTraining && (
           <div style={{ marginBottom: 12 }}>
             <DraftPlanBanner
               theme={theme}
