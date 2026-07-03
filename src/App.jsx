@@ -477,14 +477,22 @@ function App() {
 
     setPendingGoalsPayload(null);
 
-    // If opened from the main app (not initial onboarding), just save the profile and return
+    // If opened from the main app (not initial onboarding), apply the newly
+    // computed split/activity schedule (same as completeOnboarding does) and
+    // return — previously this only saved `profile`, so the split/activities
+    // it just generated were silently dropped and the weekly plan kept
+    // showing rest days after navigating away and back.
     if (screenBeforeIntakeRef.current !== null) {
       const returnTo = screenBeforeIntakeRef.current;
       screenBeforeIntakeRef.current = null;
+      const nextPlan = { ...plan, splitDays: autoSplitDays };
+      const nextActivities = { ...activities, ...initialActivities };
       setProfileRaw(updatedProfile);
+      setPlanRaw(nextPlan);
+      setActivities(nextActivities);
       setOnboardingStage(null);
       setIntakeDraft(skipped);
-      setTimeout(() => scheduleSave({ profile: updatedProfile }), 0);
+      setTimeout(() => scheduleSave({ profile: updatedProfile, plan: nextPlan, activities: nextActivities }), 0);
       setScreen(returnTo);
     } else {
       completeOnboarding(updatedProfile, initialActivities);
