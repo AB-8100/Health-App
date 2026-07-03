@@ -4,6 +4,7 @@ import { BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
 import { getTodayDateKey } from '../data/eventPlan';
 import { getSessionDisplay } from '../data/sessionDisplay';
+import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -1138,12 +1139,14 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
   // Sessions already logged today (via "Start session" finishing, or "Mark
   // complete"/"Record"), so a completed activity shows its log instead of
   // Start/Record again.
-  const todaysCompleted = completedSessions.filter(s => {
-    const sd = new Date(s.date);
-    const now = new Date();
-    return sd.toDateString() === now.toDateString();
-  });
-  const findCompleted = (act) => todaysCompleted.find(s => s.workout === act.label) || null;
+  const todaysCompleted = getTodaysCompletedSessions(completedSessions);
+  const findCompleted = (act) => findCompletedForActivity(act, todaysCompleted);
+  // Sessions logged today that don't match any scheduled activity — e.g. via
+  // the generic "Log a different activity" flow below, which has no specific
+  // activity to attach a matching label to. Without this, that flow saves the
+  // session correctly but every scheduled activity card keeps showing
+  // Start/Record as if nothing had happened.
+  const unmatchedCompleted = getUnmatchedCompletions(todayActs, todaysCompleted);
 
   // Find next scheduled day (recurring activities only — event-plan sessions
   // are date-keyed, not weekday-keyed, so there's no simple "next day" to show).
@@ -1296,14 +1299,33 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
             </div>
             );
           })}
-          <button
-            onClick={() => onRecordSession && onRecordSession(null)}
-            style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
-              border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
-              cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
-          >
-            ✓ Log a different activity
-          </button>
+          {unmatchedCompleted.length > 0 ? (
+            <div style={{ display:'flex', gap:7, marginTop:4 }}>
+              <button
+                onClick={() => onViewSummary && onViewSummary(unmatchedCompleted[0])}
+                style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
+                  border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
+              >
+                ✓ Session logged — view
+              </button>
+              <button
+                onClick={() => onOpenEditSession && onOpenEditSession(unmatchedCompleted[0])}
+                style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
+                  border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
+              >
+                ✎ Edit
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => onRecordSession && onRecordSession(null)}
+              style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
+                border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
+                cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
+            >
+              ✓ Log a different activity
+            </button>
+          )}
         </div>
       )}
     </div>

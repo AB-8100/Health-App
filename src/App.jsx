@@ -514,10 +514,15 @@ function App() {
   // Opens Stage 3 from within the main app (banner tap on weekly or profile screens)
   const handleStartQuestionnaire = (fromScreen) => {
     screenBeforeIntakeRef.current = fromScreen || screen;
-    // Build a minimal goalsPayload from the current profile so intake steps are correct
+    // Build a minimal goalsPayload from the current profile so intake steps are
+    // correct. `profile.goal` is the older single-select field and can never
+    // be 'event_race', so an existing uploaded event plan must be carried
+    // forward explicitly here — otherwise handleIntakeComplete recomputes
+    // hasEventTraining from this reconstructed payload and wipes it out.
     const goalsFromProfile = profile.goal
       ? [{ type: profile.goal, config: {} }]
       : [];
+    if (profile.hasEventTraining) goalsFromProfile.push({ type: 'event_race', config: {} });
     setPendingGoalsPayload({ goals: goalsFromProfile, gymAccess: profile.hasGym });
     setOnboarding(false);
     setOnboardingStage('intake');
