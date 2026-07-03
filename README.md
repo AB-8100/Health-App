@@ -20,7 +20,7 @@ It is designed to feel like a native iPhone app and is deployed to Vercel.
 
 ## Live app
 
-**[https://your-app.vercel.app/](https://your-app.vercel.app/)** *(update with your actual Vercel deployment URL)*
+**[https://health-app-two-nu.vercel.app](https://health-app-two-nu.vercel.app)**
 
 ---
 
