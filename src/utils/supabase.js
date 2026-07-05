@@ -220,9 +220,16 @@ function foodLogToRows(userId, foodLog) {
   const rows = [];
   for (const [date, day] of Object.entries(foodLog)) {
     for (const entry of day.entries ?? []) {
+      // A freshly-logged entry's `id` is a client-generated
+      // Date.now().toString(), never a real uuid — `id || undefined` only
+      // helps once an id is falsy, which it never is here. Since food_log
+      // rows are always fully replaced (delete-then-insert), there's no
+      // need to preserve any id across saves: always omit it and let
+      // Postgres's gen_random_uuid() default apply, the same fix as
+      // gym_sessions. The real DB id round-trips back via `dbToCustomFood`/
+      // the food_log reconstruction in loadUserData on the next load.
       const { id, name, calories, protein, carbs, fat, sugar, meal, ...extra } = entry;
       rows.push({
-        id:        id || undefined,
         user_id:   userId,
         log_date:  date,
         food_name: name,
@@ -243,8 +250,12 @@ function dbToCustomFood(r) {
   return { id: r.id, name: r.name, calories: r.calories, protein: r.protein_g, carbs: r.carbs_g, fat: r.fat_g, sugar: r.sugar_g, ...(r.extra ?? {}) };
 }
 function customFoodToDb(userId, f) {
+  // Same fix as gym_sessions/food_log: a newly-saved custom food's `id` is a
+  // client-generated `custom_${Date.now()}`, never a real uuid, and this
+  // table is fully replaced on every save (delete-then-insert), so omit it
+  // and let Postgres's gen_random_uuid() default apply.
   const { id, name, calories, protein, carbs, fat, sugar, ...extra } = f;
-  return { id: id || undefined, user_id: userId, name, calories: calories ?? null, protein_g: protein ?? null, carbs_g: carbs ?? null, fat_g: fat ?? null, sugar_g: sugar ?? null, extra: Object.keys(extra).length ? extra : {} };
+  return { user_id: userId, name, calories: calories ?? null, protein_g: protein ?? null, carbs_g: carbs ?? null, fat_g: fat ?? null, sugar_g: sugar ?? null, extra: Object.keys(extra).length ? extra : {} };
 }
 
 // ── Goals ─────────────────────────────────────────────────────────────────────

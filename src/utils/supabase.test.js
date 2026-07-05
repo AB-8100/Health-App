@@ -175,3 +175,46 @@ describe('saveUserData — gym_sessions insert payload', () => {
     expect(rows[0].raw.id).toBe(completedSessions[0].id);
   });
 });
+
+describe('saveUserData — food_log/custom_foods insert payload', () => {
+  // Same class of bug as gym_sessions: a freshly-logged food entry's `id` is
+  // a client-generated Date.now().toString(), never a real uuid, and both
+  // tables' `id` columns are `uuid primary key`. Both are also saved via
+  // delete-then-insert, so sending the fake id makes the insert fail after
+  // the user's prior rows have already been deleted.
+  it('never sends the client-generated id for a food_log entry', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const foodLog = {
+      '2026-07-05': { entries: [
+        { id: Date.now().toString(), name: 'Toast', meal: 'breakfast', calories: 200, protein: 6, carbs: 30, fat: 4 },
+      ] },
+    };
+    await saveUserData('user-1', { foodLog });
+
+    const insertCall = builder.calls.find(([name]) => name === 'insert');
+    expect(insertCall).toBeTruthy();
+    const [, [rows]] = insertCall;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('id');
+    expect(rows[0]).toMatchObject({ food_name: 'Toast', user_id: 'user-1' });
+  });
+
+  it('never sends the client-generated id for a custom food', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const customFoods = [
+      { id: `custom_${Date.now()}`, name: 'Protein shake', calories: 180, protein: 30, carbs: 8, fat: 2 },
+    ];
+    await saveUserData('user-1', { customFoods });
+
+    const insertCall = builder.calls.find(([name]) => name === 'insert');
+    expect(insertCall).toBeTruthy();
+    const [, [rows]] = insertCall;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('id');
+    expect(rows[0]).toMatchObject({ name: 'Protein shake', user_id: 'user-1' });
+  });
+});
