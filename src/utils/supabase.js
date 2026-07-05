@@ -199,7 +199,14 @@ function planToDb(p) {
 
 function sessionToDb(userId, s) {
   return {
-    id:               s.id,
+    // `s.id` is a client-generated Date.now().toString(), never a real uuid —
+    // sending it as the `id` column (uuid primary key) makes every insert
+    // fail after the sessions-for-this-user delete has already gone through,
+    // silently emptying gym_sessions on the next save. Omit it so Postgres's
+    // gen_random_uuid() default applies instead, matching how food_log/
+    // custom_foods already do this (`id: id || undefined`). The app never
+    // reads this DB-assigned id back — completedSessions is reconstructed
+    // from `raw`, which still carries the original client-side id.
     user_id:          userId,
     session_date:     s.date || s.endedAt ? new Date(s.date || s.endedAt).toISOString() : new Date().toISOString(),
     workout_name:     s.workout || null,
