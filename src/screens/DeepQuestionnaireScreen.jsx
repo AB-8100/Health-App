@@ -1,5 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
+import { isSupportedAIRaceType } from '../utils/planPrompt';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,15 @@ const BODY_AREAS = [
 ];
 
 const FREQ_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
+
+const DISCIPLINE_META = {
+  swim: { icon: '🏊', label: 'Swim' },
+  bike: { icon: '🚴', label: 'Bike' },
+  run:  { icon: '🏃', label: 'Run' },
+};
+const DEFAULT_DISCIPLINE_ORDER = ['bike', 'run', 'swim'];
+const DISCIPLINE_RANK_LABELS  = ['Strongest', 'Middle', 'Weakest'];
+const DISCIPLINE_RANK_COLOURS = ['#15803D', '#6D4AAF', '#BE5A38'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,8 +38,8 @@ function isRaceGoal(goals = []) {
 function buildSteps(goals) {
   const steps = ['intro'];
   if (isRaceGoal(goals))       steps.push('run');
-  if (isEventRaceGoal(goals))  steps.push('swim', 'bike');
-  steps.push('availability', 'injury', 'done');
+  if (isEventRaceGoal(goals))  steps.push('swim', 'bike', 'discipline_rank');
+  steps.push('availability', 'preferences', 'mindset', 'injury', 'done');
   return steps;
 }
 
@@ -46,15 +56,33 @@ const EMPTY_INTAKE = {
   bikeBaseline: {
     ftpWatts: '', longestRideKm: '', weeklySessionsCount: 2,
   },
+  // Strongest → weakest, triathlon only (e.g. ['bike', 'run', 'swim'])
+  disciplineRanking: [],
   availability: {
     holidays: [],            // [{ label, from, to }]
     oneOffEvents: [],        // [{ label, date }]
     standingCommitments: [], // [{ label, day, time }]
   },
+  preferences: {
+    longSessionDay:       '', // long/key session day, e.g. brick or long run — default Sunday
+    secondDisciplineDay:  '', // second key session day — default Saturday
+    conditioningDay:      '', // strength/conditioning day, only if gym access
+  },
+  mindset: {
+    primaryGoal:          '', // race-day goal — finish / time / milestone
+    disciplineToImprove:  '', // triathlon only
+    nervousAbout:         '',
+    targetTime:           '', // optional
+    priorExperience:      '', // optional
+    usesSpeedTraining:    '', // optional
+    lifestyleNotes:       '', // optional
+  },
   injury: {
     pastInjuries: [],   // [{ area, description, resolved }]
     currentNiggles: '',
     healthConditions: '',
+    avoidExercises: '',
+    aggravatingFactors: '',
   },
 };
 
@@ -64,6 +92,7 @@ export function DeepQuestionnaireScreen({
   width = 390, height = 820, theme = 'light',
   goalsPayload,   // from Stage 2
   onComplete,     // (intakePayload, skipped: bool) => void
+  onGeneratePlan, // (intakePayload) => Promise — generates + applies a plan via Claude
   onExit,         // () => void — save draft and go back without completing
   userId,
   initialIntake,  // for re-opening from settings
@@ -71,6 +100,11 @@ export function DeepQuestionnaireScreen({
   const t     = themes[theme];
   const goals = goalsPayload?.goals ?? [];
   const steps = buildSteps(goals);
+
+  const raceType   = goals.find(g => g.type === 'event_race')?.config?.raceType;
+  const canGenerate = isRaceGoal(goals) && isSupportedAIRaceType(raceType) && typeof onGeneratePlan === 'function';
+  const [aiGen, setAiGen] = React.useState('idle'); // idle | working | error
+  const [aiGenErr, setAiGenErr] = React.useState('');
 
   const [stepIdx, setStepIdx] = React.useState(0);
   const current = steps[stepIdx] || 'intro';
@@ -80,6 +114,8 @@ export function DeepQuestionnaireScreen({
     ...EMPTY_INTAKE,
     ...(initialIntake || {}),
     availability: { ...EMPTY_INTAKE.availability, ...(initialIntake?.availability || {}) },
+    preferences:  { ...EMPTY_INTAKE.preferences,  ...(initialIntake?.preferences  || {}) },
+    mindset:      { ...EMPTY_INTAKE.mindset,      ...(initialIntake?.mindset      || {}) },
     injury:       { ...EMPTY_INTAKE.injury,       ...(initialIntake?.injury || {}) },
   }));
 
@@ -132,6 +168,18 @@ export function DeepQuestionnaireScreen({
     }
   };
 
+  const handleGenerateClick = async () => {
+    setAiGen('working');
+    setAiGenErr('');
+    try {
+      await onGeneratePlan(intake);
+      handleComplete(false);
+    } catch (e) {
+      setAiGenErr(e.message || 'Something went wrong generating your plan.');
+      setAiGen('error');
+    }
+  };
+
   // ── section helpers ───────────────────────────────────────────────────────
 
   const addHoliday = () => {
@@ -158,9 +206,20 @@ export function DeepQuestionnaireScreen({
     setInjuryDraft({ area: '', description: '', resolved: true });
   };
 
+  const disciplineRanking = intake.disciplineRanking.length ? intake.disciplineRanking : DEFAULT_DISCIPLINE_ORDER;
+  const moveDiscipline = (idx, dir) => {
+    const arr = [...disciplineRanking];
+    const j = idx + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    setIntake(prev => ({ ...prev, disciplineRanking: arr }));
+  };
+
   const labelFor = (s) => ({
     run: 'Run baseline', swim: 'Swim baseline', bike: 'Bike baseline',
-    availability: 'Availability', injury: 'Health & injury', done: '',
+    discipline_rank: 'Discipline ranking',
+    availability: 'Availability', preferences: 'Day preferences', mindset: 'Goals & mindset',
+    injury: 'Health & injury', done: '',
   }[s] || '');
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -274,7 +333,10 @@ export function DeepQuestionnaireScreen({
                 isRaceGoal(goals)      && { icon: '🏃', label: 'Run baseline — times & weekly volume' },
                 isEventRaceGoal(goals) && { icon: '🏊', label: 'Swim baseline — pace & pool sessions' },
                 isEventRaceGoal(goals) && { icon: '🚴', label: 'Bike baseline — power & longest ride' },
+                isEventRaceGoal(goals) && { icon: '🎯', label: 'Discipline ranking — strongest to weakest' },
                 { icon: '📅', label: 'Availability — holidays, one-off events, commitments' },
+                { icon: '🗓️', label: 'Day preferences — shape your weekly structure' },
+                { icon: '✦',  label: 'Goals & mindset — what drives race day' },
                 { icon: '🩺', label: 'Injury & health — past injuries, current niggles' },
               ].filter(Boolean).map((item, i, arr) => (
                 <div key={item.label} style={{
@@ -434,6 +496,56 @@ export function DeepQuestionnaireScreen({
           </div>
         )}
 
+        {/* ── discipline ranking ── */}
+        {current === 'discipline_rank' && (
+          <div>
+            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
+              Rank your disciplines.
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
+              Strongest to weakest. Your weakest discipline gets priority for extra weekly sessions early on.
+            </div>
+            {disciplineRanking.map((disc, idx) => {
+              const meta = DISCIPLINE_META[disc];
+              return (
+                <div key={disc} style={{
+                  padding: '12px 14px', borderRadius: 13, marginBottom: 8,
+                  background: t.surface, border: `1.5px solid ${t.border}`,
+                  display: 'flex', alignItems: 'center', gap: 11,
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: DISCIPLINE_RANK_COLOURS[idx] + '18',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0,
+                  }}>{meta.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{meta.label}</div>
+                    <div style={{
+                      fontSize: 9.5, letterSpacing: '.08em', fontWeight: 700,
+                      color: DISCIPLINE_RANK_COLOURS[idx], textTransform: 'uppercase', marginTop: 2,
+                    }}>{DISCIPLINE_RANK_LABELS[idx]}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <button onClick={() => moveDiscipline(idx, -1)} disabled={idx === 0} style={{
+                      width: 28, height: 26, borderRadius: 7, border: `1px solid ${t.border}`,
+                      background: 'transparent', color: idx === 0 ? t.text3 : t.text,
+                      cursor: idx === 0 ? 'default' : 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>▲</button>
+                    <button onClick={() => moveDiscipline(idx, 1)} disabled={idx === disciplineRanking.length - 1} style={{
+                      width: 28, height: 26, borderRadius: 7, border: `1px solid ${t.border}`,
+                      background: 'transparent',
+                      color: idx === disciplineRanking.length - 1 ? t.text3 : t.text,
+                      cursor: idx === disciplineRanking.length - 1 ? 'default' : 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>▼</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* ── availability ── */}
         {current === 'availability' && (
           <div>
@@ -528,6 +640,119 @@ export function DeepQuestionnaireScreen({
           </div>
         )}
 
+        {/* ── day preferences ── */}
+        {current === 'preferences' && (
+          <div>
+            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
+              Day preferences.
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
+              Shape your weekly structure. Leave blank to use sensible defaults.
+            </div>
+
+            <DQField label="Long / key session day" hint="Your longest or most demanding session of the week. Default: Sunday." t={t}>
+              <DaySelect
+                value={intake.preferences.longSessionDay}
+                onChange={v => patchIntake('preferences', { longSessionDay: v })}
+                t={t}
+              />
+            </DQField>
+            <DQField label="Second session day" hint="Second key session of the week. Default: Saturday." t={t}>
+              <DaySelect
+                value={intake.preferences.secondDisciplineDay}
+                onChange={v => patchIntake('preferences', { secondDisciplineDay: v })}
+                t={t}
+              />
+            </DQField>
+            {goalsPayload?.gymAccess && (
+              <DQField label="Conditioning day" hint="Won't be placed on the same day as a long or high-intensity session unless chosen here." t={t}>
+                <DaySelect
+                  value={intake.preferences.conditioningDay}
+                  onChange={v => patchIntake('preferences', { conditioningDay: v })}
+                  t={t}
+                />
+              </DQField>
+            )}
+          </div>
+        )}
+
+        {/* ── goals & mindset ── */}
+        {current === 'mindset' && (
+          <div>
+            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
+              Goals & mindset.
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
+              Helps us tailor tone and priorities — everything here is optional.
+            </div>
+
+            <DQField label="What's your primary goal for race day?" hint="e.g. just finish strong / beat a specific time / milestone event" t={t}>
+              <input
+                value={intake.mindset.primaryGoal}
+                onChange={e => patchIntake('mindset', { primaryGoal: e.target.value })}
+                placeholder="e.g. Finish my first triathlon"
+                style={inputSt(t)}
+              />
+            </DQField>
+            {isEventRaceGoal(goals) && (
+              <DQField label="Which discipline do you most want to improve?" t={t}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {['swim', 'bike', 'run'].map(d => (
+                    <button key={d} onClick={() => patchIntake('mindset', { disciplineToImprove: d })} style={{
+                      flex: 1, padding: '10px 0', borderRadius: 9,
+                      background: intake.mindset.disciplineToImprove === d ? t.accent + '15' : t.surface,
+                      border: `1.5px solid ${intake.mindset.disciplineToImprove === d ? t.accent : t.border2}`,
+                      color: intake.mindset.disciplineToImprove === d ? t.accent : t.text2,
+                      fontFamily: t.sans, fontSize: 12, cursor: 'pointer',
+                    }}>{DISCIPLINE_META[d].icon} {DISCIPLINE_META[d].label}</button>
+                  ))}
+                </div>
+              </DQField>
+            )}
+            <DQField label="What are you most nervous or uncertain about?" hint="e.g. swimming, long runs, speed work, hills" t={t}>
+              <input
+                value={intake.mindset.nervousAbout}
+                onChange={e => patchIntake('mindset', { nervousAbout: e.target.value })}
+                placeholder="e.g. Open water swimming"
+                style={inputSt(t)}
+              />
+            </DQField>
+            <DQField label="Target finish time" hint="Optional — even loosely" t={t}>
+              <input
+                value={intake.mindset.targetTime}
+                onChange={e => patchIntake('mindset', { targetTime: e.target.value })}
+                placeholder="e.g. sub 6:30"
+                style={inputSt(t)}
+              />
+            </DQField>
+            <DQField label="Have you done this type of race before?" hint="Optional — distance and roughly when" t={t}>
+              <input
+                value={intake.mindset.priorExperience}
+                onChange={e => patchIntake('mindset', { priorExperience: e.target.value })}
+                placeholder="e.g. Olympic distance, 2024"
+                style={inputSt(t)}
+              />
+            </DQField>
+            <DQField label="Do you currently do any speed or interval training?" hint="Optional — e.g. tempo runs, track sessions, parkrun efforts" t={t}>
+              <input
+                value={intake.mindset.usesSpeedTraining}
+                onChange={e => patchIntake('mindset', { usesSpeedTraining: e.target.value })}
+                placeholder="e.g. Weekly parkrun"
+                style={inputSt(t)}
+              />
+            </DQField>
+            <DQField label="Anything else about your lifestyle or schedule we should know?" hint="Optional" t={t}>
+              <textarea
+                value={intake.mindset.lifestyleNotes}
+                onChange={e => patchIntake('mindset', { lifestyleNotes: e.target.value })}
+                placeholder="e.g. Shift worker — schedule varies week to week"
+                rows={3}
+                style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }}
+              />
+            </DQField>
+          </div>
+        )}
+
         {/* ── injury & health ── */}
         {current === 'injury' && (
           <div>
@@ -603,6 +828,28 @@ export function DeepQuestionnaireScreen({
                 style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }}
               />
             </DQField>
+
+            {/* Exercises to avoid */}
+            <DQField label="Any exercises or movements you've been advised to avoid?" t={t}>
+              <textarea
+                value={intake.injury.avoidExercises}
+                onChange={e => patchInjury({ avoidExercises: e.target.value })}
+                placeholder="e.g. No deep squats, avoid high-impact plyometrics"
+                rows={2}
+                style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }}
+              />
+            </DQField>
+
+            {/* Aggravating factors */}
+            <DQField label="Any movements or surfaces that consistently aggravate symptoms?" hint="e.g. certain run surfaces, hill running, cycling position" t={t}>
+              <textarea
+                value={intake.injury.aggravatingFactors}
+                onChange={e => patchInjury({ aggravatingFactors: e.target.value })}
+                placeholder="e.g. Downhill running flares up my knee"
+                rows={2}
+                style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }}
+              />
+            </DQField>
           </div>
         )}
 
@@ -658,6 +905,16 @@ export function DeepQuestionnaireScreen({
                 </div>
               )}
             </div>
+
+            {canGenerate && aiGen === 'error' && (
+              <div style={{
+                marginTop: 14, padding: '10px 12px', borderRadius: 10, textAlign: 'left',
+                background: '#DC262612', border: '1px solid #DC262635',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>Couldn't generate your plan</div>
+                <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{aiGenErr}</div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -680,6 +937,27 @@ export function DeepQuestionnaireScreen({
               fontWeight: 500, cursor: 'pointer',
             }}>
               Skip for now — I'll do this later
+            </button>
+          </div>
+        ) : current === 'done' && canGenerate ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button onClick={handleGenerateClick} disabled={aiGen === 'working'} style={{
+              width: '100%', padding: '14px', borderRadius: 13,
+              background: t.accent, color: t.accentText,
+              border: 'none', fontFamily: t.sans, fontSize: 14, fontWeight: 600,
+              cursor: aiGen === 'working' ? 'default' : 'pointer',
+              opacity: aiGen === 'working' ? 0.7 : 1,
+            }}>
+              {aiGen === 'working' ? 'Building your plan… this can take a minute' : aiGen === 'error' ? 'Try again ✦' : 'Generate my plan with AI ✦'}
+            </button>
+            <button onClick={next} disabled={aiGen === 'working'} style={{
+              width: '100%', padding: '13px', borderRadius: 13,
+              background: 'transparent', color: t.text2,
+              border: `1px solid ${t.border}`, fontFamily: t.sans, fontSize: 13,
+              fontWeight: 500, cursor: aiGen === 'working' ? 'default' : 'pointer',
+              opacity: aiGen === 'working' ? 0.5 : 1,
+            }}>
+              Enter Forma without a plan →
             </button>
           </div>
         ) : (
@@ -731,6 +1009,15 @@ function TimeInput({ value, onChange, placeholder, t }) {
       placeholder={placeholder}
       style={inputSt(t)}
     />
+  );
+}
+
+function DaySelect({ value, onChange, t }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} style={inputSt(t)}>
+      <option value="">No preference — use default</option>
+      {DAYS.map((day, i) => <option key={i} value={DAY_KEYS[i]}>{day}</option>)}
+    </select>
   );
 }
 

@@ -1,7 +1,8 @@
 import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
-import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake } from './utils/supabase';
+import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
+import { generateTrainingPlanWithAI } from './utils/planGeneration';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -200,6 +201,12 @@ function App() {
   const [onboardingStage, setOnboardingStage] = React.useState(null);
   // Holds the Stage 2 payload while Stage 3 (intake) is shown
   const [pendingGoalsPayload, setPendingGoalsPayload] = React.useState(null);
+  // Persisted Stage 2 / Stage 3 answers, reloaded from Supabase — kept around
+  // (independent of the ephemeral pendingGoalsPayload above) so the AI plan
+  // generator can be re-run any time from About Me, not just right after
+  // finishing onboarding.
+  const [goalsPayload, setGoalsPayload] = React.useState(null);
+  const [intakePayload, setIntakePayload] = React.useState(null);
   // Whether Stage 3 was opened from the main app (not initial onboarding)
   const screenBeforeIntakeRef = React.useRef(null);
   // True when the user has a saved intake draft (started but not finished)
@@ -279,6 +286,19 @@ function App() {
       } else if (loadedProfile && !loadedProfile.goal) {
         // Has profile but no goal set yet — send to Stage 2
         setOnboardingStage('goals');
+      }
+
+      // Best-effort — used only to power the "Generate my plan with AI"
+      // action from About Me; missing/failed loads just disable that button.
+      try {
+        const [savedGoals, savedIntake] = await Promise.all([
+          loadUserGoals(sbUser.id),
+          loadUserIntake(sbUser.id),
+        ]);
+        if (savedGoals)  setGoalsPayload(savedGoals);
+        if (savedIntake) setIntakePayload(savedIntake);
+      } catch (e) {
+        console.warn('Forma: goals/intake load failed', e);
       }
 
       const status = getSheetsStatus();
@@ -446,14 +466,15 @@ function App() {
   };
 
   // Called when Stage 2 (GoalsSetup) is complete — routes to Stage 3 (intake)
-  const handleGoalsSetupComplete = (goalsPayload) => {
+  const handleGoalsSetupComplete = (goalsSetupPayload) => {
     // Persist goals to Supabase
     if (currentUserIdRef.current) {
-      saveUserGoals(currentUserIdRef.current, goalsPayload)
+      saveUserGoals(currentUserIdRef.current, goalsSetupPayload)
         .catch(e => console.warn('Forma: goals save failed', e));
     }
     // Hold onto the payload so Stage 3 can read goal types for conditional sections
-    setPendingGoalsPayload(goalsPayload);
+    setPendingGoalsPayload(goalsSetupPayload);
+    setGoalsPayload(goalsSetupPayload);
     setOnboardingStage('intake');
   };
 
@@ -486,6 +507,7 @@ function App() {
       saveUserIntake(currentUserIdRef.current, intakePayload)
         .catch(e => console.warn('Forma: intake save failed', e));
     }
+    setIntakePayload(intakePayload);
 
     setPendingGoalsPayload(null);
 
@@ -523,7 +545,11 @@ function App() {
       ? [{ type: profile.goal, config: {} }]
       : [];
     if (profile.hasEventTraining) goalsFromProfile.push({ type: 'event_race', config: {} });
-    setPendingGoalsPayload({ goals: goalsFromProfile, gymAccess: profile.hasGym });
+    // Layer in richer scheduling/facility fields from the persisted goalsPayload
+    // (if loaded) so the AI plan generator has more to work with — but keep
+    // `goals`/`gymAccess` computed fresh from `profile` above, since those are
+    // the fields most likely to have changed since the saved payload.
+    setPendingGoalsPayload({ ...(goalsPayload || {}), goals: goalsFromProfile, gymAccess: profile.hasGym });
     setOnboarding(false);
     setOnboardingStage('intake');
   };
@@ -830,6 +856,18 @@ function App() {
     return saveUserData(currentUserIdRef.current, buildSnapshot(overrides));
   };
 
+  // Generates a training plan via the Claude API (through the
+  // generate-training-plan edge function) from the athlete's saved goals +
+  // intake answers, then applies it exactly like an uploaded spreadsheet
+  // would via handleUploadTrainingPlan. Throws on failure so callers
+  // (DeepQuestionnaireScreen's done step, AboutScreen's regenerate button)
+  // can show their own loading/error state.
+  const generateAndApplyPlan = async (gp, intakeData) => {
+    const parsed = await generateTrainingPlanWithAI({ goalsPayload: gp, intake: intakeData });
+    await handleUploadTrainingPlan(parsed);
+    return parsed;
+  };
+
   if (authState === 'loading') {
     return (
       <div className="stage">
@@ -880,6 +918,7 @@ function App() {
                userId={currentUser?.id}
                goalsPayload={pendingGoalsPayload}
                onComplete={handleIntakeComplete}
+               onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
                onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
     if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
@@ -1005,7 +1044,10 @@ function App() {
                intakeDraft={intakeDraft}
                onStartQuestionnaire={() => handleStartQuestionnaire('about-me')}
                eventPlan={eventPlan}
-               onUploadTrainingPlan={handleUploadTrainingPlan} />;
+               onUploadTrainingPlan={handleUploadTrainingPlan}
+               goalsPayload={goalsPayload}
+               intake={intakePayload}
+               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
