@@ -6,6 +6,7 @@ import { getTodayDateKey } from '../data/eventPlan';
 import { getSessionDisplay } from '../data/sessionDisplay';
 import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
+import { SwimDistanceFields } from './GymSessionScreen';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -211,8 +212,117 @@ function ScreenHeader({ theme, title, sub, onBack, right }) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Edit a completed session's sets inline
+// Edit a completed session — routes to the gym sets/reps editor or the
+// non-gym duration/distance editor depending on what was actually logged.
 function EditSessionSheet({ theme, session, onClose, onSave }) {
+  const isGym = Array.isArray(session.queue) && session.queue.length > 0;
+  if (!isGym) return <EditActivitySessionSheet theme={theme} session={session} onClose={onClose} onSave={onSave} />;
+  return <EditGymSessionSheet theme={theme} session={session} onClose={onClose} onSave={onSave} />;
+}
+
+// Edit a completed non-gym session's duration/distance (and pool lengths, for swims)
+function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
+  const t = themes[theme];
+  const isSwim = session.type === 'swim';
+  const elapsedTotal = session.elapsed || 0;
+  const [hours, setHours] = React.useState(String(Math.floor(elapsedTotal / 3600)));
+  const [minutes, setMinutes] = React.useState(String(Math.floor((elapsedTotal % 3600) / 60)));
+  const [distance, setDistance] = React.useState(session.distance != null ? String(session.distance) : '');
+  const [swimExtras, setSwimExtras] = React.useState({
+    distance: session.distance ?? null,
+    distanceUnit: session.distanceUnit || 'm',
+    poolLengthM: session.poolLengthM ?? null,
+    lengths: session.lengths ?? null,
+  });
+
+  const inputStyle = {
+    padding:'9px 12px', borderRadius:10, border:`1px solid ${t.border}`,
+    background:t.surface, fontFamily:t.mono, fontSize:15, color:t.text,
+    outline:'none', width:'100%', boxSizing:'border-box'
+  };
+  const labelStyle = { fontSize:11, color:t.text3, marginBottom:5, textTransform:'uppercase', letterSpacing:.4 };
+
+  const handleSave = () => {
+    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
+    const extras = isSwim
+      ? swimExtras
+      : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' };
+    onSave({ ...session, elapsed: totalSecs, ...extras });
+    onClose();
+  };
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
+      display:'flex', alignItems:'flex-end', zIndex:60
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', background:t.surface,
+        borderTopLeftRadius:22, borderTopRightRadius:22,
+        padding:'16px 20px 28px', maxHeight:'90%',
+        display:'flex', flexDirection:'column', overflow:'hidden'
+      }}>
+        <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, flexShrink:0 }}>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>Edit session</div>
+          <button onClick={onClose} style={{
+            padding:'4px 10px', borderRadius:7, background:'transparent',
+            border:`1px solid ${t.border}`, color:t.text2,
+            fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+          }}>Cancel</button>
+        </div>
+        <div style={{ fontSize:11, color:t.text3, marginBottom:12, flexShrink:0 }}>
+          {session.workout} · {new Date(session.date).toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' })}
+        </div>
+
+        <div style={{ overflowY:'auto', flex:1 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div>
+              <div style={labelStyle}>Hours</div>
+              <input type="number" min="0" placeholder="0" value={hours}
+                onChange={e => setHours(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <div style={labelStyle}>Minutes</div>
+              <input type="number" min="0" max="59" placeholder="0" value={minutes}
+                onChange={e => setMinutes(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+
+          {isSwim ? (
+            <SwimDistanceFields
+              theme={theme}
+              initial={{
+                distance: session.distance ?? null,
+                distanceUnit: session.distanceUnit || 'm',
+                poolLengthM: session.poolLengthM ?? null,
+                lengths: session.lengths ?? null,
+              }}
+              onChange={setSwimExtras}
+            />
+          ) : (
+            <div>
+              <div style={labelStyle}>Distance (km) <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
+              <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
+                onChange={e => setDistance(e.target.value)} style={inputStyle} />
+            </div>
+          )}
+        </div>
+
+        <button onClick={handleSave} style={{
+          marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
+          fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
+          background:t.accent, color:t.accentText, flexShrink:0
+        }}>
+          Save changes
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Edit a completed gym session's sets/reps/weight inline
+function EditGymSessionSheet({ theme, session, onClose, onSave }) {
   const t = themes[theme];
   const [queue, setQueue] = React.useState(
     (session.queue || []).map(ex => ({
@@ -324,17 +434,20 @@ function EditSessionSheet({ theme, session, onClose, onSave }) {
 
 // ────────────────────────────────────────────────────────────
 // Quick "mark as complete" sheet — optionally capture time + distance
-function MarkCompleteSheet({ theme, workoutLabel, onClose, onSave }) {
+function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }) {
   const t = themes[theme];
+  const isSwim = workoutType === 'swim';
   const [hours, setHours] = React.useState('');
   const [minutes, setMinutes] = React.useState('');
   const [distance, setDistance] = React.useState('');
+  const [swimExtras, setSwimExtras] = React.useState({ distance: null, distanceUnit: 'm', poolLengthM: null, lengths: null });
 
   const handleSave = () => {
     const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
     onSave({
       elapsed: totalSecs,
-      distance: distance !== '' ? Number(distance) : null,
+      type: workoutType || null,
+      ...(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' }),
     });
   };
 
@@ -382,9 +495,15 @@ function MarkCompleteSheet({ theme, workoutLabel, onClose, onSave }) {
         </div>
 
         <div style={{ marginBottom:20 }}>
-          <div style={labelStyle}>Distance (km) <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
-          <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
-            onChange={e => setDistance(e.target.value)} style={inputStyle} />
+          {isSwim ? (
+            <SwimDistanceFields theme={theme} onChange={setSwimExtras} />
+          ) : (
+            <>
+              <div style={labelStyle}>Distance (km) <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
+              <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
+                onChange={e => setDistance(e.target.value)} style={inputStyle} />
+            </>
+          )}
         </div>
 
         <button onClick={handleSave} style={{
@@ -1386,6 +1505,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [showAddSession, setShowAddSession] = React.useState(false);
   const [showMarkComplete, setShowMarkComplete] = React.useState(false);
   const [markCompleteWorkout, setMarkCompleteWorkout] = React.useState(null);
+  const [markCompleteType, setMarkCompleteType] = React.useState(null);
 
   // Compute the actual calendar date for the currently viewed day slot
   const now = new Date();
@@ -1478,7 +1598,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           t={t} dayOfWeek={dayOfWeek} activities={activities} todayEventActs={todayEventActs}
           activeSession={activeSession} onResumeSession={onResumeSession}
           onStartActivity={onStartActivity}
-          onRecordSession={(act) => { setMarkCompleteWorkout(act?.label ?? null); setShowMarkComplete(true); }}
+          onRecordSession={(act) => { setMarkCompleteWorkout(act?.label ?? null); setMarkCompleteType(act?.type ?? null); setShowMarkComplete(true); }}
           completedSessions={completedSessions}
           onViewSummary={onViewSummary}
           onOpenEditSession={setEditingSession}
@@ -1694,7 +1814,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                   fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
                   background: viewDayActs[0]?.color || t.accent, color:'#fff',
                 }}>Start session</button>
-                <button onClick={() => { setMarkCompleteWorkout(viewDayActs[0]?.label ?? null); setShowMarkComplete(true); }} style={{
+                <button onClick={() => { setMarkCompleteWorkout(viewDayActs[0]?.label ?? null); setMarkCompleteType(viewDayActs[0]?.type ?? null); setShowMarkComplete(true); }} style={{
                   padding:'13px 16px', borderRadius:12, background:'transparent',
                   border:`1.5px solid ${t.green}60`, color:t.green,
                   fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
@@ -2229,11 +2349,13 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
         <MarkCompleteSheet
           theme={theme}
           workoutLabel={markCompleteWorkout}
-          onClose={() => { setShowMarkComplete(false); setMarkCompleteWorkout(null); }}
+          workoutType={markCompleteType}
+          onClose={() => { setShowMarkComplete(false); setMarkCompleteWorkout(null); setMarkCompleteType(null); }}
           onSave={(extras) => {
             onMarkComplete && onMarkComplete(markCompleteWorkout ? { ...extras, workout: markCompleteWorkout } : extras);
             setShowMarkComplete(false);
             setMarkCompleteWorkout(null);
+            setMarkCompleteType(null);
           }}
         />
       )}

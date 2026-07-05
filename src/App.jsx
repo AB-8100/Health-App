@@ -625,19 +625,23 @@ function App() {
   const startActivitySession = (act) => {
     setSession({
       active: true, paused: false, elapsed: 0, kind: 'activity',
-      workout: act?.label || act?.type || 'Session', queue: null,
+      workout: act?.label || act?.type || 'Session', type: act?.type || null, queue: null,
     });
     setScreen('activity-session');
   };
 
-  const finishActivitySession = ({ distance = null } = {}) => {
+  const finishActivitySession = ({ distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null } = {}) => {
     const completed = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
       endedAt: Date.now(),
       workout: session.workout,
+      type: session.type || null,
       elapsed: session.elapsed,
       distance,
+      distanceUnit,
+      poolLengthM,
+      lengths,
       queue: null,
     };
     setCompletedSessions(prev => {
@@ -654,7 +658,7 @@ function App() {
     setScreen('gym-hub');
   };
 
-  const markSessionComplete = ({ elapsed = 0, distance = null, workout = null } = {}) => {
+  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null } = {}) => {
     let workoutName = workout;
     if (!workoutName) {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
@@ -669,8 +673,12 @@ function App() {
       active: false,
       manuallyCompleted: true,
       workout: workoutName,
+      type,
       elapsed,
       distance,
+      distanceUnit,
+      poolLengthM,
+      lengths,
       queue: null,
     };
     setCompletedSessions(prev => {
