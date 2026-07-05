@@ -658,7 +658,7 @@ function App() {
     setScreen('gym-hub');
   };
 
-  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null } = {}) => {
+  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null, date = null } = {}) => {
     let workoutName = workout;
     if (!workoutName) {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
@@ -668,7 +668,7 @@ function App() {
     }
     const completed = {
       id: Date.now().toString(),
-      date: new Date().toISOString(),
+      date: date || new Date().toISOString(),
       endedAt: Date.now(),
       active: false,
       manuallyCompleted: true,
@@ -1057,6 +1057,9 @@ function App() {
                onNav={navigate}
                onStartActivity={(sess) => startActivitySession(sess)}
                onGoToGymTab={() => setScreen('gym-hub')}
+               onMarkComplete={markSessionComplete}
+               onViewSummary={viewSummary}
+               onEditSession={editSession}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-library')

@@ -3239,4 +3239,5 @@ export {
   EX_LIB, SPLITS, SECTION_META, SECTION_ORDER, WEEK_DAYS, ACTIVITY_TYPES,
   ScreenHeader, GymHubScreen, SplitPickerScreen, SessionEditorScreen,
   DayActivitiesScreen, getGymRecommendation,
+  MarkCompleteSheet, EditSessionSheet,
 };
