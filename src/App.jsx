@@ -10,11 +10,11 @@ import {
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakSelect, TweakButton } from './components/tweaks/TweaksPanel';
 import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen } from './screens/GymSessionScreen';
-import { EX_LIB, SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen } from './screens/GymPlanScreens';
+import { SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen, buildQueueFromExerciseIds } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
-import { computeEventPhases } from './data/eventPlan';
+import { computeEventPhases, getTodayDateKey } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -211,6 +211,7 @@ function App() {
   const [viewingDay, setViewingDay] = React.useState(null);
   const [activities, setActivities]             = React.useState({});
   const [eventOverrides, setEventOverrides] = React.useState({});
+  const [preselectedQueues, setPreselectedQueues] = React.useState({});
   const [planSessionsDone, setPlanSessionsDone]           = React.useState({});
   const [eventPlan, setEventPlan]         = React.useState(DEFAULT_EVENT_PLAN);
   const [session, setSession]             = React.useState({
@@ -271,6 +272,7 @@ function App() {
         setFoodLog({});
         setActivities({});
         setEventOverrides({});
+        setPreselectedQueues({});
         setPlanSessionsDone({});
         setEventPlan(DEFAULT_EVENT_PLAN);
         setCustomFoods([]);
@@ -366,6 +368,7 @@ function App() {
     if (data.foodLog)           setFoodLog(data.foodLog);
     if (data.activities)           setActivities(data.activities);
     if (data.eventOverrides)   setEventOverrides(data.eventOverrides);
+    if (data.preselectedQueues) setPreselectedQueues(data.preselectedQueues);
     if (data.planSessionsDone)        setPlanSessionsDone(data.planSessionsDone);
     if (data.eventPlan)        setEventPlan(data.eventPlan);
     if (data.customFoods)          setCustomFoods(data.customFoods);
@@ -375,7 +378,7 @@ function App() {
   const buildSnapshot = (overrides = {}) => ({
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
-    eventOverrides, planSessionsDone, eventPlan,
+    eventOverrides, preselectedQueues, planSessionsDone, eventPlan,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -397,7 +400,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, planSessionsDone, eventPlan]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, preselectedQueues, planSessionsDone, eventPlan]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
@@ -429,6 +432,7 @@ function App() {
     setFoodLog({});
     setActivities({});
     setEventOverrides({});
+    setPreselectedQueues({});
     setPlanSessionsDone({});
     setEventPlan(DEFAULT_EVENT_PLAN);
     setCustomFoods([]);
@@ -550,6 +554,7 @@ function App() {
     setFoodLog({});
     setActivities({});
     setEventOverrides({});
+    setPreselectedQueues({});
     setPlanSessionsDone({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
@@ -595,22 +600,17 @@ function App() {
     if (!split || !split.days || !split.days.length) return;
     const todayBase = split.days[(plan.todayIdx || 0) % split.days.length];
     const today = (plan.overrides && plan.overrides[todayBase.id]) || todayBase;
-    const SECTION_ORDER_LOCAL = ['compound','accessory','core','mobility'];
-    const queue = SECTION_ORDER_LOCAL.flatMap(sec => (today[sec] || []).map(id => {
-      const ex = EX_LIB[id] || {};
-      const targetSets = 3;
-      const unilateral = ex.unilateral || false;
-      return {
-        id, name: ex.name || id, muscle: ex.muscle || '',
-        targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
-        unilateral,
-        sets: Array.from({ length: targetSets }, () =>
-          unilateral
-            ? { wR: null, rR: null, wL: null, rL: null, done: false }
-            : { w: null, r: null, done: false }
-        ),
-      };
-    }));
+
+    // A user can pre-select today's exercises ahead of time from the Weekly
+    // Overview day detail — if they did, use that instead of the split day's
+    // default exercise list.
+    const todayPreselect = preselectedQueues[getTodayDateKey()];
+    const queue = (todayPreselect?.kind === 'gym' && todayPreselect.exercises?.length)
+      ? buildQueueFromExerciseIds(todayPreselect.exercises)
+      : buildQueueFromExerciseIds(
+          ['compound','accessory','core','mobility'].flatMap(sec => today[sec] || [])
+        );
+
     setSession(s => ({
       ...s, active: true, paused: false, elapsed: 0, exIdx: 0, kind: 'gym',
       workout: today.name + ' day',
@@ -629,6 +629,29 @@ function App() {
     });
     setScreen('activity-session');
   };
+
+  // Conditioning sessions log like a gym session — pick activities, then log
+  // sets/reps against each one — rather than the plain elapsed-time timer
+  // every other activity type uses.
+  const startConditioningSession = (act, exerciseIds = []) => {
+    const queue = buildQueueFromExerciseIds(exerciseIds);
+    setSession({
+      active: true, paused: false, elapsed: 0, exIdx: 0, kind: 'conditioning',
+      workout: act?.label || 'Conditioning', type: 'conditioning',
+      queue: queue.length ? queue : null,
+    });
+    setScreen('gym-session');
+  };
+
+  // Saves a date-specific pre-selection of exercises for a gym or
+  // conditioning day (made from the Weekly Overview day detail), so that
+  // when the session for that date is actually started, it seeds its queue
+  // from these picks instead of the default template.
+  const savePreselectedQueue = (dateKey, payload) => setPreselectedQueues(prev => {
+    const next = { ...prev, [dateKey]: { ...payload, updatedAt: new Date().toISOString() } };
+    setTimeout(() => scheduleSave({ preselectedQueues: next }), 0);
+    return next;
+  });
 
   const finishActivitySession = ({ distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, rpe = null } = {}) => {
     const completed = {
@@ -821,6 +844,7 @@ function App() {
   const handleUploadTrainingPlan = (parsed) => {
     setEventPlan(parsed);
     setEventOverrides({});
+    setPreselectedQueues({});
     setPlanSessionsDone({});
     setActivities({});
     setPlanRaw(DEFAULT_PLAN);
@@ -831,7 +855,7 @@ function App() {
     };
     setProfileRaw(nextProfile);
     const overrides = {
-      eventPlan: parsed, eventOverrides: {}, planSessionsDone: {}, activities: {},
+      eventPlan: parsed, eventOverrides: {}, preselectedQueues: {}, planSessionsDone: {}, activities: {},
       plan: DEFAULT_PLAN, profile: nextProfile,
     };
     setTimeout(() => scheduleSave(overrides), 0);
@@ -923,11 +947,13 @@ function App() {
                activeSession={session.active ? session : null}
                eventOverrides={eventOverrides}
                eventPhasePlan={eventPhasePlan}
+               preselectedQueues={preselectedQueues}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                onNav={navigate}
                onStartSession={startSession}
                onStartActivity={startActivitySession}
+               onStartConditioning={startConditioningSession}
                onMarkComplete={markSessionComplete}
                onResumeSession={() => setScreen(session.kind === 'activity' ? 'activity-session' : 'gym-session')}
                onChangeSplit={() => setScreen('gym-split')}
@@ -1059,10 +1085,14 @@ function App() {
                onBack={() => setScreen('weekly')}
                onNav={navigate}
                onStartActivity={(sess) => startActivitySession(sess)}
+               onStartConditioning={startConditioningSession}
                onGoToGymTab={() => setScreen('gym-hub')}
                onMarkComplete={markSessionComplete}
                onViewSummary={viewSummary}
                onEditSession={editSession}
+               onDeleteSession={deleteSession}
+               preselectedQueues={preselectedQueues}
+               onSavePreselectedQueue={savePreselectedQueue}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-library')

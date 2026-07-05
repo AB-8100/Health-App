@@ -357,6 +357,8 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
     })
   );
 
+  const removeExercise = (ei) => setQueue(prev => prev.filter((_, e) => e !== ei));
+
   const [rpe, setRpe] = React.useState(session.rpe ?? null);
 
   return (
@@ -395,7 +397,14 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
               background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
               padding:'12px 14px', marginBottom:10
             }}>
-              <div style={{ fontSize:13, color:t.text, fontWeight:500, marginBottom:10 }}>{ex.name}</div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <div style={{ fontSize:13, color:t.text, fontWeight:500 }}>{ex.name}</div>
+                <button onClick={() => removeExercise(ei)} title="Remove this exercise from the session" style={{
+                  padding:'4px 9px', borderRadius:7, background:'transparent',
+                  border:`1px solid ${t.border}`, color:'#BE3B2E',
+                  cursor:'pointer', fontSize:10.5, fontFamily:t.sans
+                }}>Remove exercise</button>
+              </div>
               {/* Set rows */}
               <div style={{ display:'grid', gridTemplateColumns:'28px 1fr 1fr 28px', gap:6, alignItems:'center', marginBottom:6 }}>
                 <div style={{ fontSize:9.5, color:t.text3, textTransform:'uppercase' }}>#</div>
@@ -439,6 +448,159 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
           background:t.accent, color:t.accentText, flexShrink:0
         }}>
           Save changes
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Builds a fresh gym-style exercise queue (sets/reps scaffold) from a plain
+// list of EX_LIB ids — shared by the gym split flow and conditioning
+// sessions, since conditioning now logs sets/reps the same way gym does.
+function buildQueueFromExerciseIds(ids = []) {
+  return ids.map(id => {
+    const ex = EX_LIB[id] || {};
+    const targetSets = 3;
+    const unilateral = ex.unilateral || false;
+    return {
+      id, name: ex.name || id, muscle: ex.muscle || '',
+      targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
+      unilateral,
+      sets: Array.from({ length: targetSets }, () =>
+        unilateral
+          ? { wR: null, rR: null, wL: null, rL: null, done: false }
+          : { w: null, r: null, done: false }
+      ),
+    };
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Multi-select exercise picker — used both to pre-select a gym/conditioning
+// day's activities ahead of time (from the Weekly Overview day detail) and to
+// pick a conditioning session's activities right before starting it (mirrors
+// the gym session editor's single-add sheet, but lets multiple be chosen at
+// once and confirmed together).
+function ExercisePickerSheet({
+  theme, title = 'Pick exercises', confirmLabel = 'Confirm',
+  initialSelectedIds = [], previousIds = null, onConfirm, onClose,
+}) {
+  const t = themes[theme];
+  const [selected, setSelected] = React.useState(() => [...initialSelectedIds]);
+  const [section, setSection] = React.useState('all');
+  const [searchQ, setSearchQ] = React.useState('');
+
+  const toggle = (id) => setSelected(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+  const q = searchQ.toLowerCase();
+  const results = Object.entries(EX_LIB).filter(([id, ex]) => {
+    const matchesSection = section === 'all' || ex.type === section;
+    const matchesQ = !q || ex.name.toLowerCase().includes(q) || ex.muscle.toLowerCase().includes(q);
+    return matchesSection && matchesQ;
+  }).map(([id, ex]) => ({ id, ...ex }));
+
+  const canUsePreviousWeek = Array.isArray(previousIds) && previousIds.length > 0;
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
+      display:'flex', alignItems:'flex-end', zIndex:70
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', background:t.surface,
+        borderTopLeftRadius:22, borderTopRightRadius:22,
+        padding:'16px 20px 24px', maxHeight:'88%',
+        display:'flex', flexDirection:'column', overflow:'hidden'
+      }}>
+        <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, flexShrink:0 }}>
+          <div style={{ fontFamily:t.serif, fontSize:20, color:t.text }}>{title}</div>
+          <button onClick={onClose} style={{
+            padding:'4px 10px', borderRadius:7, background:'transparent',
+            border:`1px solid ${t.border}`, color:t.text2,
+            fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+          }}>Cancel</button>
+        </div>
+        <div style={{ fontSize:11, color:t.text3, marginBottom:12, flexShrink:0 }}>
+          {selected.length} selected
+        </div>
+
+        {canUsePreviousWeek && (
+          <button onClick={() => setSelected([...previousIds])} style={{
+            width:'100%', padding:'9px', borderRadius:10, marginBottom:10, flexShrink:0,
+            background:t.accent+'12', border:`1px solid ${t.accent}30`,
+            color:t.accent, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:t.sans
+          }}>↺ Use last week's plan ({previousIds.length})</button>
+        )}
+
+        <input
+          value={searchQ}
+          onChange={e => setSearchQ(e.target.value)}
+          placeholder="Search exercises…"
+          style={{
+            width:'100%', padding:'9px 12px', borderRadius:9, flexShrink:0,
+            border:`1px solid ${t.border}`, background:t.surface2,
+            fontFamily:t.sans, fontSize:12.5, color:t.text, outline:'none',
+            marginBottom:10, boxSizing:'border-box'
+          }}/>
+
+        <div style={{ display:'flex', gap:6, marginBottom:10, flexShrink:0, flexWrap:'wrap' }}>
+          {['all', ...SECTION_ORDER].map(sec => {
+            const isActive = section === sec;
+            const label = sec === 'all' ? 'All' : SECTION_META[sec].label;
+            return (
+              <button key={sec} onClick={() => setSection(sec)} style={{
+                padding:'6px 11px', borderRadius:8, cursor:'pointer', fontSize:11, fontWeight:600,
+                fontFamily:t.sans, border: isActive ? 'none' : `1px solid ${t.border}`,
+                background: isActive ? t.accent : 'transparent',
+                color: isActive ? t.accentText : t.text2,
+              }}>{label}</button>
+            );
+          })}
+        </div>
+
+        <div style={{ overflowY:'auto', flex:1, paddingRight:2 }} className="phone-scroll">
+          {results.length ? results.map(ex => {
+            const isSelected = selected.includes(ex.id);
+            return (
+              <button key={ex.id} onClick={() => toggle(ex.id)} style={{
+                display:'flex', justifyContent:'space-between', alignItems:'center',
+                width:'100%', padding:'10px 12px', borderRadius:10,
+                background: isSelected ? t.accent+'12' : t.surface2,
+                border:`1.5px solid ${isSelected ? t.accent : t.border}`,
+                marginBottom:5, cursor:'pointer', textAlign:'left', fontFamily:t.sans
+              }}>
+                <div>
+                  <div style={{ fontSize:13, color:t.text }}>{ex.name}</div>
+                  <div style={{ fontSize:10, color:t.text3 }}>{ex.muscle}</div>
+                </div>
+                <span style={{ fontSize:16, color: isSelected ? t.accent : t.text3 }}>
+                  {isSelected ? '✓' : '+'}
+                </span>
+              </button>
+            );
+          }) : (
+            <div style={{ textAlign:'center', padding:'30px 0', color:t.text3, fontSize:11.5 }}>
+              No matches.
+            </div>
+          )}
+        </div>
+
+        <button
+          disabled={selected.length === 0}
+          onClick={() => onConfirm(selected)}
+          style={{
+            marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
+            fontFamily:t.sans, fontSize:13, fontWeight:600, flexShrink:0,
+            cursor: selected.length ? 'pointer' : 'default',
+            background: selected.length ? t.accent : t.surface2,
+            color: selected.length ? t.accentText : t.text3,
+          }}
+        >
+          {confirmLabel} {selected.length ? `(${selected.length})` : ''}
         </button>
       </div>
     </div>
@@ -1487,13 +1649,32 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                        plan, todayIdx = 0, dayOfWeek = 1, activeSession,
                        activities = {}, completedSessions = [],
                        eventOverrides = {}, eventPhasePlan = { sessions: {} },
-                       onNav, onStartSession, onStartActivity, onMarkComplete, onResumeSession,
+                       preselectedQueues = {},
+                       onNav, onStartSession, onStartActivity, onStartConditioning, onMarkComplete, onResumeSession,
                        onChangeSplit, onEditDay, onSelectDay, onTapDay,
                        onBrowseLibrary, onViewSummary, onDeleteSession,
                        onReorderSchedule, onImportSessions, onEditSession,
                        tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const split = plan?.splitDays ? SPLITS[plan.splitDays] : null;
+
+  // Conditioning-type activities log like a gym session (pick activities,
+  // then log sets/reps) rather than the plain elapsed-time timer everything
+  // else uses — so starting one opens the exercise picker first (pre-filled
+  // from any pre-selection made ahead of time from the Weekly Overview)
+  // instead of jumping straight into a timer.
+  const handleStartActivity = (act) => {
+    if ((act?.type || '').toLowerCase() !== 'conditioning') {
+      onStartActivity && onStartActivity(act);
+      return;
+    }
+    const pre = preselectedQueues[getTodayDateKey()];
+    if (pre?.kind === 'conditioning' && pre.exercises?.length) {
+      onStartConditioning && onStartConditioning(act, pre.exercises);
+    } else {
+      setConditioningPicker({ act });
+    }
+  };
 
   // Today's event-plan session(s) — read the same way the Weekly Overview
   // does (per-day override wins, else the uploaded plan minus rest days) so
@@ -1537,6 +1718,8 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const [showMarkComplete, setShowMarkComplete] = React.useState(false);
   const [markCompleteWorkout, setMarkCompleteWorkout] = React.useState(null);
   const [markCompleteType, setMarkCompleteType] = React.useState(null);
+  const [deleteConfirmId, setDeleteConfirmId] = React.useState(null);
+  const [conditioningPicker, setConditioningPicker] = React.useState(null); // { act }
 
   // Compute the actual calendar date for the currently viewed day slot
   const now = new Date();
@@ -1628,7 +1811,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
         <ActivitySessionView
           t={t} dayOfWeek={dayOfWeek} activities={activities} todayEventActs={todayEventActs}
           activeSession={activeSession} onResumeSession={onResumeSession}
-          onStartActivity={onStartActivity}
+          onStartActivity={handleStartActivity}
           onRecordSession={(act) => { setMarkCompleteWorkout(act?.label ?? null); setMarkCompleteType(act?.type ?? null); setShowMarkComplete(true); }}
           completedSessions={completedSessions}
           onViewSummary={onViewSummary}
@@ -1840,7 +2023,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
               </div>
             ) : viewDayIdx === dayOfWeek ? (
               <div style={{ display:'flex', gap:7, marginTop:14 }}>
-                <button onClick={() => onStartActivity && onStartActivity(viewDayActs[0])} style={{
+                <button onClick={() => handleStartActivity(viewDayActs[0])} style={{
                   flex:1, padding:'13px', borderRadius:12, border:'none',
                   fontFamily:t.sans, fontSize:14, fontWeight:600, cursor:'pointer',
                   background: viewDayActs[0]?.color || t.accent, color:'#fff',
@@ -2270,6 +2453,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                             background:'transparent', border:`1px solid ${t.border}`,
                             color:t.accent, fontSize:10.5, cursor:'pointer', fontFamily:t.sans
                           }}>✎ Edit</button>
+                          <button onClick={() => setDeleteConfirmId(s.id)} style={{
+                            padding:'5px 10px', borderRadius:7,
+                            background:'transparent', border:`1px solid ${t.border}`,
+                            color:'#BE3B2E', fontSize:10.5, cursor:'pointer', fontFamily:t.sans
+                          }}>Delete</button>
                         </div>
                       </div>
                     ))}
@@ -2388,6 +2576,49 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
             setMarkCompleteWorkout(null);
             setMarkCompleteType(null);
           }}
+        />
+      )}
+
+      {deleteConfirmId && (
+        <div style={{
+          position:'absolute', inset:0, background:'rgba(0,0,0,.4)',
+          display:'flex', alignItems:'flex-end', zIndex:60
+        }} onClick={() => setDeleteConfirmId(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            width:'100%', background:t.surface, borderTopLeftRadius:22, borderTopRightRadius:22,
+            padding:'18px 20px 24px'
+          }}>
+            <div style={{ width:38, height:4, background:t.border, borderRadius:99, margin:'0 auto 14px' }}/>
+            <div style={{ fontFamily:t.serif, fontSize:20, color:t.text, marginBottom:6 }}>Delete this session?</div>
+            <div style={{ fontSize:12, color:t.text2, marginBottom:16, lineHeight:1.5 }}>
+              This logged session and everything in it will be permanently removed.
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => setDeleteConfirmId(null)} style={{
+                flex:1, padding:'12px', borderRadius:11, background:'transparent',
+                border:`1px solid ${t.border2}`, color:t.text,
+                fontFamily:t.sans, fontSize:13, cursor:'pointer'
+              }}>Cancel</button>
+              <button onClick={() => { onDeleteSession && onDeleteSession(deleteConfirmId); setDeleteConfirmId(null); }} style={{
+                flex:1, padding:'12px', borderRadius:11, background:'#BE3B2E', color:'#fff',
+                border:'none', fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer'
+              }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {conditioningPicker && (
+        <ExercisePickerSheet
+          theme={theme}
+          title={`Pick activities — ${conditioningPicker.act?.label || 'Conditioning'}`}
+          confirmLabel="Start session"
+          initialSelectedIds={preselectedQueues[todayKey]?.kind === 'conditioning' ? (preselectedQueues[todayKey].exercises || []) : []}
+          onConfirm={(ids) => {
+            onStartConditioning && onStartConditioning(conditioningPicker.act, ids);
+            setConditioningPicker(null);
+          }}
+          onClose={() => setConditioningPicker(null)}
         />
       )}
     </div>
@@ -3269,4 +3500,5 @@ export {
   ScreenHeader, GymHubScreen, SplitPickerScreen, SessionEditorScreen,
   DayActivitiesScreen, getGymRecommendation,
   MarkCompleteSheet, EditSessionSheet,
+  ExercisePickerSheet, buildQueueFromExerciseIds,
 };

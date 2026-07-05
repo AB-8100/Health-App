@@ -2,10 +2,20 @@ import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { getSessionDisplay } from '../data/sessionDisplay';
-import { MarkCompleteSheet, EditSessionSheet } from './GymPlanScreens';
+import { MarkCompleteSheet, EditSessionSheet, ExercisePickerSheet } from './GymPlanScreens';
 import { findCompletedForActivity, completedDateKey } from '../utils/sessionCompletion';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// The date key for the same weekday one week earlier — used to offer
+// "copy last week's plan" when pre-selecting a gym/conditioning day's
+// activities, and `day.dk` is a UTC-anchored YYYY-MM-DD string (see
+// WeeklyOverviewScreen's toDateKey).
+function prevWeekDateKey(dk) {
+  const d = new Date(dk + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 7);
+  return d.toISOString().slice(0, 10);
+}
 
 function fmtElapsed(totalSeconds = 0) {
   const h = Math.floor(totalSeconds / 3600);
@@ -26,12 +36,13 @@ function workoutLabelFor(sess) {
 
 // All-time log of completed sessions for a single scheduled activity — lets
 // the user browse past exercise logs instead of only ever seeing today's.
-function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, onViewSummary }) {
+function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, onViewSummary, onDeleteSession }) {
   const t = themes[theme];
   const label = workoutLabelFor(sess);
   const history = completedSessions
     .filter(s => s.workout === label)
     .sort((a, b) => new Date(b.date || b.endedAt) - new Date(a.date || a.endedAt));
+  const [deleteId, setDeleteId] = React.useState(null);
 
   return (
     <div
@@ -83,15 +94,50 @@ function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, o
                 {s.rpe != null && (
                   <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>💪 RPE {s.rpe}/10</div>
                 )}
-                <button onClick={() => onViewSummary && onViewSummary(s)} style={{
-                  width: '100%', padding: '7px', borderRadius: 8, background: 'transparent',
-                  border: `1px solid ${t.border}`, color: t.accent, fontSize: 11, cursor: 'pointer', fontFamily: t.sans,
-                }}>View summary ›</button>
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <button onClick={() => onViewSummary && onViewSummary(s)} style={{
+                    flex: 1, padding: '7px', borderRadius: 8, background: 'transparent',
+                    border: `1px solid ${t.border}`, color: t.accent, fontSize: 11, cursor: 'pointer', fontFamily: t.sans,
+                  }}>View summary ›</button>
+                  {onDeleteSession && (
+                    <button onClick={() => setDeleteId(s.id)} style={{
+                      padding: '7px 10px', borderRadius: 8, background: 'transparent',
+                      border: `1px solid ${t.border}`, color: '#BE3B2E', fontSize: 11, cursor: 'pointer', fontFamily: t.sans,
+                    }}>Delete</button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {deleteId && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end', zIndex: 70 }}
+          onClick={() => setDeleteId(null)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: '18px 20px 24px',
+          }}>
+            <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 14px' }} />
+            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 6 }}>Delete this session?</div>
+            <div style={{ fontSize: 12, color: t.text2, marginBottom: 16, lineHeight: 1.5 }}>
+              This logged session will be permanently removed.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setDeleteId(null)} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: 'transparent',
+                border: `1px solid ${t.border2}`, color: t.text, fontFamily: t.sans, fontSize: 13, cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={() => { onDeleteSession(deleteId); setDeleteId(null); }} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: '#BE3B2E', color: '#fff',
+                border: 'none', fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -104,16 +150,22 @@ function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, o
 export function SessionDetailScreen({
   width = 390, height = 820, theme = 'light',
   day, completedSessions = [],
-  onBack, onStartActivity, onGoToGymTab, onNav,
-  onMarkComplete, onViewSummary, onEditSession,
+  onBack, onStartActivity, onStartConditioning, onGoToGymTab, onNav,
+  onMarkComplete, onViewSummary, onEditSession, onDeleteSession,
+  preselectedQueues = {}, onSavePreselectedQueue,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
 }) {
   const t = themes[theme];
   const [recordingSess, setRecordingSess] = React.useState(null);
   const [editingSession, setEditingSession] = React.useState(null);
   const [historicSess, setHistoricSess] = React.useState(null);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [pickerState, setPickerState] = React.useState(null); // { sess, mode: 'start' | 'plan' }
 
   if (!day) return null;
+
+  const preselected = preselectedQueues[day.dk];
+  const previousWeekPreselected = preselectedQueues[prevWeekDateKey(day.dk)];
 
   const dayName = DAY_NAMES[day.dayIdx] || 'Day';
   const dateLabel = day.d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -145,6 +197,14 @@ export function SessionDetailScreen({
   const historyBtnStyle = {
     width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
     border: `1px dashed ${t.border2}`, color: t.text2, fontFamily: t.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
+  };
+  const deleteBtnStyle = {
+    padding: '13px 16px', borderRadius: 13, background: 'transparent',
+    border: `1px solid ${t.border}`, color: '#BE3B2E', fontFamily: t.sans, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+  };
+  const planBtnStyle = {
+    width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
+    border: `1px solid ${t.accent}40`, color: t.accent, fontFamily: t.sans, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
   };
 
   return (
@@ -201,9 +261,12 @@ export function SessionDetailScreen({
 
             {day.sessions.map(sess => {
               const isGym = sess.source === 'gym';
+              const isConditioning = (sess.type || '').toLowerCase() === 'conditioning';
               const completed = isGym ? gymCompleted : findCompletedForActivity(sess, completedForDay);
               const { color, emoji, label: displayLabel } = getSessionDisplay(sess.actData, sess.type);
               const label = sess.label || displayLabel;
+              const sessPreselected = (isGym && preselected?.kind === 'gym') || (isConditioning && preselected?.kind === 'conditioning')
+                ? preselected : null;
 
               return (
                 <div key={sess.id} style={cardStyle}>
@@ -220,6 +283,12 @@ export function SessionDetailScreen({
                     </div>
                   </div>
 
+                  {sessPreselected && !completed && (
+                    <div style={{ fontSize: 11, color: t.accent, marginBottom: 8 }}>
+                      🗂 {sessPreselected.exercises.length} exercise{sessPreselected.exercises.length !== 1 ? 's' : ''} planned
+                    </div>
+                  )}
+
                   {completed ? (
                     <>
                       {completed.rpe != null && (
@@ -230,25 +299,52 @@ export function SessionDetailScreen({
                           ✓ Logged — view
                         </button>
                         <button onClick={() => setEditingSession(completed)} style={editBtnStyle}>✎ Edit</button>
+                        {onDeleteSession && (
+                          <button onClick={() => setDeleteTarget(completed.id)} style={deleteBtnStyle}>Delete</button>
+                        )}
                       </div>
                     </>
                   ) : isGym ? (
-                    <button onClick={onGoToGymTab} style={{
-                      width: '100%', padding: '13px 0', borderRadius: 13, border: 'none',
-                      background: color, color: '#fff', fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                    }}>Go to Session tab →</button>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 7 }}>
-                      <button onClick={() => onStartActivity && onStartActivity(sess)} style={{
-                        flex: 1, padding: '13px 0', borderRadius: 13, border: 'none',
+                    <>
+                      <button onClick={onGoToGymTab} style={{
+                        width: '100%', padding: '13px 0', borderRadius: 13, border: 'none',
                         background: color, color: '#fff', fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                      }}>Start session</button>
-                      <button onClick={() => setRecordingSess(sess)} style={{
-                        padding: '13px 16px', borderRadius: 13, background: 'transparent',
-                        border: `1.5px solid ${t.green}60`, color: t.green,
-                        fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-                      }}>✓ Record</button>
-                    </div>
+                      }}>Go to Session tab →</button>
+                      <button onClick={() => setPickerState({ sess, mode: 'plan' })} style={planBtnStyle}>
+                        🗂 Plan exercises
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', gap: 7 }}>
+                        <button
+                          onClick={() => {
+                            if (isConditioning) {
+                              if (sessPreselected?.exercises?.length) {
+                                onStartConditioning && onStartConditioning(sess, sessPreselected.exercises);
+                              } else {
+                                setPickerState({ sess, mode: 'start' });
+                              }
+                            } else {
+                              onStartActivity && onStartActivity(sess);
+                            }
+                          }}
+                          style={{
+                            flex: 1, padding: '13px 0', borderRadius: 13, border: 'none',
+                            background: color, color: '#fff', fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                          }}>Start session</button>
+                        <button onClick={() => setRecordingSess(sess)} style={{
+                          padding: '13px 16px', borderRadius: 13, background: 'transparent',
+                          border: `1.5px solid ${t.green}60`, color: t.green,
+                          fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}>✓ Record</button>
+                      </div>
+                      {isConditioning && (
+                        <button onClick={() => setPickerState({ sess, mode: 'plan' })} style={planBtnStyle}>
+                          🗂 Plan exercises
+                        </button>
+                      )}
+                    </>
                   )}
 
                   <button onClick={() => setHistoricSess(sess)} style={historyBtnStyle}>
@@ -284,6 +380,9 @@ export function SessionDetailScreen({
                   <div style={{ display: 'flex', gap: 7 }}>
                     <button onClick={() => onViewSummary && onViewSummary(s)} style={loggedBtnStyle}>✓ Logged — view</button>
                     <button onClick={() => setEditingSession(s)} style={editBtnStyle}>✎ Edit</button>
+                    {onDeleteSession && (
+                      <button onClick={() => setDeleteTarget(s.id)} style={deleteBtnStyle}>Delete</button>
+                    )}
                   </div>
                 </div>
               );
@@ -326,7 +425,58 @@ export function SessionDetailScreen({
           completedSessions={completedSessions}
           onClose={() => setHistoricSess(null)}
           onViewSummary={onViewSummary}
+          onDeleteSession={onDeleteSession}
         />
+      )}
+
+      {pickerState && (
+        <ExercisePickerSheet
+          theme={theme}
+          title={`Pick exercises — ${pickerState.sess.label}`}
+          confirmLabel={pickerState.mode === 'start' ? 'Start session' : 'Save plan'}
+          initialSelectedIds={preselected?.exercises || []}
+          previousIds={previousWeekPreselected?.exercises || null}
+          onConfirm={(ids) => {
+            if (pickerState.mode === 'start') {
+              onStartConditioning && onStartConditioning(pickerState.sess, ids);
+            } else {
+              onSavePreselectedQueue && onSavePreselectedQueue(day.dk, {
+                kind: pickerState.sess.source === 'gym' ? 'gym' : 'conditioning',
+                exercises: ids,
+                label: pickerState.sess.label,
+              });
+            }
+            setPickerState(null);
+          }}
+          onClose={() => setPickerState(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end', zIndex: 65 }}
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: '18px 20px 24px',
+          }}>
+            <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 14px' }} />
+            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 6 }}>Delete this session?</div>
+            <div style={{ fontSize: 12, color: t.text2, marginBottom: 16, lineHeight: 1.5 }}>
+              This logged session will be permanently removed.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setDeleteTarget(null)} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: 'transparent',
+                border: `1px solid ${t.border2}`, color: t.text, fontFamily: t.sans, fontSize: 13, cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={() => { onDeleteSession && onDeleteSession(deleteTarget); setDeleteTarget(null); }} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: '#BE3B2E', color: '#fff',
+                border: 'none', fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Delete</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
