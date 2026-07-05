@@ -742,6 +742,37 @@ function App() {
     return next;
   });
 
+  // Removes a not-yet-logged session from the Weekly Overview — unlike
+  // deleteSession above (which removes an already-completed entry), this
+  // pulls the scheduled session itself out of whichever store it lives in,
+  // so it stops being shown at all. Then returns to the Weekly Overview so
+  // the day list re-reads from the now-updated state.
+  const removeScheduledSession = (sess) => {
+    if (sess.source === 'gym') {
+      const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
+      if (!split) return;
+      const splitIds = new Set(split.days.map(d => d.id));
+      const overrideValid = plan.scheduleOverride?.every(s => s === '—' || splitIds.has(s));
+      const sched = [...((overrideValid ? plan.scheduleOverride : null) || split.schedule)];
+      sched[sess.dayIdx] = '—';
+      setPlan(p => ({ ...p, scheduleOverride: sched }));
+    } else if (sess.source === 'event_plan') {
+      const dk = viewingDay?.dk;
+      if (!dk) return;
+      const existing = Object.prototype.hasOwnProperty.call(eventOverrides, dk)
+        ? eventOverrides[dk]
+        : (hasEventTraining ? (eventPhasePlan.sessions[dk] || []).filter(s => s.type !== 'rest') : []);
+      const next = { ...eventOverrides, [dk]: existing.filter(s => s !== sess.raw) };
+      setEventOverrides(next);
+      setTimeout(() => scheduleSave({ eventOverrides: next }), 0);
+    } else if (sess.source === 'activity') {
+      const next = { ...activities, [sess.dayIdx]: (activities[sess.dayIdx] || []).filter(a => a !== sess.actData) };
+      setActivities(next);
+      setTimeout(() => scheduleSave({ activities: next }), 0);
+    }
+    setScreen('weekly');
+  };
+
   const viewSummary = (sessionData) => { setLastSession(sessionData); setScreen('gym-summary'); };
 
   const updateFood = (dateKey, entries) => setFoodLog(prev => {
@@ -1091,6 +1122,7 @@ function App() {
                onViewSummary={viewSummary}
                onEditSession={editSession}
                onDeleteSession={deleteSession}
+               onRemoveSession={removeScheduledSession}
                preselectedQueues={preselectedQueues}
                onSavePreselectedQueue={savePreselectedQueue}
                tracksCycle={profile.tracksCycle}

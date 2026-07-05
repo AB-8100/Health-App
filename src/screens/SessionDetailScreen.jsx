@@ -151,7 +151,7 @@ export function SessionDetailScreen({
   width = 390, height = 820, theme = 'light',
   day, completedSessions = [],
   onBack, onStartActivity, onStartConditioning, onGoToGymTab, onNav,
-  onMarkComplete, onViewSummary, onEditSession, onDeleteSession,
+  onMarkComplete, onViewSummary, onEditSession, onDeleteSession, onRemoveSession,
   preselectedQueues = {}, onSavePreselectedQueue,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
 }) {
@@ -160,6 +160,7 @@ export function SessionDetailScreen({
   const [editingSession, setEditingSession] = React.useState(null);
   const [historicSess, setHistoricSess] = React.useState(null);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [removeTarget, setRemoveTarget] = React.useState(null); // scheduled (not-yet-logged) session to remove
   const [pickerState, setPickerState] = React.useState(null); // { sess, mode: 'start' | 'plan' }
 
   if (!day) return null;
@@ -205,6 +206,10 @@ export function SessionDetailScreen({
   const planBtnStyle = {
     width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
     border: `1px solid ${t.accent}40`, color: t.accent, fontFamily: t.sans, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+  };
+  const removeBtnStyle = {
+    width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
+    border: `1px dashed #BE3B2E60`, color: '#BE3B2E', fontFamily: t.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
   };
 
   return (
@@ -261,11 +266,17 @@ export function SessionDetailScreen({
 
             {day.sessions.map(sess => {
               const isGym = sess.source === 'gym';
+              // Any session typed "gym" — not just the recurring split day —
+              // gets the same exercise-picking treatment as conditioning,
+              // e.g. a one-off "Full Body (Gym)"/"Leg Day (Gym)" activity
+              // added via the Weekly Overview or an uploaded event plan.
+              const isGymType = !isGym && (sess.type || '').toLowerCase() === 'gym';
               const isConditioning = (sess.type || '').toLowerCase() === 'conditioning';
+              const usesExercisePicker = isConditioning || isGymType;
               const completed = isGym ? gymCompleted : findCompletedForActivity(sess, completedForDay);
               const { color, emoji, label: displayLabel } = getSessionDisplay(sess.actData, sess.type);
               const label = sess.label || displayLabel;
-              const sessPreselected = (isGym && preselected?.kind === 'gym') || (isConditioning && preselected?.kind === 'conditioning')
+              const sessPreselected = ((isGym || isGymType) && preselected?.kind === 'gym') || (isConditioning && preselected?.kind === 'conditioning')
                 ? preselected : null;
 
               return (
@@ -319,7 +330,7 @@ export function SessionDetailScreen({
                       <div style={{ display: 'flex', gap: 7 }}>
                         <button
                           onClick={() => {
-                            if (isConditioning) {
+                            if (usesExercisePicker) {
                               if (sessPreselected?.exercises?.length) {
                                 onStartConditioning && onStartConditioning(sess, sessPreselected.exercises);
                               } else {
@@ -339,7 +350,7 @@ export function SessionDetailScreen({
                           fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
                         }}>✓ Record</button>
                       </div>
-                      {isConditioning && (
+                      {usesExercisePicker && (
                         <button onClick={() => setPickerState({ sess, mode: 'plan' })} style={planBtnStyle}>
                           🗂 Plan exercises
                         </button>
@@ -350,6 +361,11 @@ export function SessionDetailScreen({
                   <button onClick={() => setHistoricSess(sess)} style={historyBtnStyle}>
                     See historic sessions
                   </button>
+                  {!completed && onRemoveSession && (
+                    <button onClick={() => setRemoveTarget(sess)} style={removeBtnStyle}>
+                      Remove from plan
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -441,7 +457,7 @@ export function SessionDetailScreen({
               onStartConditioning && onStartConditioning(pickerState.sess, ids);
             } else {
               onSavePreselectedQueue && onSavePreselectedQueue(day.dk, {
-                kind: pickerState.sess.source === 'gym' ? 'gym' : 'conditioning',
+                kind: (pickerState.sess.source === 'gym' || (pickerState.sess.type || '').toLowerCase() === 'gym') ? 'gym' : 'conditioning',
                 exercises: ids,
                 label: pickerState.sess.label,
               });
@@ -450,6 +466,33 @@ export function SessionDetailScreen({
           }}
           onClose={() => setPickerState(null)}
         />
+      )}
+
+      {removeTarget && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'flex-end', zIndex: 65 }}
+          onClick={() => setRemoveTarget(null)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: '18px 20px 24px',
+          }}>
+            <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 14px' }} />
+            <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 6 }}>Remove this session?</div>
+            <div style={{ fontSize: 12, color: t.text2, marginBottom: 16, lineHeight: 1.5 }}>
+              This will take "{removeTarget.label}" off {day.isToday ? "today's" : dayName + "'s"} plan.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setRemoveTarget(null)} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: 'transparent',
+                border: `1px solid ${t.border2}`, color: t.text, fontFamily: t.sans, fontSize: 13, cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={() => { onRemoveSession && onRemoveSession(removeTarget); setRemoveTarget(null); }} style={{
+                flex: 1, padding: '12px', borderRadius: 11, background: '#BE3B2E', color: '#fff',
+                border: 'none', fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Remove</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteTarget && (
