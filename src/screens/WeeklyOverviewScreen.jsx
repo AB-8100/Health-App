@@ -7,6 +7,7 @@ import { getCurrentPlanWeek, getPlanWeekStart, getTodayDateKey } from '../data/e
 import { SPLITS } from './GymPlanScreens';
 import { SESSION_DISPLAY, getSessionDisplay } from '../data/sessionDisplay';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
+import { completedDateKey, isSessionCompleted } from '../utils/sessionCompletion';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@ function toDateKey(d) {
   return d.toISOString().slice(0, 10);
 }
 
-export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions) {
+export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions = []) {
   const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
   const todayKey  = getTodayDateKey();
 
@@ -83,7 +84,10 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
       });
     });
 
-    return { d, dk, sessions, isToday: dk === todayKey, dayIdx: i };
+    const completedForDay = completedSessions.filter(s => completedDateKey(s) === dk);
+    const sessionsWithCompletion = sessions.map(s => ({ ...s, completed: isSessionCompleted(s, completedForDay) }));
+
+    return { d, dk, sessions: sessionsWithCompletion, isToday: dk === todayKey, dayIdx: i };
   });
 }
 
@@ -205,23 +209,27 @@ function SessionBar({ session, isDragging }) {
   const { color, emoji, label: displayLabel } = getSessionDisplay(session.actData, session.type);
   const label  = session.label || displayLabel;
   const detail = session.detail;
+  const done   = !!session.completed;
+  // Completed sessions get a solid fill instead of the usual tinted/see-through
+  // treatment, so a finished session visibly stands out from the rest of the week.
+  const textColor = done ? '#fff' : color;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 7,
-      background: isDragging ? color + '28' : color + '14',
-      border: `1px solid ${color}${isDragging ? '55' : '28'}`,
+      background: done ? color : (isDragging ? color + '28' : color + '14'),
+      border: `1px solid ${done ? color : color + (isDragging ? '55' : '28')}`,
       borderRadius: 9, padding: '6px 10px',
       width: '100%', boxSizing: 'border-box',
       boxShadow: isDragging ? `0 3px 10px ${color}35` : 'none',
       transform: isDragging ? 'scale(1.02)' : 'none',
-      transition: 'box-shadow .1s, transform .1s',
+      transition: 'box-shadow .1s, transform .1s, background .2s',
       cursor: 'grab', userSelect: 'none',
     }}>
-      <span style={{ fontSize: 13, flexShrink: 0 }}>{emoji}</span>
-      <span style={{ fontSize: 11.5, fontWeight: 600, color, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 13, flexShrink: 0 }}>{done ? '✓' : emoji}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, color: textColor, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
       {detail && (
         <span style={{
-          fontSize: 10, color: color + 'BB', flex: 1, minWidth: 0,
+          fontSize: 10, color: done ? '#ffffffcc' : color + 'BB', flex: 1, minWidth: 0,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{detail}</span>
       )}
@@ -349,6 +357,35 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
   );
 }
 
+function WeekCompletionBar({ weekData, t }) {
+  const allSessions = weekData.flatMap(day => day.sessions);
+  const total = allSessions.length;
+  if (total === 0) return null;
+  const done = allSessions.filter(s => s.completed).length;
+  const pct = (done / total) * 100;
+  const allDone = done === total;
+
+  return (
+    <div style={{ padding: '2px 16px 10px', flexShrink: 0 }}>
+      {allDone && (
+        <div style={{ textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: t.green, marginBottom: 6 }}>
+          🎉 All sessions complete!
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 10, color: t.text3 }}>Week progress</span>
+        <span style={{ fontSize: 10, color: t.text3 }}>{done}/{total} sessions</span>
+      </div>
+      <div style={{ height: 8, background: t.border, borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${pct}%`, background: allDone ? t.green : t.accent,
+          borderRadius: 99, transition: 'width .4s ease',
+        }} />
+      </div>
+    </div>
+  );
+}
+
 function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
   return (
     <div
@@ -450,6 +487,7 @@ export function WeeklyOverviewScreen({
   intakeCompleted = false,
   intakeDraft = false,
   onStartQuestionnaire,
+  completedSessions = [],
 }) {
   const t = themes[theme];
 
@@ -458,14 +496,14 @@ export function WeeklyOverviewScreen({
   const initWeek = getCurrentPlanWeek(eventStartDate, totalWeeks);
   const [viewWeek,      setViewWeek]      = React.useState(initWeek);
   const [weekData,      setWeekData]      = React.useState(() =>
-    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions)
+    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions)
   );
   const [warnings,      setWarnings]      = React.useState({});
   const [addOpen,       setAddOpen]       = React.useState(false);
 
   React.useEffect(() => {
-    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions));
-  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions]);
+    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions));
+  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions]);
 
   // Adds a one-off session to a specific date in the currently-viewed week,
   // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
@@ -701,6 +739,8 @@ export function WeeklyOverviewScreen({
         </div>
 
       </div>
+
+      <WeekCompletionBar weekData={weekData} t={t} />
 
       {!intakeCompleted && !hasEventTraining && (
         <DraftPlanBanner
