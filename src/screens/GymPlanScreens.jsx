@@ -6,7 +6,7 @@ import { getTodayDateKey } from '../data/eventPlan';
 import { getSessionDisplay } from '../data/sessionDisplay';
 import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
-import { SwimDistanceFields } from './GymSessionScreen';
+import { SwimDistanceFields, RpeField } from './GymSessionScreen';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -234,6 +234,7 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
     poolLengthM: session.poolLengthM ?? null,
     lengths: session.lengths ?? null,
   });
+  const [rpe, setRpe] = React.useState(session.rpe ?? null);
 
   const inputStyle = {
     padding:'9px 12px', borderRadius:10, border:`1px solid ${t.border}`,
@@ -247,7 +248,7 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
     const extras = isSwim
       ? swimExtras
       : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' };
-    onSave({ ...session, elapsed: totalSecs, ...extras });
+    onSave({ ...session, elapsed: totalSecs, rpe, ...extras });
     onClose();
   };
 
@@ -307,6 +308,10 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
                 onChange={e => setDistance(e.target.value)} style={inputStyle} />
             </div>
           )}
+
+          <div style={{ marginTop:12 }}>
+            <RpeField theme={theme} value={rpe} onChange={setRpe} />
+          </div>
         </div>
 
         <button onClick={handleSave} style={{
@@ -352,6 +357,8 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
     })
   );
 
+  const [rpe, setRpe] = React.useState(session.rpe ?? null);
+
   return (
     <div style={{
       position:'absolute', inset:0, background:'rgba(0,0,0,.45)',
@@ -377,6 +384,12 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
         </div>
 
         <div style={{ overflowY:'auto', flex:1 }}>
+          <div style={{
+            background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
+            padding:'12px 14px', marginBottom:10
+          }}>
+            <RpeField theme={theme} value={rpe} onChange={setRpe} />
+          </div>
           {queue.map((ex, ei) => (
             <div key={ex.id || ei} style={{
               background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
@@ -420,7 +433,7 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
           ))}
         </div>
 
-        <button onClick={() => { onSave({ ...session, queue }); onClose(); }} style={{
+        <button onClick={() => { onSave({ ...session, queue, rpe }); onClose(); }} style={{
           marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
           fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
           background:t.accent, color:t.accentText, flexShrink:0
@@ -441,12 +454,14 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
   const [minutes, setMinutes] = React.useState('');
   const [distance, setDistance] = React.useState('');
   const [swimExtras, setSwimExtras] = React.useState({ distance: null, distanceUnit: 'm', poolLengthM: null, lengths: null });
+  const [rpe, setRpe] = React.useState(null);
 
   const handleSave = () => {
     const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
     onSave({
       elapsed: totalSecs,
       type: workoutType || null,
+      rpe,
       ...(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' }),
     });
   };
@@ -504,6 +519,10 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
                 onChange={e => setDistance(e.target.value)} style={inputStyle} />
             </>
           )}
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <RpeField theme={theme} value={rpe} onChange={setRpe} />
         </div>
 
         <button onClick={handleSave} style={{
@@ -1316,7 +1335,11 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
             )}
           </div>
           {todaysCompleted.length > 0 ? (
-            <div style={{ display:'flex', gap:7 }}>
+            <>
+              {todaysCompleted[0].rpe != null && (
+                <div style={{ fontSize:12, color:t.text2, marginBottom:8 }}>💪 RPE {todaysCompleted[0].rpe}/10</div>
+              )}
+              <div style={{ display:'flex', gap:7 }}>
               <button
                 onClick={() => onViewSummary && onViewSummary(todaysCompleted[0])}
                 style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
@@ -1331,7 +1354,8 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
               >
                 ✎ Edit
               </button>
-            </div>
+              </div>
+            </>
           ) : (
             <button
               onClick={() => onRecordSession && onRecordSession(null)}
@@ -1372,7 +1396,11 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
                 </div>
               </div>
               {completed ? (
-                <div style={{ display:'flex', gap:7 }}>
+                <>
+                  {completed.rpe != null && (
+                    <div style={{ fontSize:12, color:t.text2, marginBottom:8 }}>💪 RPE {completed.rpe}/10</div>
+                  )}
+                  <div style={{ display:'flex', gap:7 }}>
                   <button
                     onClick={() => onViewSummary && onViewSummary(completed)}
                     style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
@@ -1387,7 +1415,8 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
                   >
                     ✎ Edit
                   </button>
-                </div>
+                  </div>
+                </>
               ) : (
                 <div style={{ display:'flex', gap:7 }}>
                   <button

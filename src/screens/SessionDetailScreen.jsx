@@ -87,6 +87,9 @@ function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, o
                     {doneExercises.length} exercise{doneExercises.length !== 1 ? 's' : ''} logged
                   </div>
                 )}
+                {s.rpe != null && (
+                  <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>💪 RPE {s.rpe}/10</div>
+                )}
                 <button onClick={() => onViewSummary && onViewSummary(s)} style={{
                   width: '100%', padding: '7px', borderRadius: 8, background: 'transparent',
                   border: `1px solid ${t.border}`, color: t.accent, fontSize: 11, cursor: 'pointer', fontFamily: t.sans,
@@ -225,12 +228,17 @@ export function SessionDetailScreen({
                   </div>
 
                   {completed ? (
-                    <div style={{ display: 'flex', gap: 7 }}>
-                      <button onClick={() => onViewSummary && onViewSummary(completed)} style={loggedBtnStyle}>
-                        ✓ Logged — view
-                      </button>
-                      <button onClick={() => setEditingSession(completed)} style={editBtnStyle}>✎ Edit</button>
-                    </div>
+                    <>
+                      {completed.rpe != null && (
+                        <div style={{ fontSize: 12, color: t.text2, marginBottom: 8 }}>💪 RPE {completed.rpe}/10</div>
+                      )}
+                      <div style={{ display: 'flex', gap: 7 }}>
+                        <button onClick={() => onViewSummary && onViewSummary(completed)} style={loggedBtnStyle}>
+                          ✓ Logged — view
+                        </button>
+                        <button onClick={() => setEditingSession(completed)} style={editBtnStyle}>✎ Edit</button>
+                      </div>
+                    </>
                   ) : isGym ? (
                     <button onClick={onGoToGymTab} style={{
                       width: '100%', padding: '13px 0', borderRadius: 13, border: 'none',
@@ -269,6 +277,7 @@ export function SessionDetailScreen({
                     {s.elapsed ? <span>⏱ {fmtElapsed(s.elapsed)}</span> : null}
                     {s.distance != null ? <span>📏 {s.distance}{s.distanceUnit || 'km'}</span> : null}
                     {s.lengths != null && s.poolLengthM != null ? <span>🏊 {s.lengths} × {s.poolLengthM}m</span> : null}
+                    {s.rpe != null ? <span>💪 RPE {s.rpe}/10</span> : null}
                   </div>
                   {exercisesDone.length > 0 && (
                     <div style={{ marginBottom: 12, paddingBottom: 4, borderBottom: `1px solid ${t.border}` }}>

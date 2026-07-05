@@ -630,7 +630,7 @@ function App() {
     setScreen('activity-session');
   };
 
-  const finishActivitySession = ({ distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null } = {}) => {
+  const finishActivitySession = ({ distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, rpe = null } = {}) => {
     const completed = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
@@ -642,6 +642,7 @@ function App() {
       distanceUnit,
       poolLengthM,
       lengths,
+      rpe,
       queue: null,
     };
     setCompletedSessions(prev => {
@@ -658,7 +659,7 @@ function App() {
     setScreen('gym-hub');
   };
 
-  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null, date = null } = {}) => {
+  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null, date = null, rpe = null } = {}) => {
     let workoutName = workout;
     if (!workoutName) {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
@@ -679,6 +680,7 @@ function App() {
       distanceUnit,
       poolLengthM,
       lengths,
+      rpe,
       queue: null,
     };
     setCompletedSessions(prev => {
@@ -699,10 +701,10 @@ function App() {
     setScreen('gym-summary');
   };
 
-  const closeSummary = (notes) => {
-    if (lastSession?.id && notes !== undefined) {
+  const closeSummary = ({ notes, rpe } = {}) => {
+    if (lastSession?.id && (notes !== undefined || rpe !== undefined)) {
       setCompletedSessions(prev => {
-        const next = prev.map(s => s.id === lastSession.id ? { ...s, notes } : s);
+        const next = prev.map(s => s.id === lastSession.id ? { ...s, ...(notes !== undefined ? { notes } : {}), ...(rpe !== undefined ? { rpe } : {}) } : s);
         setTimeout(() => scheduleSave({ completedSessions: next }), 0);
         return next;
       });

@@ -742,6 +742,36 @@ function SwimDistanceFields({ theme, initial = {}, onChange }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// RPE (Rate of Perceived Exertion) picker — how hard a session felt, 1 (very
+// easy) to 10 (max effort). Optional everywhere it appears.
+function RpeField({ theme, value, onChange }) {
+  const t = themes[theme];
+  const labelStyle = { fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 };
+
+  return (
+    <div>
+      <div style={labelStyle}>
+        RPE <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— optional, how hard did it feel (1–10)</span>
+      </div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map(n => {
+          const active = value === n;
+          return (
+            <button key={n} type="button" onClick={() => onChange(active ? null : n)} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8,
+              border: active ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+              background: active ? t.accent : t.surface,
+              color: active ? t.accentText : t.text2,
+              fontFamily: t.mono, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}>{n}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Generic elapsed-time timer for non-gym sessions (run, swim, rugby, ...) —
 // no exercise queue, just start/pause/stop with an optional distance on finish.
 function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', session, setSession, onFinish, onDiscard, onNav,
@@ -754,6 +784,7 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
   const [showDiscard, setShowDiscard] = React.useState(false);
   const [distance, setDistance]       = React.useState('');
   const [swimExtras, setSwimExtras]   = React.useState({ distance: null, distanceUnit: 'm', poolLengthM: null, lengths: null });
+  const [rpe, setRpe]                 = React.useState(null);
 
   const fmt = (s) => {
     const h = Math.floor(s / 3600);
@@ -852,13 +883,16 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
                 </>
               )}
             </div>
+            <div style={{ marginBottom: 16 }}>
+              <RpeField theme={theme} value={rpe} onChange={setRpe} />
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setShowFinish(false)} style={{
                 flex: 1, padding: '12px', borderRadius: 12, background: 'transparent',
                 border: `1px solid ${t.border}`, color: t.text2, fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>Keep going</button>
               <button
-                onClick={() => onFinish(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' })}
+                onClick={() => onFinish({ ...(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' }), rpe })}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 12, border: 'none',
                   background: t.green, color: '#fff', fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
@@ -962,6 +996,7 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
   const elapsed = session?.elapsed || 0;
   const workout = session?.workout || 'Push day';
   const [notes, setNotes] = React.useState(session?.notes || '');
+  const [rpe, setRpe] = React.useState(session?.rpe ?? null);
 
   const exercisesDone = queue.filter(e => (e.sets||[]).some(s => s.done));
   const setsDone = queue.reduce((n,e) => n + (e.sets||[]).filter(s=>s.done).length, 0);
@@ -1105,6 +1140,14 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
           })}
         </div>
 
+        {/* RPE */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:14
+        }}>
+          <RpeField theme={theme} value={rpe} onChange={setRpe} />
+        </div>
+
         {/* Notes */}
         <div style={{
           background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
@@ -1126,7 +1169,7 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
             }}/>
         </div>
 
-        <button onClick={() => onDone && onDone(notes)} style={{
+        <button onClick={() => onDone && onDone({ notes, rpe })} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background: t.accent, color: t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
@@ -1161,6 +1204,7 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
   const hasDistance = session?.distance != null;
   const hasPool = session?.lengths != null && session?.poolLengthM != null;
   const [notes, setNotes] = React.useState(session?.notes || '');
+  const [rpe, setRpe] = React.useState(session?.rpe ?? null);
 
   const stats = [
     { label: 'Duration', value: fmtElapsedLong(elapsed), sub: 'time recorded', color: t.text },
@@ -1237,6 +1281,14 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
           ))}
         </div>
 
+        {/* RPE */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:14
+        }}>
+          <RpeField theme={theme} value={rpe} onChange={setRpe} />
+        </div>
+
         {/* Notes */}
         <div style={{
           background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
@@ -1258,7 +1310,7 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
             }}/>
         </div>
 
-        <button onClick={() => onDone && onDone(notes)} style={{
+        <button onClick={() => onDone && onDone({ notes, rpe })} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background: t.accent, color: t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
@@ -1273,4 +1325,4 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
   );
 }
 
-export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen, NumberInput, SwimDistanceFields };
+export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen, NumberInput, SwimDistanceFields, RpeField };
