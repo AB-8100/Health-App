@@ -158,8 +158,16 @@ function matchHeader(headerRow) {
 }
 
 // Excel/Sheets date serials count days since 1899-12-30 (the de-facto epoch
-// once you correct for the spreadsheet 1900 leap-year bug).
+// once you correct for the spreadsheet 1900 leap-year bug). Date cells are
+// usually stored this way, but a cell explicitly typed `t="d"` (ISO 8601
+// date) carries a plain "YYYY-MM-DD" string in <v> instead of a serial —
+// without handling that too, every dated row in such a file would be
+// silently dropped (Number("2026-01-05") is NaN) and the import would fail
+// with "nothing to import" despite a well-formed date column.
 function excelSerialToDateKey(serial) {
+  if (typeof serial === 'string' && /^\d{4}-\d{2}-\d{2}/.test(serial.trim())) {
+    return serial.trim().slice(0, 10);
+  }
   const n = Number(serial);
   if (!Number.isFinite(n)) return null;
   const utcMs = Date.UTC(1899, 11, 30) + Math.round(n) * 86400000;
