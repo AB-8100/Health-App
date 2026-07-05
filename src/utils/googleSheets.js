@@ -149,7 +149,7 @@ function fmtSettings(s = {}) {
 }
 
 function fmtSessions(sessions = []) {
-  const header = ['Date', 'Workout', 'Duration (min)', 'Exercises', 'Session ID'];
+  const header = ['Date', 'Workout', 'Duration (min)', 'Exercises', 'RPE', 'Session ID'];
   if (!sessions.length) return [header];
   return [
     header,
@@ -158,6 +158,7 @@ function fmtSessions(sessions = []) {
       s.workout || '',
       s.elapsed ? Math.round(s.elapsed / 60) : '',
       s.queue   ? s.queue.length : '',
+      s.rpe != null ? s.rpe : '',
       s.id      || '',
     ]),
   ];
