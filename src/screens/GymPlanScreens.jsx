@@ -1477,9 +1477,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const todayKey = getTodayDateKey();
   const eventSessionsToday = getEventSessionsForDate(todayKey, eventOverrides, eventPhasePlan.sessions, hasEventTraining);
   const todayEventActs = eventSessionsToday.map((s, i) => {
-    const disp = getSessionDisplay(null, (s.type || 'other').toLowerCase());
+    const type = (s.type || 'other').toLowerCase();
+    const disp = getSessionDisplay(null, type);
     return {
       id: `event-${todayKey}-${i}`,
+      type,
       label: s.label || disp.label,
       emoji: disp.emoji,
       color: disp.color,
