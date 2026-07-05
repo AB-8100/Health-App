@@ -1498,25 +1498,35 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
           </div>
           {todaysCompleted.length > 0 ? (
             <>
-              {todaysCompleted[0].rpe != null && (
-                <div style={{ fontSize:12, color:t.text2, marginBottom:8 }}>💪 RPE {todaysCompleted[0].rpe}/10</div>
-              )}
-              <div style={{ display:'flex', gap:7 }}>
-              <button
-                onClick={() => onViewSummary && onViewSummary(todaysCompleted[0])}
-                style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
-                  border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
-              >
-                ✓ Session logged — view
-              </button>
-              <button
-                onClick={() => onOpenEditSession && onOpenEditSession(todaysCompleted[0])}
-                style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
-                  border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
-              >
-                ✎ Edit
-              </button>
-              </div>
+              {todaysCompleted.map((s, i) => (
+                <div key={s.id ?? i} style={{
+                  background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+                  padding:'18px 18px', marginBottom:12
+                }}>
+                  <div style={{ fontFamily:t.serif, fontSize:18, color:t.text, marginBottom:8 }}>{s.workout || 'Session'}</div>
+                  {(s.type || s.elapsed || s.rpe != null) && (
+                    <div style={{ fontSize:12.5, color:t.text2, marginBottom:12 }}>
+                      {[s.type, s.elapsed ? `${Math.floor(s.elapsed/60)}min` : null, s.rpe != null ? `💪 RPE ${s.rpe}/10` : null].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                  <div style={{ display:'flex', gap:7 }}>
+                    <button
+                      onClick={() => onViewSummary && onViewSummary(s)}
+                      style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
+                        border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
+                    >
+                      ✓ Session logged — view
+                    </button>
+                    <button
+                      onClick={() => onOpenEditSession && onOpenEditSession(s)}
+                      style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
+                        border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
+                    >
+                      ✎ Edit
+                    </button>
+                  </div>
+                </div>
+              ))}
             </>
           ) : (
             <button
@@ -1610,33 +1620,55 @@ function ActivitySessionView({ t, dayOfWeek, activities, todayEventActs = [], ac
             </div>
             );
           })}
-          {unmatchedCompleted.length > 0 ? (
-            <div style={{ display:'flex', gap:7, marginTop:4 }}>
-              <button
-                onClick={() => onViewSummary && onViewSummary(unmatchedCompleted[0])}
-                style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
-                  border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
-              >
-                ✓ Session logged — view
-              </button>
-              <button
-                onClick={() => onOpenEditSession && onOpenEditSession(unmatchedCompleted[0])}
-                style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
-                  border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
-              >
-                ✎ Edit
-              </button>
+          {unmatchedCompleted.map((s, i) => (
+            <div key={s.id ?? i} style={{
+              background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+              padding:'18px 18px', marginBottom:12
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:14 }}>
+                <div style={{
+                  width:52, height:52, borderRadius:14, fontSize:26,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  background:t.accent + '18'
+                }}>🏃</div>
+                <div>
+                  <div style={{ fontFamily:t.serif, fontSize:22, color:t.text, lineHeight:1.1 }}>{s.workout || 'Session'}</div>
+                  {(s.type || s.elapsed) && (
+                    <div style={{ fontSize:12, color:t.text3, marginTop:3 }}>
+                      {[s.type, s.elapsed ? `${Math.floor(s.elapsed/60)}min` : null].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {s.rpe != null && (
+                <div style={{ fontSize:12, color:t.text2, marginBottom:8 }}>💪 RPE {s.rpe}/10</div>
+              )}
+              <div style={{ display:'flex', gap:7 }}>
+                <button
+                  onClick={() => onViewSummary && onViewSummary(s)}
+                  style={{ flex:1, padding:'13px 0', borderRadius:14, background:t.green+'18', color:t.green,
+                    border:`1.5px solid ${t.green}40`, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:t.sans }}
+                >
+                  ✓ Session logged — view
+                </button>
+                <button
+                  onClick={() => onOpenEditSession && onOpenEditSession(s)}
+                  style={{ padding:'13px 16px', borderRadius:14, background:'transparent',
+                    border:`1px solid ${t.border}`, color:t.accent, fontSize:13, cursor:'pointer', fontFamily:t.sans, fontWeight:500 }}
+                >
+                  ✎ Edit
+                </button>
+              </div>
             </div>
-          ) : (
-            <button
-              onClick={() => onRecordSession && onRecordSession(null)}
-              style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
-                border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
-                cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
-            >
-              ✓ Log a different activity
-            </button>
-          )}
+          ))}
+          <button
+            onClick={() => onRecordSession && onRecordSession(null)}
+            style={{ width:'100%', padding:'13px 0', borderRadius:14, background:t.surface,
+              border:`1px solid ${t.border}`, color:t.text2, fontSize:14, fontWeight:500,
+              cursor:'pointer', fontFamily:t.sans, marginTop:4 }}
+          >
+            ✓ Log a different activity
+          </button>
         </div>
       )}
     </div>
