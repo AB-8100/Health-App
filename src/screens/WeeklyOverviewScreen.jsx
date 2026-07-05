@@ -6,6 +6,7 @@ import { BottomNav, DraftPlanBanner } from '../components/SharedUI';
 import { getCurrentPlanWeek, getPlanWeekStart, getTodayDateKey } from '../data/eventPlan';
 import { SPLITS } from './GymPlanScreens';
 import { SESSION_DISPLAY, getSessionDisplay } from '../data/sessionDisplay';
+import { getEventSessionsForDate } from '../utils/eventDaySessions';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ function toDateKey(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions) {
+export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions) {
   const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
   const todayKey  = getTodayDateKey();
 
@@ -54,9 +55,7 @@ function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEv
     // keyed by date) — checked regardless of hasEventTraining so a session
     // can be added to the week even without an uploaded plan.
     {
-      const raw = Object.prototype.hasOwnProperty.call(eventOverrides, dk)
-        ? eventOverrides[dk]
-        : (hasEventTraining ? (eventSessions[dk] || []).filter(s => s.type !== 'rest') : []);
+      const raw = getEventSessionsForDate(dk, eventOverrides, eventSessions, hasEventTraining);
       raw.forEach((s, si) => {
         const type = (s.type || 'conditioning').toLowerCase();
         sessions.push({

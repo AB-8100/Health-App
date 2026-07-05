@@ -73,6 +73,67 @@ async function fakeFile(rowsOrSheets, name = 'plan.xlsx') {
   return { name, arrayBuffer: async () => buffer };
 }
 
+// A marker wrapper so a row can request a `t="d"` ISO-date cell instead of
+// the usual numeric serial, for testing that less-common (but real) OOXML
+// date encoding.
+function isoDateCell(isoString) {
+  return { __isoDate: isoString };
+}
+
+// Real Excel/Sheets exports almost always de-duplicate text into a shared
+// strings table and reference it via `t="s"` cells, rather than the
+// `t="inlineStr"` shortcut the other builder above uses — so this variant
+// builds a workbook that exercises that actual path (parseSharedStrings +
+// the `type === 's'` branch of cellValue), which the inlineStr-based tests
+// never touch.
+function cellXmlShared(rowNum, colIdx, value, sharedStrings) {
+  const ref = `${colLetter(colIdx)}${rowNum}`;
+  if (value === null || value === undefined || value === '') return '';
+  if (value && typeof value === 'object' && '__isoDate' in value) {
+    return `<c r="${ref}" t="d"><v>${value.__isoDate}</v></c>`;
+  }
+  if (typeof value === 'number') return `<c r="${ref}"><v>${value}</v></c>`;
+  if (typeof value === 'boolean') return `<c r="${ref}" t="b"><v>${value ? 1 : 0}</v></c>`;
+  const str = String(value);
+  let idx = sharedStrings.indexOf(str);
+  if (idx === -1) { sharedStrings.push(str); idx = sharedStrings.length - 1; }
+  return `<c r="${ref}" t="s"><v>${idx}</v></c>`;
+}
+
+async function fakeFileWithSharedStrings(rows, name = 'plan.xlsx') {
+  const sharedStrings = [];
+  const rowsXml = rows.map((row, ri) => {
+    const cells = row.map((v, ci) => cellXmlShared(ri + 1, ci, v, sharedStrings)).join('');
+    return `<row r="${ri + 1}">${cells}</row>`;
+  }).join('');
+  const worksheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="${SS_NS}"><sheetData>${rowsXml}</sheetData></worksheet>`;
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<workbook xmlns="${SS_NS}" xmlns:r="${REL_NS}">` +
+    `<sheets><sheet name="Plan" sheetId="1" r:id="rId1"/></sheets>` +
+    `</workbook>`;
+
+  const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="${REL_NS}/worksheet" Target="worksheets/sheet1.xml"/>` +
+    `<Relationship Id="rId2" Type="${REL_NS}/sharedStrings" Target="sharedStrings.xml"/>` +
+    `</Relationships>`;
+
+  const sharedStringsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<sst xmlns="${SS_NS}" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">` +
+    sharedStrings.map(s => `<si><t>${s.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</t></si>`).join('') +
+    `</sst>`;
+
+  const zip = new JSZip();
+  zip.file('xl/workbook.xml', workbookXml);
+  zip.file('xl/_rels/workbook.xml.rels', workbookRelsXml);
+  zip.file('xl/worksheets/sheet1.xml', worksheetXml);
+  zip.file('xl/sharedStrings.xml', sharedStringsXml);
+  const buffer = await zip.generateAsync({ type: 'arraybuffer' });
+  return { name, arrayBuffer: async () => buffer };
+}
+
 const HEADER = ['Date', 'Wk', 'Phase', 'Discipline', 'Distance/Duration', 'Session Type', 'Flag', 'Done'];
 
 // Excel/Sheets date serial for a given UTC calendar date, matching the
@@ -203,6 +264,46 @@ describe('parseTrainingPlanWorkbook', () => {
   it('rejects a file that is not a valid xlsx/zip', async () => {
     const file = { name: 'not-a-workbook.xlsx', arrayBuffer: async () => new TextEncoder().encode('hello').buffer };
     await expect(parseTrainingPlanWorkbook(file)).rejects.toThrow(/doesn't look like a valid/i);
+  });
+
+  // Real Excel/Google Sheets exports encode text via a shared-strings table
+  // (t="s" cells + sharedStrings.xml), not the t="inlineStr" shortcut used
+  // by the other tests above — this is the actual format a user's uploaded
+  // file is virtually guaranteed to use, so it needs its own coverage.
+  it('parses a workbook that encodes text via sharedStrings.xml (the real-world Excel format)', async () => {
+    const rows = [
+      HEADER,
+      [excelSerial(2026, 1, 5), 1, 'Foundation', 'Swim', '30 min', 'Endurance', '', 'FALSE'],
+      [excelSerial(2026, 1, 6), 1, 'Foundation', 'Rest', '', '', '', ''],
+      [excelSerial(2026, 1, 7), 1, 'Foundation', 'Run', '45 min', 'Tempo', 'Key session', 'TRUE'],
+    ];
+    const file = await fakeFileWithSharedStrings(rows);
+    const parsed = await parseTrainingPlanWorkbook(file);
+
+    expect(parsed.meta.startDate).toBe('2026-01-05');
+    expect(parsed.sessions['2026-01-05'][0]).toMatchObject({ type: 'swim', label: 'Swim', done: false });
+    expect(parsed.sessions['2026-01-06'][0].type).toBe('rest');
+    expect(parsed.sessions['2026-01-07'][0]).toMatchObject({ type: 'run', flag: 'Key session', done: true });
+  });
+
+  // Regression test: a `t="d"` (ISO 8601) date cell carries a plain
+  // "YYYY-MM-DD" string rather than a numeric serial. Before handling this,
+  // `Number("2026-01-05")` is NaN, so excelSerialToDateKey rejected every
+  // such row — silently dropping an otherwise well-formed plan down to "no
+  // dated rows found", i.e. nothing gets imported despite no visible parse
+  // error in the column structure itself.
+  it('parses a workbook whose Date column uses t="d" ISO date cells instead of numeric serials', async () => {
+    const rows = [
+      HEADER,
+      [isoDateCell('2026-01-05'), 1, 'Foundation', 'Swim', '', '', '', ''],
+      [isoDateCell('2026-01-06'), 1, 'Foundation', 'Run', '', '', '', ''],
+    ];
+    const file = await fakeFileWithSharedStrings(rows);
+    const parsed = await parseTrainingPlanWorkbook(file);
+
+    expect(parsed.meta.startDate).toBe('2026-01-05');
+    expect(parsed.sessions['2026-01-05'][0].label).toBe('Swim');
+    expect(parsed.sessions['2026-01-06'][0].label).toBe('Run');
   });
 });
 

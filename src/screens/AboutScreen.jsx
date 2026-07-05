@@ -170,9 +170,24 @@ function AboutScreen({
   // this just mirrors it into localProfile, which (unlike the other fields on
   // this screen) is only ever seeded from the `profile` prop at mount, so
   // without this it'd keep showing "no plan" here until the screen remounts.
-  const applyUploadedPlan = (parsed) => {
-    onUploadTrainingPlan?.(parsed);
+  //
+  // onUploadTrainingPlan returns a promise that resolves once the plan has
+  // actually been confirmed saved to Supabase (not just applied locally) —
+  // await it so a save failure (e.g. offline, or a backend error) surfaces
+  // as a real error here instead of silently looking like it worked and
+  // then reverting on the next reload.
+  const applyUploadedPlan = async (parsed) => {
     setLP(prev => ({ ...prev, hasEventTraining: true, eventTotalWeeks: parsed.meta?.totalWeeks || prev.eventTotalWeeks }));
+    try {
+      await onUploadTrainingPlan?.(parsed);
+      setImportState('idle');
+    } catch (err) {
+      setImportError(
+        `Your plan is showing, but saving it to your account failed (${err.message || 'unknown error'}). ` +
+        `It may not survive a reload — try uploading again once you're back online.`
+      );
+      setImportState('error');
+    }
   };
 
   const handleFileChange = async (e) => {
@@ -187,8 +202,7 @@ function AboutScreen({
         setPendingPlan(parsed);
         setImportState('confirm');
       } else {
-        applyUploadedPlan(parsed);
-        setImportState('idle');
+        await applyUploadedPlan(parsed);
       }
     } catch (err) {
       setImportError(err.message || "Couldn't read that file — check it matches the expected format.");
@@ -197,9 +211,9 @@ function AboutScreen({
   };
 
   const confirmImport = () => {
-    applyUploadedPlan(pendingPlan);
+    const parsed = pendingPlan;
     setPendingPlan(null);
-    setImportState('idle');
+    applyUploadedPlan(parsed);
   };
   const cancelImport = () => {
     setPendingPlan(null);

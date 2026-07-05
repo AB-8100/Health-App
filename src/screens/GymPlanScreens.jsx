@@ -5,6 +5,7 @@ import { ExerciseImage } from './ExerciseScreens';
 import { getTodayDateKey } from '../data/eventPlan';
 import { getSessionDisplay } from '../data/sessionDisplay';
 import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
+import { getEventSessionsForDate } from '../utils/eventDaySessions';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -1350,12 +1351,12 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   // does (per-day override wins, else the uploaded plan minus rest days) so
   // the Session tab shows real sessions instead of falling back to "rest"
   // just because there's no gym split or recurring activity configured.
+  // Previously this checked `hasEventTraining` before even looking at
+  // `eventOverrides`, so a manually-added one-off session (which the Weekly
+  // Overview allows regardless of whether a plan is uploaded) would show up
+  // there but silently not appear on the Session tab.
   const todayKey = getTodayDateKey();
-  const eventSessionsToday = hasEventTraining
-    ? (Object.prototype.hasOwnProperty.call(eventOverrides, todayKey)
-        ? eventOverrides[todayKey]
-        : (eventPhasePlan.sessions?.[todayKey] || []).filter(s => s.type !== 'rest'))
-    : [];
+  const eventSessionsToday = getEventSessionsForDate(todayKey, eventOverrides, eventPhasePlan.sessions, hasEventTraining);
   const todayEventActs = eventSessionsToday.map((s, i) => {
     const disp = getSessionDisplay(null, (s.type || 'other').toLowerCase());
     return {

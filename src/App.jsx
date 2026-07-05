@@ -813,10 +813,21 @@ function App() {
       eventTotalWeeks: parsed.meta?.totalWeeks || profile.eventTotalWeeks,
     };
     setProfileRaw(nextProfile);
-    setTimeout(() => scheduleSave({
+    const overrides = {
       eventPlan: parsed, eventOverrides: {}, planSessionsDone: {}, activities: {},
       plan: DEFAULT_PLAN, profile: nextProfile,
-    }), 0);
+    };
+    setTimeout(() => scheduleSave(overrides), 0);
+
+    // scheduleSave's remote write is fire-and-forget (debounced local cache
+    // + best-effort Supabase sync via scheduleSaveAll, whose failures are
+    // only console.warn'd) — a failure there is otherwise invisible: the
+    // plan looks uploaded, but never actually reaches Supabase, and the next
+    // real reload (or an evicted local cache) silently reverts to no plan /
+    // rest days. Explicitly await the write here so the caller (AboutScreen)
+    // can surface a real error instead of assuming success.
+    if (!currentUserIdRef.current) return Promise.resolve();
+    return saveUserData(currentUserIdRef.current, buildSnapshot(overrides));
   };
 
   if (authState === 'loading') {
