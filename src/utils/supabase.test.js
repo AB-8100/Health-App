@@ -146,3 +146,75 @@ describe('loadUserData — eventPlan reconstruction', () => {
     expect(result.eventPlan).toEqual({ meta: {}, phases: [], sessions: {} });
   });
 });
+
+describe('saveUserData — gym_sessions insert payload', () => {
+  // Regression test: a completed session's client-side `id` is
+  // Date.now().toString() (e.g. "1751721441186"), never a real uuid. The
+  // gym_sessions table's `id` column is `uuid primary key`, and sessions are
+  // saved via delete-then-insert, so sending that id as-is makes every
+  // insert fail *after* the user's prior sessions have already been
+  // deleted — silently emptying gym_sessions on every save. The fix omits
+  // `id` so Postgres's gen_random_uuid() default applies, the same way
+  // food_log/custom_foods rows already do for unsaved client-side ids.
+  it('never sends the client-generated session id as the row id', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const completedSessions = [
+      { id: Date.now().toString(), date: new Date().toISOString(), workout: 'Swim', elapsed: 600, distance: 400, queue: null },
+    ];
+    await saveUserData('user-1', { completedSessions });
+
+    const insertCall = builder.calls.find(([name]) => name === 'insert');
+    expect(insertCall).toBeTruthy();
+    const [, [rows]] = insertCall;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('id');
+    // The original client-side id must still round-trip via `raw` so the
+    // app can keep matching/editing/deleting by it after a reload.
+    expect(rows[0].raw.id).toBe(completedSessions[0].id);
+  });
+});
+
+describe('saveUserData — food_log/custom_foods insert payload', () => {
+  // Same class of bug as gym_sessions: a freshly-logged food entry's `id` is
+  // a client-generated Date.now().toString(), never a real uuid, and both
+  // tables' `id` columns are `uuid primary key`. Both are also saved via
+  // delete-then-insert, so sending the fake id makes the insert fail after
+  // the user's prior rows have already been deleted.
+  it('never sends the client-generated id for a food_log entry', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const foodLog = {
+      '2026-07-05': { entries: [
+        { id: Date.now().toString(), name: 'Toast', meal: 'breakfast', calories: 200, protein: 6, carbs: 30, fat: 4 },
+      ] },
+    };
+    await saveUserData('user-1', { foodLog });
+
+    const insertCall = builder.calls.find(([name]) => name === 'insert');
+    expect(insertCall).toBeTruthy();
+    const [, [rows]] = insertCall;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('id');
+    expect(rows[0]).toMatchObject({ food_name: 'Toast', user_id: 'user-1' });
+  });
+
+  it('never sends the client-generated id for a custom food', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const customFoods = [
+      { id: `custom_${Date.now()}`, name: 'Protein shake', calories: 180, protein: 30, carbs: 8, fat: 2 },
+    ];
+    await saveUserData('user-1', { customFoods });
+
+    const insertCall = builder.calls.find(([name]) => name === 'insert');
+    expect(insertCall).toBeTruthy();
+    const [, [rows]] = insertCall;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('id');
+    expect(rows[0]).toMatchObject({ name: 'Protein shake', user_id: 'user-1' });
+  });
+});

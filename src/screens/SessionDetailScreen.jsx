@@ -81,7 +81,8 @@ export function SessionDetailScreen({
                 <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 8 }}>{s.workout || 'Session'}</div>
                 <div style={{ display: 'flex', gap: 14, fontSize: 12.5, color: t.text2 }}>
                   {s.elapsed ? <span>⏱ {fmtElapsed(s.elapsed)}</span> : null}
-                  {s.distance ? <span>📏 {s.distance}km</span> : null}
+                  {s.distance != null ? <span>📏 {s.distance}{s.distanceUnit || 'km'}</span> : null}
+                  {s.lengths != null && s.poolLengthM != null ? <span>🏊 {s.lengths} × {s.poolLengthM}m</span> : null}
                 </div>
                 {exercisesDone.length > 0 && (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
