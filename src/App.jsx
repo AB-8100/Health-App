@@ -699,7 +699,14 @@ function App() {
     setScreen('gym-summary');
   };
 
-  const closeSummary = () => {
+  const closeSummary = (notes) => {
+    if (lastSession?.id && notes !== undefined) {
+      setCompletedSessions(prev => {
+        const next = prev.map(s => s.id === lastSession.id ? { ...s, notes } : s);
+        setTimeout(() => scheduleSave({ completedSessions: next }), 0);
+        return next;
+      });
+    }
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setScreen('gym-hub');
   };
