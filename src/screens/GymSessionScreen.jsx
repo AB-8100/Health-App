@@ -961,6 +961,7 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
   const queue = session?.queue || [];
   const elapsed = session?.elapsed || 0;
   const workout = session?.workout || 'Push day';
+  const [notes, setNotes] = React.useState(session?.notes || '');
 
   const exercisesDone = queue.filter(e => (e.sets||[]).some(s => s.done));
   const setsDone = queue.reduce((n,e) => n + (e.sets||[]).filter(s=>s.done).length, 0);
@@ -1116,6 +1117,7 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
             Session notes
           </div>
           <textarea placeholder="How did it feel? Any tweaks for next time?"
+            value={notes} onChange={e => setNotes(e.target.value)}
             style={{
               width:'100%', minHeight:64, border:'none', resize:'vertical',
               fontFamily:t.sans, fontSize:12.5, color:t.text,
@@ -1124,7 +1126,7 @@ function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', s
             }}/>
         </div>
 
-        <button onClick={onDone} style={{
+        <button onClick={() => onDone && onDone(notes)} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background: t.accent, color: t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
@@ -1158,6 +1160,7 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
   const unit = session?.distanceUnit || 'km';
   const hasDistance = session?.distance != null;
   const hasPool = session?.lengths != null && session?.poolLengthM != null;
+  const [notes, setNotes] = React.useState(session?.notes || '');
 
   const stats = [
     { label: 'Duration', value: fmtElapsedLong(elapsed), sub: 'time recorded', color: t.text },
@@ -1246,6 +1249,7 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
             Session notes
           </div>
           <textarea placeholder="How did it feel? Any tweaks for next time?"
+            value={notes} onChange={e => setNotes(e.target.value)}
             style={{
               width:'100%', minHeight:64, border:'none', resize:'vertical',
               fontFamily:t.sans, fontSize:12.5, color:t.text,
@@ -1254,7 +1258,7 @@ function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', ses
             }}/>
         </div>
 
-        <button onClick={onDone} style={{
+        <button onClick={() => onDone && onDone(notes)} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background: t.accent, color: t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
