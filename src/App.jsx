@@ -1050,7 +1050,8 @@ function App() {
                onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))}
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
-               onStartQuestionnaire={() => handleStartQuestionnaire('weekly')} />;
+               onStartQuestionnaire={() => handleStartQuestionnaire('weekly')}
+               completedSessions={completedSessions} />;
     if (s === 'session-detail')
       return <SessionDetailScreen width={contentW} height={contentH} theme={tweaks.theme}
                day={viewingDay}

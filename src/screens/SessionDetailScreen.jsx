@@ -3,7 +3,7 @@ import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { getSessionDisplay } from '../data/sessionDisplay';
 import { MarkCompleteSheet, EditSessionSheet } from './GymPlanScreens';
-import { findCompletedForActivity } from '../utils/sessionCompletion';
+import { findCompletedForActivity, completedDateKey } from '../utils/sessionCompletion';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -14,13 +14,6 @@ function fmtElapsed(totalSeconds = 0) {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
-}
-
-// A completed session's local calendar day, for matching against a plan
-// day's date key (which is itself a local-feeling YYYY-MM-DD string).
-function completedDateKey(s) {
-  const d = new Date(s.date || s.endedAt);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // Gym completions are logged under "<split day name> day" (see AddSessionSheet

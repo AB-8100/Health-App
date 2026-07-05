@@ -63,4 +63,26 @@ describe('buildWeekData', () => {
     const week = buildWeekData(1, noPlan, {}, {}, false, true, START_DATE, eventSessions);
     expect(week.filter(d => d.isToday).length).toBeLessThanOrEqual(1);
   });
+
+  it('marks a session as completed once a matching logged session exists for that date', () => {
+    const completedSessions = [
+      { workout: 'Swim', date: '2026-01-05T09:00:00.000Z' },
+    ];
+    const week = buildWeekData(1, noPlan, {}, {}, false, true, START_DATE, eventSessions, completedSessions);
+    expect(week[0].sessions[0]).toEqual(expect.objectContaining({ label: 'Swim', completed: true }));
+    // The Wednesday run has no matching completed entry, so it stays open.
+    expect(week[2].sessions[0]).toEqual(expect.objectContaining({ label: 'Run', completed: false }));
+  });
+
+  it('marks a gym session as completed when a completed entry for that day carries a logged exercise queue', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null };
+    const week = buildWeekData(1, plan, {}, {}, true, true, START_DATE, eventSessions);
+    const gymDayIdx = week.findIndex(day => day.sessions.some(s => s.source === 'gym'));
+    if (gymDayIdx === -1) return; // this split has no gym session on week 1 — nothing to assert
+    const gymDate = week[gymDayIdx].dk;
+    const completedSessions = [{ workout: 'irrelevant', date: `${gymDate}T09:00:00.000Z`, queue: [{ sets: [{ done: true }] }] }];
+    const withCompletion = buildWeekData(1, plan, {}, {}, true, true, START_DATE, eventSessions, completedSessions);
+    const gymSession = withCompletion[gymDayIdx].sessions.find(s => s.source === 'gym');
+    expect(gymSession.completed).toBe(true);
+  });
 });
