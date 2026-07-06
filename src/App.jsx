@@ -61,11 +61,33 @@ const ACTIVITY_DEFS = {
   dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
 };
 
-// Spreads selected activities across training days (capped at trainingDays.length).
-// Gym sessions are not stored in the activities state — they're tracked via plan.splitDays.
-// Returns { schedule, gymDayCount } so the caller can pick the right gym split.
+// Display metadata for regular sports added in Stage 2 (GoalsSetupScreen's
+// SPORT_TYPES list), mapped onto the same type/colour conventions as
+// SESSION_DISPLAY so they render consistently with everything else.
+const SPORT_META = {
+  Football:       { type: 'team_sport',   emoji: '⚽', color: '#DC2626' },
+  Basketball:     { type: 'team_sport',   emoji: '🏀', color: '#DC2626' },
+  Tennis:         { type: 'racket_sport', emoji: '🎾', color: '#F59E0B' },
+  Swimming:       { type: 'swim',         emoji: '🏊', color: '#0369A1' },
+  Cycling:        { type: 'cycle',        emoji: '🚴', color: '#9333EA' },
+  Running:        { type: 'run',          emoji: '🏃', color: '#0090FF' },
+  Rugby:          { type: 'team_sport',   emoji: '🏉', color: '#DC2626' },
+  CrossFit:       { type: 'conditioning', emoji: '💪', color: '#0D9488' },
+  'Martial Arts': { type: 'combat',       emoji: '🥊', color: '#B91C1C' },
+  Golf:           { type: 'other',        emoji: '⛳', color: '#4B5563' },
+  Hockey:         { type: 'team_sport',   emoji: '🏑', color: '#DC2626' },
+  Volleyball:     { type: 'team_sport',   emoji: '🏐', color: '#DC2626' },
+  Other:          { type: 'other',        emoji: '⚡', color: '#4B5563' },
+};
+
+// Spreads selected activities across training days and folds in any regular
+// sports added in Stage 2. Gym sessions are not stored in the activities
+// state — they're tracked via plan.splitDays/scheduleOverride instead, so we
+// return the specific day indices assigned to gym (gymDayIndices) alongside
+// the count, letting the caller align the split schedule to the days the
+// user actually picked rather than a fixed Mon/Wed/Fri-style template.
 function generateActivitySchedule(goalsPayload) {
-  const { goals = [], trainingDays = [], gymAccess = false } = goalsPayload;
+  const { goals = [], trainingDays = [], gymAccess = false, regularSports = [] } = goalsPayload;
   const generalGoal = goals.find(g => g.type === 'general_fitness');
   let selectedIds = [...(generalGoal?.config?.activities || [])];
 
@@ -74,35 +96,54 @@ function generateActivitySchedule(goalsPayload) {
     selectedIds = ['gym', ...selectedIds];
   }
 
-  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
-
-  // Only gym (or nothing selected) → all training days count as gym sessions
-  const nonGymActivities = selectedIds.filter(id => id !== 'gym');
-  if (!nonGymActivities.length) {
-    return { schedule: {}, gymDayCount: gymAccess ? trainingDays.length : 0 };
-  }
-
-  // Cycle through activity list (gym + others) across training days
   const schedule = {};
-  let gymDayCount = 0;
-
-  trainingDays.forEach((day, i) => {
-    const dayIdx = DAY_KEY_TO_IDX[day];
+  const addToSchedule = (dayIdx, entry) => {
     if (dayIdx === undefined) return;
-    const actId = selectedIds[i % selectedIds.length];
+    schedule[dayIdx] = [...(schedule[dayIdx] || []), entry];
+  };
 
-    if (actId === 'gym') {
-      gymDayCount++;
-      // Gym days are represented by plan.splitDays — no entry needed in activities
-    } else {
-      const def = ACTIVITY_DEFS[actId];
-      if (def) {
-        schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
-      }
-    }
+  // Regular sports are fixed weekly commitments the user explicitly added —
+  // they apply on their chosen day regardless of the training-days rotation.
+  regularSports.forEach((s, i) => {
+    const dayIdx = DAY_KEY_TO_IDX[s.day];
+    const meta   = SPORT_META[s.sport] || SPORT_META.Other;
+    addToSchedule(dayIdx, {
+      id: `sport-${dayIdx}-${i}`, type: meta.type, label: s.sport,
+      emoji: meta.emoji, color: meta.color, intensity: s.intensity,
+      isGym: false, source: 'generated',
+    });
   });
 
-  return { schedule, gymDayCount };
+  let gymDayIndices = [];
+  if (trainingDays.length) {
+    // Walk training days in weekday order (Mon→Sun) rather than selection
+    // order, so the rotation — and which days end up as gym days — lines up
+    // with how the week is actually displayed.
+    const orderedDays = [...trainingDays].sort((a, b) => DAY_KEY_TO_IDX[a] - DAY_KEY_TO_IDX[b]);
+    const nonGymActivities = selectedIds.filter(id => id !== 'gym');
+
+    if (!nonGymActivities.length) {
+      // Only gym (or nothing selected) → all training days count as gym sessions
+      gymDayIndices = gymAccess
+        ? orderedDays.map(d => DAY_KEY_TO_IDX[d]).filter(idx => idx !== undefined)
+        : [];
+    } else {
+      orderedDays.forEach((day, i) => {
+        const dayIdx = DAY_KEY_TO_IDX[day];
+        if (dayIdx === undefined) return;
+        const actId = selectedIds[i % selectedIds.length];
+
+        if (actId === 'gym') {
+          gymDayIndices.push(dayIdx);
+        } else {
+          const def = ACTIVITY_DEFS[actId];
+          if (def) addToSchedule(dayIdx, { id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' });
+        }
+      });
+    }
+  }
+
+  return { schedule, gymDayCount: gymDayIndices.length, gymDayIndices };
 }
 
 // Gym split is determined by how many gym sessions are in the weekly plan,
@@ -114,6 +155,20 @@ function getAutoSplitDays(gymDayCount) {
   if (gymDayCount === 3) return 3;
   if (gymDayCount === 4) return 4;
   return 5;
+}
+
+// Builds a scheduleOverride (7-slot array of split-day ids, '—' elsewhere) so
+// the gym split lands on the exact days the user selected as training days,
+// instead of the split template's fixed Mon/Wed/Fri-style pattern.
+function buildGymScheduleOverride(splitDays, gymDayIndices) {
+  if (!splitDays || !gymDayIndices?.length) return null;
+  const split = SPLITS[splitDays];
+  if (!split) return null;
+  const sched = ['—', '—', '—', '—', '—', '—', '—'];
+  gymDayIndices.forEach((dayIdx, i) => {
+    sched[dayIdx] = split.days[i % split.days.length].id;
+  });
+  return sched;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -472,8 +527,9 @@ function App() {
       (gp.regularSports || []).length > 0;
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
-    const { schedule: initialActivities, gymDayCount } = generateActivitySchedule({ ...gp, gymAccess });
+    const { schedule: initialActivities, gymDayCount, gymDayIndices } = generateActivitySchedule({ ...gp, gymAccess });
     const autoSplitDays = getAutoSplitDays(gymDayCount);
+    const scheduleOverride = buildGymScheduleOverride(autoSplitDays, gymDayIndices);
 
     const updatedProfile = {
       ...profile,
@@ -501,7 +557,7 @@ function App() {
     if (screenBeforeIntakeRef.current !== null) {
       const returnTo = screenBeforeIntakeRef.current;
       screenBeforeIntakeRef.current = null;
-      const nextPlan = { ...plan, splitDays: autoSplitDays };
+      const nextPlan = { ...plan, splitDays: autoSplitDays, scheduleOverride };
       const nextActivities = { ...activities, ...initialActivities };
       setProfileRaw(updatedProfile);
       setPlanRaw(nextPlan);
@@ -511,7 +567,7 @@ function App() {
       setTimeout(() => scheduleSave({ profile: updatedProfile, plan: nextPlan, activities: nextActivities }), 0);
       setScreen(returnTo);
     } else {
-      completeOnboarding(updatedProfile, initialActivities);
+      completeOnboarding(updatedProfile, initialActivities, scheduleOverride);
     }
   };
 
@@ -804,8 +860,8 @@ function App() {
     else setScreen(target);
   };
 
-  const completeOnboarding = (newProfile, initialActivities = {}) => {
-    const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
+  const completeOnboarding = (newProfile, initialActivities = {}, scheduleOverride = null) => {
+    const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {}, scheduleOverride };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setSettingsRaw(DEFAULT_SETTINGS);
