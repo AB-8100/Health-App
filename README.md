@@ -242,10 +242,21 @@ To deploy your own copy:
 3. Configure the required environment variables in the Vercel project settings (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_CLIENT_ID`, etc.)
 4. Push to `main` — Vercel deploys automatically
 
-If you use Supabase Auth (email confirmation, OAuth) or Google Identity
-Services, make sure your deployment domain is added to Supabase's Redirect
-URLs allow-list and Google Cloud Console's Authorized JavaScript origins,
-respectively.
+If you use Supabase Auth (email confirmation, OAuth) or Google Identity Services, make sure your Vercel deployment domain is added to Supabase's Redirect URLs allow-list and Google Cloud Console's Authorized JavaScript origins, respectively.
 
-A GitHub Actions workflow (`.github/workflows/deploy.yml`) also builds and
-deploys to GitHub Pages on every push to `main`, as a secondary target.
+---
+
+## AI plan generation (Claude API)
+
+The Stage 3 questionnaire (`DeepQuestionnaireScreen`) and the About Me screen can generate a full training plan by calling the Claude API — the questionnaire answers are assembled into a prompt (`src/utils/planPrompt.js`), sent to a Supabase Edge Function, and the JSON plan that comes back is stored in the `training_plans` table exactly like a manually-uploaded `.xlsx` plan is.
+
+The Anthropic API key must never reach the browser, so the call is proxied through a Supabase Edge Function (`supabase/functions/generate-training-plan`). One-time setup:
+
+1. Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and link it to your project: `supabase link --project-ref <your-project-ref>`
+2. Apply the new migration: `supabase db push` (or run `supabase/migrations/20260705_add_user_intake_preferences_mindset.sql` manually)
+3. Deploy the function: `supabase functions deploy generate-training-plan`
+4. Set your Anthropic API key as a secret (never as a `VITE_*` env var): `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
+
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are injected automatically for edge functions — no need to set those. Optionally set `ANTHROPIC_MODEL` (defaults to `claude-sonnet-5`) to pin a specific model.
+
+Supported race types are Sprint/Olympic/Half Ironman (70.3)/Full Ironman triathlons and 10K/Half Marathon/Marathon runs — "Generate with AI" is hidden for other goal types (5K, Cycling Sportive, Open Water Swim, Other), which aren't covered by the plan-generation rules.

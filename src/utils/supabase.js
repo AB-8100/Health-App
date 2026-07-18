@@ -287,7 +287,10 @@ export async function saveUserIntake(userId, intakePayload) {
     run_baseline:         intakePayload.runBaseline  ?? {},
     swim_baseline:        intakePayload.swimBaseline ?? {},
     bike_baseline:        intakePayload.bikeBaseline ?? {},
+    discipline_ranking:   intakePayload.disciplineRanking ?? [],
     availability:         intakePayload.availability ?? {},
+    preferences:          intakePayload.preferences ?? {},
+    mindset:              intakePayload.mindset ?? {},
     injury:               intakePayload.injury ?? {},
     completed_at:         intakePayload.completedAt ?? null,
     updated_at:           new Date().toISOString(),
@@ -304,13 +307,16 @@ export async function loadUserIntake(userId) {
   if (error && error.code !== 'PGRST116') throw error;
   if (!data) return null;
   return {
-    status:       data.status,
-    completedAt:  data.completed_at,
-    runBaseline:  data.run_baseline  ?? {},
-    swimBaseline: data.swim_baseline ?? {},
-    bikeBaseline: data.bike_baseline ?? {},
-    availability: data.availability  ?? {},
-    injury:       data.injury        ?? {},
+    status:             data.status,
+    completedAt:        data.completed_at,
+    runBaseline:        data.run_baseline  ?? {},
+    swimBaseline:       data.swim_baseline ?? {},
+    bikeBaseline:       data.bike_baseline ?? {},
+    disciplineRanking:  data.discipline_ranking ?? [],
+    availability:       data.availability  ?? {},
+    preferences:        data.preferences   ?? {},
+    mindset:            data.mindset       ?? {},
+    injury:             data.injury        ?? {},
   };
 }
 
@@ -321,7 +327,16 @@ export async function loadUserGoals(userId) {
     .eq('user_id', userId)
     .single();
   if (error && error.code !== 'PGRST116') throw error;
-  return data ?? null;
+  if (!data) return null;
+  return {
+    goals:                  data.goals ?? [],
+    trainingDaysPerWeek:    data.training_days_per_week ?? null,
+    unavailableDays:        data.unavailable_days ?? [],
+    gymAccess:              data.gym_access ?? false,
+    poolAccess:             data.pool_access ?? false,
+    poolDays:               data.pool_days ?? [],
+    regularSports:          data.regular_sports ?? [],
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
