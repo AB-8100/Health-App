@@ -26,3 +26,23 @@ export function findCompletedForActivity(act, todaysCompleted = []) {
 export function getUnmatchedCompletions(todayActs = [], todaysCompleted = []) {
   return todaysCompleted.filter(s => !todayActs.some(act => act.label === s.workout));
 }
+
+// A completed session's local calendar day, for matching against a plan
+// day's date key (which is itself a local-feeling YYYY-MM-DD string).
+export function completedDateKey(s) {
+  const d = new Date(s.date || s.endedAt);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Whether a scheduled session (from a Weekly Overview day) has a matching
+// logged entry among that same day's completed sessions. Gym completions
+// aren't labelled the same way as the scheduled gym session (split day name
+// vs. "<name> day"), so a gym session is considered done as soon as any
+// completed entry for the day carries logged exercises; non-gym sessions
+// are matched by workout label instead.
+export function isSessionCompleted(sess, completedForDay = []) {
+  if (sess.source === 'gym') {
+    return completedForDay.some(s => Array.isArray(s.queue) && s.queue.length > 0);
+  }
+  return completedForDay.some(s => s.workout === sess.label);
+}

@@ -646,6 +646,132 @@ function NumberInput({ value, onChange, step = 1, prefix = '', suffix = '', them
 }
 
 // ────────────────────────────────────────────────────────────
+// Swim-specific distance input — lets the swimmer log either a pool length
+// plus a number of lengths (which auto-calculates total distance) or a plain
+// distance, with a metre/km toggle so short pool swims and long open-water
+// swims both read naturally.
+function SwimDistanceFields({ theme, initial = {}, onChange }) {
+  const t = themes[theme];
+  const [unit, setUnit]               = React.useState(initial.distanceUnit || 'm');
+  const [poolLength, setPoolLength]   = React.useState(initial.poolLengthM != null ? String(initial.poolLengthM) : '');
+  const [lengths, setLengths]         = React.useState(initial.lengths != null ? String(initial.lengths) : '');
+  const [manualDistance, setManualDistance] = React.useState(initial.distance != null ? String(initial.distance) : '');
+
+  const usingPool = poolLength !== '' && lengths !== '';
+  const computedMetres = usingPool ? (parseFloat(poolLength) || 0) * (parseFloat(lengths) || 0) : null;
+  const computedDistance = computedMetres != null
+    ? Number((unit === 'km' ? computedMetres / 1000 : computedMetres).toFixed(3))
+    : null;
+
+  React.useEffect(() => {
+    onChange({
+      distance: usingPool ? computedDistance : (manualDistance !== '' ? Number(manualDistance) : null),
+      distanceUnit: unit,
+      poolLengthM: poolLength !== '' ? Number(poolLength) : null,
+      lengths: lengths !== '' ? Number(lengths) : null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit, poolLength, lengths, manualDistance]);
+
+  // Convert a manually-typed distance when the unit is flipped, so "5" (km)
+  // becomes "5000" (m) instead of silently changing meaning.
+  const switchUnit = (next) => {
+    if (next === unit) return;
+    if (!usingPool && manualDistance !== '') {
+      const val = parseFloat(manualDistance);
+      if (!isNaN(val)) {
+        const converted = next === 'km' ? val / 1000 : val * 1000;
+        setManualDistance(String(Number(converted.toFixed(3))));
+      }
+    }
+    setUnit(next);
+  };
+
+  const inputStyle = {
+    padding: '9px 12px', borderRadius: 10, border: `1px solid ${t.border}`,
+    background: t.surface2, fontFamily: t.mono, fontSize: 15, color: t.text,
+    outline: 'none', width: '100%', boxSizing: 'border-box',
+  };
+  const labelStyle = { fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={labelStyle}>Distance unit</div>
+        <div style={{ display: 'flex', background: t.surface2, borderRadius: 10, padding: 3, border: `1px solid ${t.border}` }}>
+          {[['m', 'Metres'], ['km', 'Kilometres']].map(([val, label]) => (
+            <button key={val} type="button" onClick={() => switchUnit(val)} style={{
+              flex: 1, padding: '7px 8px', borderRadius: 8,
+              background: unit === val ? t.bg : 'transparent',
+              border: unit === val ? `1px solid ${t.border}` : '1px solid transparent',
+              color: unit === val ? t.text : t.text2,
+              fontFamily: t.sans, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={labelStyle}>Pool length (m)</div>
+          <input type="number" min="0" step="1" placeholder="e.g. 25" value={poolLength}
+            onChange={e => setPoolLength(e.target.value)} style={inputStyle} />
+        </div>
+        <div>
+          <div style={labelStyle}>Lengths</div>
+          <input type="number" min="0" step="1" placeholder="e.g. 16" value={lengths}
+            onChange={e => setLengths(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+
+      <div>
+        <div style={labelStyle}>
+          Distance ({unit}) {usingPool && <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none' }}>— auto-calculated</span>}
+        </div>
+        {usingPool ? (
+          <div style={{ ...inputStyle, color: t.text2, background: t.surface }}>
+            {computedDistance ?? 0}{unit}
+          </div>
+        ) : (
+          <input type="number" min="0" step="0.01" placeholder={unit === 'km' ? 'e.g. 3.8' : 'e.g. 800'}
+            value={manualDistance} onChange={e => setManualDistance(e.target.value)} style={inputStyle} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// RPE (Rate of Perceived Exertion) picker — how hard a session felt, 1 (very
+// easy) to 10 (max effort). Optional everywhere it appears.
+function RpeField({ theme, value, onChange }) {
+  const t = themes[theme];
+  const labelStyle = { fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 };
+
+  return (
+    <div>
+      <div style={labelStyle}>
+        RPE <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— optional, how hard did it feel (1–10)</span>
+      </div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map(n => {
+          const active = value === n;
+          return (
+            <button key={n} type="button" onClick={() => onChange(active ? null : n)} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8,
+              border: active ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+              background: active ? t.accent : t.surface,
+              color: active ? t.accentText : t.text2,
+              fontFamily: t.mono, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}>{n}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Generic elapsed-time timer for non-gym sessions (run, swim, rugby, ...) —
 // no exercise queue, just start/pause/stop with an optional distance on finish.
 function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', session, setSession, onFinish, onDiscard, onNav,
@@ -653,9 +779,12 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
   const t = themes[theme];
   const elapsed = session.elapsed || 0;
   const paused  = session.paused  || false;
+  const isSwim  = session.type === 'swim';
   const [showFinish, setShowFinish]   = React.useState(false);
   const [showDiscard, setShowDiscard] = React.useState(false);
   const [distance, setDistance]       = React.useState('');
+  const [swimExtras, setSwimExtras]   = React.useState({ distance: null, distanceUnit: 'm', poolLengthM: null, lengths: null });
+  const [rpe, setRpe]                 = React.useState(null);
 
   const fmt = (s) => {
     const h = Math.floor(s / 3600);
@@ -742,11 +871,20 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
               Finish {session.workout || 'session'}?
             </div>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 }}>
-                Distance (km) <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none' }}>— optional</span>
-              </div>
-              <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
-                onChange={e => setDistance(e.target.value)} style={inputStyle} />
+              {isSwim ? (
+                <SwimDistanceFields theme={theme} onChange={setSwimExtras} />
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: t.text3, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .4 }}>
+                    Distance (km) <span style={{ color: t.text3, fontWeight: 400, textTransform: 'none' }}>— optional</span>
+                  </div>
+                  <input type="number" min="0" step="0.1" placeholder="e.g. 5.0" value={distance}
+                    onChange={e => setDistance(e.target.value)} style={inputStyle} />
+                </>
+              )}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <RpeField theme={theme} value={rpe} onChange={setRpe} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setShowFinish(false)} style={{
@@ -754,7 +892,7 @@ function ActivityTimerScreen({ width = 390, height = 820, theme = 'light', sessi
                 border: `1px solid ${t.border}`, color: t.text2, fontFamily: t.sans, fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>Keep going</button>
               <button
-                onClick={() => onFinish({ distance: distance !== '' ? Number(distance) : null })}
+                onClick={() => onFinish({ ...(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' }), rpe })}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 12, border: 'none',
                   background: t.green, color: '#fff', fontFamily: t.sans, fontSize: 13, fontWeight: 700, cursor: 'pointer',
@@ -843,12 +981,22 @@ function PlaceholderScreen({ width, height, theme, screen, onNav, tracksCycle = 
 
 // ────────────────────────────────────────────────────────────
 // Post-session summary screen
-function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session, onDone, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
+function GymSummaryScreen(props) {
+  const { session } = props;
+  const isGym = Array.isArray(session?.queue) && session.queue.length > 0;
+  if (!isGym) return <ActivitySummaryScreen {...props} />;
+  return <GymWorkoutSummaryScreen {...props} />;
+}
+
+// Post-session summary for a completed gym workout — sets/reps/weight/PRs.
+function GymWorkoutSummaryScreen({ width = 390, height = 820, theme = 'light', session, onDone, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
   const t = themes[theme];
   const fmt = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
   const queue = session?.queue || [];
   const elapsed = session?.elapsed || 0;
   const workout = session?.workout || 'Push day';
+  const [notes, setNotes] = React.useState(session?.notes || '');
+  const [rpe, setRpe] = React.useState(session?.rpe ?? null);
 
   const exercisesDone = queue.filter(e => (e.sets||[]).some(s => s.done));
   const setsDone = queue.reduce((n,e) => n + (e.sets||[]).filter(s=>s.done).length, 0);
@@ -992,6 +1140,14 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
           })}
         </div>
 
+        {/* RPE */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:14
+        }}>
+          <RpeField theme={theme} value={rpe} onChange={setRpe} />
+        </div>
+
         {/* Notes */}
         <div style={{
           background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
@@ -1004,6 +1160,7 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
             Session notes
           </div>
           <textarea placeholder="How did it feel? Any tweaks for next time?"
+            value={notes} onChange={e => setNotes(e.target.value)}
             style={{
               width:'100%', minHeight:64, border:'none', resize:'vertical',
               fontFamily:t.sans, fontSize:12.5, color:t.text,
@@ -1012,7 +1169,7 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
             }}/>
         </div>
 
-        <button onClick={onDone} style={{
+        <button onClick={() => onDone && onDone({ notes, rpe })} style={{
           width:'100%', padding:'14px', borderRadius:13,
           background: t.accent, color: t.accentText,
           border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
@@ -1027,4 +1184,145 @@ function GymSummaryScreen({ width = 390, height = 820, theme = 'light', session,
   );
 }
 
-export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen, NumberInput };
+function fmtElapsedLong(s = 0) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+    : `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+// Post-session summary for a completed non-gym activity (run, swim, yoga,
+// ...) — shows only what was actually logged (duration/distance/pool
+// lengths), never gym sets/reps/weight/PR fields.
+function ActivitySummaryScreen({ width = 390, height = 820, theme = 'light', session, onDone, onNav, tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false }) {
+  const t = themes[theme];
+  const elapsed = session?.elapsed || 0;
+  const workout = session?.workout || 'Session';
+  const unit = session?.distanceUnit || 'km';
+  const hasDistance = session?.distance != null;
+  const hasPool = session?.lengths != null && session?.poolLengthM != null;
+  const [notes, setNotes] = React.useState(session?.notes || '');
+  const [rpe, setRpe] = React.useState(session?.rpe ?? null);
+
+  const stats = [
+    { label: 'Duration', value: fmtElapsedLong(elapsed), sub: 'time recorded', color: t.text },
+  ];
+  if (hasDistance) {
+    stats.push({ label: 'Distance', value: `${session.distance}${unit}`, sub: hasPool ? 'total logged' : 'logged', color: t.accent });
+  }
+  if (hasPool) {
+    stats.push({ label: 'Pool', value: `${session.lengths} × ${session.poolLengthM}m`, sub: 'lengths swum', color: t.green });
+  }
+
+  const subline = [
+    fmtElapsedLong(elapsed) + ' elapsed',
+    hasDistance ? `${session.distance}${unit} logged` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div style={{
+      width, height, background:t.bg, fontFamily:t.sans, color:t.text,
+      display:'flex', flexDirection:'column', overflow:'hidden', position:'relative'
+    }}>
+      <div style={{
+        height:44, display:'flex', alignItems:'flex-end', justifyContent:'space-between',
+        padding:'0 22px 8px', fontSize:14, fontWeight:600
+      }}>
+        <span>9:41</span>
+        <div style={{ display:'flex', gap:5, alignItems:'center', fontSize:11 }}>
+          <span>●●●</span><span>📶</span><span>🔋</span>
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:'auto', padding:'14px 20px 16px' }} className="phone-scroll">
+
+        {/* Celebrate header */}
+        <div style={{ textAlign:'center', padding:'14px 0 22px' }}>
+          <div style={{
+            width:56, height:56, borderRadius:'50%',
+            background:`linear-gradient(135deg, ${t.green}, ${t.accent})`,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            margin:'0 auto 12px', fontSize:26, color:'#fff',
+            boxShadow: `0 8px 24px ${t.accent}30`
+          }}>✓</div>
+          <div style={{
+            fontSize:10.5, letterSpacing:'.18em', textTransform:'uppercase',
+            color:t.text3, marginBottom:4, fontWeight:500
+          }}>
+            Session complete
+          </div>
+          <div style={{ fontFamily:t.serif, fontSize:30, color:t.text, lineHeight:1.1, marginBottom:5 }}>
+            {workout}
+          </div>
+          <div style={{ fontSize:12, color:t.text2 }}>{subline}</div>
+        </div>
+
+        {/* Big stats */}
+        <div style={{
+          display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:8, marginBottom:14
+        }}>
+          {stats.map((s,i) => (
+            <div key={i} style={{
+              background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+              padding:'12px 14px'
+            }}>
+              <div style={{
+                fontSize:9.5, letterSpacing:'.12em', color:t.text3,
+                textTransform:'uppercase', marginBottom:4
+              }}>{s.label}</div>
+              <div style={{
+                fontFamily:t.serif, fontSize:24, color:s.color, lineHeight:1,
+                fontVariantNumeric:'tabular-nums'
+              }}>{s.value}</div>
+              <div style={{ fontSize:10, color:t.text3, marginTop:3 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* RPE */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:14
+        }}>
+          <RpeField theme={theme} value={rpe} onChange={setRpe} />
+        </div>
+
+        {/* Notes */}
+        <div style={{
+          background:t.surface, border:`1px solid ${t.border}`, borderRadius:14,
+          padding:'12px 14px', marginBottom:14
+        }}>
+          <div style={{
+            fontSize:10, letterSpacing:'.16em', textTransform:'uppercase',
+            color:t.text3, marginBottom:6
+          }}>
+            Session notes
+          </div>
+          <textarea placeholder="How did it feel? Any tweaks for next time?"
+            value={notes} onChange={e => setNotes(e.target.value)}
+            style={{
+              width:'100%', minHeight:64, border:'none', resize:'vertical',
+              fontFamily:t.sans, fontSize:12.5, color:t.text,
+              background:'transparent', outline:'none',
+              lineHeight:1.5
+            }}/>
+        </div>
+
+        <button onClick={() => onDone && onDone({ notes, rpe })} style={{
+          width:'100%', padding:'14px', borderRadius:13,
+          background: t.accent, color: t.accentText,
+          border:'none', fontFamily:t.sans, fontSize:14, fontWeight:600,
+          cursor:'pointer'
+        }}>
+          Save & back to home
+        </button>
+      </div>
+
+      <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
+    </div>
+  );
+}
+
+export { GYM_QUEUE, GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen, NumberInput, SwimDistanceFields, RpeField };
