@@ -1,7 +1,25 @@
 import React from 'react';
 import themes from '../data/themes';
+import { isTriathlonRaceType } from '../utils/raceTargets';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+const DISCIPLINE_META = {
+  swim:  { icon: '🏊', label: 'Swim' },
+  bike:  { icon: '🚴', label: 'Bike' },
+  run:   { icon: '🏃', label: 'Run' },
+  other: { icon: '🏁', label: 'Training sessions' },
+};
+
+// Which discipline frequency inputs to show for a given race type — the
+// race's own discipline(s), not the general "regular sports" list.
+function disciplinesForRaceType(raceType) {
+  if (isTriathlonRaceType(raceType)) return ['swim', 'bike', 'run'];
+  if (raceType === 'Cycling Sportive') return ['bike'];
+  if (raceType === 'Open Water Swim') return ['swim'];
+  if (raceType === 'Other' || !raceType) return ['other'];
+  return ['run']; // 5K / 10K / Half Marathon / Marathon
+}
 
 const GOAL_TYPES = [
   { id: 'event_race',         label: 'Race / Event',       sub: 'Train for a specific race or event',    icon: '🏁' },
@@ -53,7 +71,14 @@ const RANK_COLOURS = ['#BE5A38', '#6D4AAF', '#15803D'];
 // ─── Default per-type config ──────────────────────────────────────────────────
 
 const DEFAULT_CONFIG = {
-  event_race:         { raceType: '', raceDate: '', fitnessLevel: '' },
+  event_race:         {
+    raceType: '', raceDate: '', fitnessLevel: '',
+    disciplineFrequency: {},     // { swim, bike, run } or { other } — times/week per discipline
+    hasTargetTime: null,         // true | false — must be explicitly answered, never silently skipped
+    targetTimeHours: '', targetTimeMinutes: '', targetTimeSeconds: null,
+    hasCutoffTime: null,         // true | false
+    cutoffTimeHours: '', cutoffTimeMinutes: '', cutoffTimeSeconds: null,
+  },
   strength_programme: { focus: '' },
   sport_activity:     { sportType: '', daysPerWeek: 2, intensity: 'Moderate' },
   general_fitness:    { activities: [] },
@@ -109,7 +134,14 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
     if (current === 'select') return selectedGoals.length >= 1;
     if (current === 'config_event_race') {
       const cfg = goalConfigs['event_race'] || {};
-      return !!(cfg.raceType && cfg.raceDate && cfg.fitnessLevel);
+      if (!(cfg.raceType && cfg.raceDate && cfg.fitnessLevel)) return false;
+      // Target/cutoff time must be explicitly answered (yes or no) — never
+      // silently skipped past — and a "yes" needs an actual time entered.
+      if (cfg.hasTargetTime === null || cfg.hasTargetTime === undefined) return false;
+      if (cfg.hasTargetTime && !(cfg.targetTimeSeconds > 0)) return false;
+      if (cfg.hasCutoffTime === null || cfg.hasCutoffTime === undefined) return false;
+      if (cfg.hasCutoffTime && !(cfg.cutoffTimeSeconds > 0)) return false;
+      return true;
     }
     if (current === 'config_strength_programme') {
       return !!(goalConfigs['strength_programme']?.focus);
@@ -426,6 +458,89 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
                 })}
               </div>
             </GField>
+
+            {(() => {
+              const eventCfg = goalConfigs['event_race'] || {};
+              const raceDisciplines = disciplinesForRaceType(eventCfg.raceType);
+
+              const setFrequency = (discipline, n) => updateConfig('event_race', {
+                disciplineFrequency: { ...(eventCfg.disciplineFrequency || {}), [discipline]: n },
+              });
+
+              const setTargetTime = (hours, minutes) => {
+                const h = hours !== undefined ? hours : eventCfg.targetTimeHours;
+                const m = minutes !== undefined ? minutes : eventCfg.targetTimeMinutes;
+                const seconds = (parseInt(h, 10) || 0) * 3600 + (parseInt(m, 10) || 0) * 60;
+                updateConfig('event_race', {
+                  targetTimeHours: h, targetTimeMinutes: m,
+                  targetTimeSeconds: seconds > 0 ? seconds : null,
+                });
+              };
+              const setCutoffTime = (hours, minutes) => {
+                const h = hours !== undefined ? hours : eventCfg.cutoffTimeHours;
+                const m = minutes !== undefined ? minutes : eventCfg.cutoffTimeMinutes;
+                const seconds = (parseInt(h, 10) || 0) * 3600 + (parseInt(m, 10) || 0) * 60;
+                updateConfig('event_race', {
+                  cutoffTimeHours: h, cutoffTimeMinutes: m,
+                  cutoffTimeSeconds: seconds > 0 ? seconds : null,
+                });
+              };
+
+              return (
+                <>
+                  <GField label="How often do you want to train each discipline?" t={t}>
+                    {raceDisciplines.map(disc => {
+                      const meta = DISCIPLINE_META[disc];
+                      const freq = eventCfg.disciplineFrequency?.[disc] ?? 2;
+                      return (
+                        <div key={disc} style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 12, color: t.text2, marginBottom: 6 }}>
+                            {meta.icon} {meta.label} — times/week
+                          </div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {[1, 2, 3, 4, 5, 6, 7].map(n => {
+                              const active = freq === n;
+                              return (
+                                <button key={n} onClick={() => setFrequency(disc, n)} style={{
+                                  flex: 1, padding: '9px 0', borderRadius: 9,
+                                  background: active ? t.text : t.surface,
+                                  color: active ? (theme === 'dark' ? t.bg : '#fff') : t.text,
+                                  border: `1px solid ${active ? t.text : t.border}`,
+                                  fontFamily: t.serif, fontSize: 14, cursor: 'pointer',
+                                }}>{n}</button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </GField>
+
+                  <GField label="Do you have a target finish time in mind?" t={t}>
+                    <YesNoRow value={eventCfg.hasTargetTime} onChange={v => updateConfig('event_race', { hasTargetTime: v })} t={t} />
+                    {eventCfg.hasTargetTime && (
+                      <HoursMinutesInput
+                        hours={eventCfg.targetTimeHours} minutes={eventCfg.targetTimeMinutes}
+                        onChange={setTargetTime} t={t}
+                      />
+                    )}
+                  </GField>
+
+                  <GField label="Does this race have a cutoff or qualifying time you need to meet?" t={t}>
+                    <div style={{ fontSize: 11.5, color: t.text3, marginBottom: 8, lineHeight: 1.4 }}>
+                      Some races require finishing within a set time limit.
+                    </div>
+                    <YesNoRow value={eventCfg.hasCutoffTime} onChange={v => updateConfig('event_race', { hasCutoffTime: v })} t={t} />
+                    {eventCfg.hasCutoffTime && (
+                      <HoursMinutesInput
+                        hours={eventCfg.cutoffTimeHours} minutes={eventCfg.cutoffTimeMinutes}
+                        onChange={setCutoffTime} t={t}
+                      />
+                    )}
+                  </GField>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -875,6 +990,54 @@ function GField({ label, t, children }) {
         color: t.text3, fontWeight: 500, marginBottom: 8,
       }}>{label}</div>
       {children}
+    </div>
+  );
+}
+
+function YesNoRow({ value, onChange, t }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {[['Yes', true], ['No', false]].map(([label, v]) => {
+        const active = value === v;
+        return (
+          <button key={label} onClick={() => onChange(v)} style={{
+            flex: 1, padding: '10px 0', borderRadius: 10,
+            background: active ? t.accent + '15' : t.surface,
+            border: `1.5px solid ${active ? t.accent : t.border}`,
+            color: active ? t.accent : t.text,
+            fontFamily: t.sans, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+          }}>{label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+const HOUR_OPTIONS = Array.from({ length: 13 }, (_, i) => i); // 0–12
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => i); // 0–59
+
+function HoursMinutesInput({ hours, minutes, onChange, t }) {
+  const selectSt = {
+    width: '100%', padding: '10px 8px', borderRadius: 9,
+    border: `1px solid ${t.border2}`, background: t.surface,
+    fontFamily: t.sans, fontSize: 13, color: t.text, outline: 'none',
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+      <div>
+        <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Hours</div>
+        <select value={hours || ''} onChange={e => onChange(e.target.value, undefined)} style={selectSt}>
+          <option value="">–</option>
+          {HOUR_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </div>
+      <div>
+        <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Minutes</div>
+        <select value={minutes || ''} onChange={e => onChange(undefined, e.target.value)} style={selectSt}>
+          <option value="">–</option>
+          {MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
     </div>
   );
 }

@@ -484,8 +484,20 @@ function App() {
   };
 
   // Called when Stage 3 (DeepQuestionnaire) completes or is skipped
-  const handleIntakeComplete = (intakePayload, skipped) => {
-    const gp = pendingGoalsPayload || {};
+  const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch) => {
+    let gp = pendingGoalsPayload || {};
+    // A confirmed (possibly user-edited) target pace/split from the
+    // pace_confirm step belongs on the event_race goal itself — both the
+    // rule-based scheduler and the AI prompt read it from there — so merge
+    // it in before anything below reads `gp.goals`.
+    if (goalConfigPatch) {
+      gp = {
+        ...gp,
+        goals: (gp.goals || []).map(g =>
+          g.type === 'event_race' ? { ...g, config: { ...g.config, ...goalConfigPatch } } : g
+        ),
+      };
+    }
     const primaryGoalType = gp.goals?.[0]?.type ?? '';
     const hasEvent = gp.goals?.some(g => g.type === 'event_race');
     const hasTrainingActivities =
@@ -507,12 +519,18 @@ function App() {
       intakeCompleted: !skipped,
     };
 
-    // Persist intake to Supabase
+    // Persist intake, and re-save goals if the pace_confirm step added
+    // target paces after Stage 2's own save already ran, to Supabase
     if (currentUserIdRef.current) {
       saveUserIntake(currentUserIdRef.current, intakePayload)
         .catch(e => console.warn('Forma: intake save failed', e));
+      if (goalConfigPatch) {
+        saveUserGoals(currentUserIdRef.current, gp)
+          .catch(e => console.warn('Forma: goals save failed', e));
+      }
     }
     setIntakePayload(intakePayload);
+    setGoalsPayload(gp);
 
     setPendingGoalsPayload(null);
 
