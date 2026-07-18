@@ -1,143 +1,71 @@
-# Forma — Personal Health Tracker
+# Forma agentic build pipeline
 
-A personal health and training tracker that runs entirely in the browser. No backend, no subscription. Your data is stored locally in your browser.
-
----
-
-## What is Forma?
-
-Forma is a React app (built with Vite) that tracks:
-
-- **Training** — workout planning, in-session set/rep logging, and post-session summaries
-- **Activity** — non-gym sessions like runs, yoga, and hikes alongside your training calendar
-- **Health metrics** — steps, protein intake, and sleep via ring visualisations
-- **Coaching nudges** — context-aware daily focus cards (workout targets, nutrition, recovery)
-- **Cycle-aware coaching** — optional cycle tracking that adjusts content for hormonal context
-
-It is designed to feel like a native iPhone app and is deployed to Vercel.
-
----
-
-## Live app
-
-**[https://health-app-two-nu.vercel.app](https://health-app-two-nu.vercel.app)**
-
----
-
-## Architecture
-
-The app is a single-page React application with no router and no backend. All screens are React components swapped in and out via a `screen` state string in the top-level `App` component. Navigation is `setScreen('gym-hub')`.
-
-Data is persisted to `localStorage` under the key `forma_data` as a JSON snapshot. A 1-second debounce (`scheduleSaveLocal`) prevents excessive writes.
+Drop this into the `Health-App` repo root. Three stages, two mandatory
+human checkpoints (spec review + risk-flagged PRs), everything else runs
+unattended.
 
 ```
-src/
-├── main.jsx                        ← React entry point
-├── App.jsx                         ← Root component, all top-level state, navigation
-├── index.css                       ← Global styles, phone frame, dark theme
-├── data/
-│   └── themes.js                   ← Light/dark colour token maps
-├── utils/
-│   └── storage.js                  ← localStorage helpers (load, save, debounced save)
-├── components/
-│   ├── SharedUI.jsx                ← Shared UI primitives (AnimatedNumber, StackedRings, PulseDot, BottomNav)
-│   └── tweaks/
-│       └── TweaksPanel.jsx         ← Dev-only floating panel for switching theme/screen
-└── screens/
-    ├── HomeScreen.jsx              ← Home dashboard: coach card, rings, session history
-    ├── GymSessionScreen.jsx        ← Live workout tracker + post-session summary
-    ├── GymPlanScreens.jsx          ← Gym Hub, Split picker, Session editor, Day activities
-    ├── ExerciseScreens.jsx         ← Exercise library + ExerciseImage component
-    ├── FoodScreen.jsx              ← Weekly macro tracker
-    ├── OnboardingScreen.jsx        ← First-run setup wizard
-    └── AboutScreen.jsx             ← Profile and settings editor
+features/ideas.md  →  [plan.yml]  →  features/backlog.md (PR)
+                                          │ you: edit/merge
+                                          ▼
+                    [spec.yml]  →  features/specs/*.md (PR)
+                                          │ you: review — mandatory checkpoint
+                                          ▼
+                    [build.yml]  →  feature branch, Vitest + Playwright,
+                                     auto-merge if green + not risk-flagged,
+                                     needs-human-review label otherwise
+                                          ▼
+                    existing deploy.yml (unchanged) → GitHub Pages
 ```
 
----
+## One-time setup
 
-## Key state in `App`
+1. Copy `docs/PROJECT_CONTEXT.md` and `docs/PRODUCT_STRATEGY.md` into the
+   repo at those exact paths — the agents read them directly, they aren't
+   passed in as prompt text.
+2. Copy `CLAUDE.md` to the repo root.
+3. Copy `features/`, `.github/workflows/`, `playwright.config.js`, and
+   `tests/e2e/` in as-is.
+4. Add repo secrets: `ANTHROPIC_API_KEY`, `TEST_USER_EMAIL`,
+   `TEST_USER_PASSWORD` (see `tests/e2e/README.md` for what the test user
+   needs).
+5. Add to `package.json`:
+   ```json
+   "devDependencies": {
+     "@playwright/test": "^1.48.0"
+   },
+   "scripts": {
+     "test:e2e": "playwright test"
+   }
+   ```
+6. Run `npx playwright install --with-deps chromium` once locally to confirm
+   the smoke suite passes against your current build before wiring it into CI.
 
-| State | Purpose |
-|---|---|
-| `screen` | Which screen is visible (`'home'`, `'gym-hub'`, `'gym-session'`, etc.) |
-| `profile` | User data: name, age, sex, goal, splitDays |
-| `plan` | Training plan: split frequency, today's index, day-level overrides |
-| `session` | Live workout: active/paused flag, elapsed seconds, exercise queue |
-| `activities` | Per day-of-week non-gym activities (runs, yoga, hikes) |
-| `foodLog` | Daily food entries keyed by date string |
-| `completedSessions` | Array of finished workout sessions |
+## Using it day to day
 
----
+- Add ideas to `features/ideas.md`, push. Review the resulting backlog PR —
+  this is where you catch things like "streaks and badges" quietly not
+  fitting the strategy doc before any code gets written.
+- Merge the backlog PR. Review the resulting spec PR — this is the one
+  checkpoint that matters most, since every downstream stage inherits from
+  what's written here.
+- Merge the spec PR. Each spec builds on its own branch; PRs land labeled
+  either `auto-merge-eligible` (merges itself once checks pass) or
+  `needs-human-review` (touches auth/Supabase schema, or tests didn't pass
+  after 3 attempts).
+- Deploy is unchanged — your existing `deploy.yml` still fires on push to
+  `main` exactly as it does today.
 
-## Screens
+## Caveats worth keeping in mind
 
-### `HomeScreen` — Dashboard
-The main screen. Shows a rotating coach card, activity rings (Steps / Protein / Sleep), sessions-this-week sparkline, and today's planned session. Tapping the session card starts a workout.
-
-### `GymSessionScreen` — Live tracker
-Manages the active workout. Set/rep inputs per exercise, a rest countdown after each logged set, pause/resume, and an end-session confirmation. After finishing, routes to `GymSummaryScreen`.
-
-### `GymPlanScreens` — Training planning
-Four screens in one file:
-- **GymHubScreen** — 7-day training calendar, today's session card, active session banner
-- **SplitPickerScreen** — Choose 1–5 training days/week
-- **SessionEditorScreen** — Edit a day's exercise list (add, remove, reorder by section)
-- **DayActivitiesScreen** — Log non-gym activities for a given day
-
-Also owns the core data: `EX_LIB` (~40 exercises) and `SPLITS` (1–5 day templates).
-
-### `ExerciseScreens` — Exercise library
-Searchable reference of all exercises with type and muscle-group filters. `ExerciseImage` renders a colour-coded placeholder card (no real photos) used across all gym screens.
-
-### `FoodScreen` — Macro tracker
-Weekly food log with per-meal entries and daily macro totals (protein, carbs, fat). Targets are derived from user settings and whether today is a gym day.
-
-### `OnboardingScreen` — First-run wizard
-Multi-step wizard collecting name, age, sex, goal, and training frequency. Completes by writing the profile to `App` state and saving to localStorage.
-
-### `AboutScreen` — Profile & settings
-Edit profile fields and unit preferences (kg/lbs, cm/ft). Reset all data button.
-
----
-
-## Shared components (`SharedUI.jsx`)
-
-| Component | What it does |
-|---|---|
-| `AnimatedNumber` | Counts from 0 to a value on mount using eased `requestAnimationFrame` |
-| `StackedRings` | Concentric SVG rings (Apple Watch style), each animated via `stroke-dashoffset` |
-| `PulseDot` | Pulsing dot used to indicate live/active states |
-| `BottomNav` | Four-tab navigation bar shared across all screens. Conditionally shows/hides the Cycle tab |
-
----
-
-## Theme system
-
-Two complete colour token maps (`light` and `dark`) are defined in `src/data/themes.js`. Every screen receives `theme='light'|'dark'` as a prop and runs `const t = themes[theme]` to get all colour tokens. No CSS variables or React context — tokens are threaded via props.
-
-The active theme is toggled from the TweaksPanel (dev tool, bottom-right corner).
-
----
-
-## Running locally
-
-```bash
-npm install
-npm run dev
-```
-
-App is served at `http://localhost:5173/`.
-
----
-
-## Deployment
-
-The app is deployed to [Vercel](https://vercel.com/), which builds and hosts it from the root domain (`base: '/'` in `vite.config.js`). A `vercel.json` provides an SPA rewrite so all paths serve `index.html`.
-
-To deploy your own copy:
-1. Fork the repo
-2. Import it into Vercel (**Add New → Project**) and select the repo
-3. Configure the required environment variables in the Vercel project settings (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_CLIENT_ID`, etc.)
-4. Push to `main` — Vercel deploys automatically
-
-If you use Supabase Auth (email confirmation, OAuth) or Google Identity Services, make sure your Vercel deployment domain is added to Supabase's Redirect URLs allow-list and Google Cloud Console's Authorized JavaScript origins, respectively.
+- The planning and spec stages produce **probabilistic recommendations**,
+  not verdicts — treat "build now" / "needs your call" tags as a starting
+  point to edit, not an approval.
+- A green Playwright + Vitest run means the known, checked cases pass — it's
+  not a correctness guarantee, especially early on when the smoke suite is
+  only 5-6 tests deep.
+- Because most Forma features touch the same handful of large files
+  (`App.jsx`, `GymPlanScreens.jsx`), true parallel builds across features are
+  limited — expect the `max-parallel: 2` in `build.yml` to still produce
+  occasional merge conflicts on adjacent PRs. Increase this only once you've
+  seen it behave.

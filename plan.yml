@@ -1,0 +1,56 @@
+name: Plan — score raw ideas against product strategy
+
+on:
+  push:
+    paths:
+      - 'features/ideas.md'
+    branches-ignore:
+      - 'plan/*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create planning branch
+        run: |
+          git checkout -b plan/backlog-$(date +%s)
+
+      - name: Run planning pass
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Edit,Write"
+          direct_prompt: |
+            Read features/ideas.md, docs/PRODUCT_STRATEGY.md, and
+            docs/PROJECT_CONTEXT.md, and features/PLANNING.md for the exact
+            scoring format required.
+
+            For every idea in features/ideas.md, score it against the
+            product strategy doc (persona fit, roadmap horizon, scope-creep
+            risk, architecture cost) using the format specified in
+            features/PLANNING.md. Overwrite features/backlog.md with the
+            full scored list. Do not touch any other files. Do not implement
+            any code — this is a planning pass only.
+
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "Backlog: scored feature ideas"
+          body: |
+            Automated planning pass over `features/ideas.md`.
+
+            These verdicts are a probabilistic read against
+            `docs/PRODUCT_STRATEGY.md`, not a decision — please edit
+            horizon/verdict inline before merging, especially anything
+            tagged "needs your call".
+          branch: plan/backlog-update
+          commit-message: "plan: score raw ideas against product strategy"
+          labels: planning
