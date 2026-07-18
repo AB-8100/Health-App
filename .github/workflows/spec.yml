@@ -1,0 +1,63 @@
+name: Spec — expand approved backlog into feature specs
+
+on:
+  push:
+    paths:
+      - 'features/backlog.md'
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create spec branch
+        run: git checkout -b spec/batch-$(date +%s)
+
+      - name: Generate specs
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 25
+            --allowedTools "Read,Edit,Write,Glob"
+          direct_prompt: |
+            Read features/backlog.md and docs/PROJECT_CONTEXT.md.
+
+            For every item in features/backlog.md whose Verdict is
+            "build now" (skip "defer", "needs your call", and anything
+            already covered by an existing file in features/specs/),
+            write a full spec to features/specs/00X-<slug>.md, numbered
+            after the highest existing spec number. Each spec must contain:
+            - User story
+            - Acceptance criteria (bulleted, testable)
+            - Data model implications (which Supabase tables/columns, if any)
+            - Edge cases to handle
+            - Explicit out-of-scope note (what NOT to build, to prevent
+              scope creep beyond this feature)
+            - Which existing files this will likely touch, per the file map
+              in docs/PROJECT_CONTEXT.md §13
+
+            Do not write any implementation code. Do not modify
+            features/backlog.md.
+
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "Specs: new feature batch"
+          body: |
+            Auto-generated specs for backlog items marked "build now".
+
+            **This is the one mandatory human checkpoint in the pipeline.**
+            Review acceptance criteria and out-of-scope notes before
+            merging — everything downstream (codegen, tests, deploy)
+            inherits directly from what's written here.
+          branch: spec/new-batch
+          commit-message: "spec: expand approved backlog items"
+          labels: needs-spec-review
