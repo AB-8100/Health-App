@@ -3,6 +3,7 @@ import React from 'react';
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
+import { isDuplicateSignupResponse } from './utils/authErrors';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -597,13 +598,17 @@ function App() {
   };
 
   const handleSignUp = async (displayName, email, password) => {
-    const { data, error } = await supabase.auth.signUp({
+    const result = await supabase.auth.signUp({
       email, password,
       options: {
         data: { full_name: displayName },
         emailRedirectTo: import.meta.env.VITE_APP_URL || (window.location.origin + import.meta.env.BASE_URL),
       },
     });
+    if (isDuplicateSignupResponse(result)) {
+      throw new Error('An account with this email already exists — try logging in instead.');
+    }
+    const { data, error } = result;
     if (error) throw new Error(error.message);
     // If email confirmation is disabled in Supabase, session is returned immediately
     if (data.session) return; // onAuthStateChange handles the rest
