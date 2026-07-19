@@ -416,6 +416,25 @@ function App() {
     setOnboardingStage('intake');
   };
 
+  // Re-enters Stage 2 (Goals Setup) from within the app, pre-filled with the
+  // user's saved goals — used by "Redo my goals & questionnaire" in About Me.
+  // Flows into Stage 3 as normal afterward (handleGoalsSetupComplete above),
+  // then Stage 3's own completion (handleIntakeComplete below) applies the
+  // regenerated schedule — nothing changes until that whole redo completes.
+  const handleRedoGoals = (fromScreen) => {
+    screenBeforeIntakeRef.current = fromScreen || screen;
+    setOnboarding(false);
+    setOnboardingStage('goals');
+  };
+
+  // Called when the user exits the goals redo at its first step without completing
+  const handleExitGoalsRedo = () => {
+    setOnboardingStage(null);
+    const returnTo = screenBeforeIntakeRef.current || 'weekly';
+    screenBeforeIntakeRef.current = null;
+    setScreen(returnTo);
+  };
+
   // Called when Stage 3 (DeepQuestionnaire) completes or is skipped
   const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch) => {
     let gp = pendingGoalsPayload || {};
@@ -940,11 +959,14 @@ function App() {
     if (onboardingStage === 'goals')
       return <GoalsSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
-               onComplete={handleGoalsSetupComplete} />;
+               initialGoalsPayload={goalsPayload}
+               onComplete={handleGoalsSetupComplete}
+               onExit={screenBeforeIntakeRef.current !== null ? handleExitGoalsRedo : undefined} />;
     if (onboardingStage === 'intake')
       return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                goalsPayload={pendingGoalsPayload}
+               initialIntake={intakePayload}
                onComplete={handleIntakeComplete}
                onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
                onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
@@ -1077,7 +1099,8 @@ function App() {
                onUploadTrainingPlan={handleUploadTrainingPlan}
                goalsPayload={goalsPayload}
                intake={intakePayload}
-               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)} />;
+               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)}
+               onRedoGoals={() => handleRedoGoals('about-me')} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}

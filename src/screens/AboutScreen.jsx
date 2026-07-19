@@ -112,6 +112,7 @@ function AboutScreen({
   goalsPayload,
   intake,
   onGenerateAIPlan,
+  onRedoGoals,
 }) {
   const t = themes[theme];
 
@@ -247,6 +248,10 @@ function AboutScreen({
     else runGenerateAI();
   };
   const cancelGenerateAI = () => setAiGenState('idle');
+
+  // ── redo goals & questionnaire (basic or AI — the choice happens again at
+  // the end of Stage 3, same as first-time onboarding) ────────────────────
+  const [redoConfirming, setRedoConfirming] = React.useState(false);
 
   return (
     <div style={{
@@ -750,6 +755,52 @@ function AboutScreen({
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Redo goals & questionnaire — re-runs Stage 2 + Stage 3 from
+              scratch (pre-filled with current answers), then offers the same
+              AI-vs-basic choice as first-time onboarding. Available whenever
+              onboarding has been completed at least once, regardless of
+              whether this race type supports AI generation. */}
+          {typeof onRedoGoals === 'function' && intakeCompleted && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
+              {redoConfirming ? (
+                <div style={{
+                  padding: '10px 12px', borderRadius: 10,
+                  background: t.surface2, border: `1px solid ${t.border}`,
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
+                    Redo your goals & questionnaire?
+                  </div>
+                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+                    You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — you'll pick AI or basic again at the end, same as before.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setRedoConfirming(false)} style={{
+                      flex: 1, padding: '8px', borderRadius: 8,
+                      background: 'transparent', border: `1px solid ${t.border}`,
+                      color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}>Cancel</button>
+                    <button onClick={() => onRedoGoals()} style={{
+                      flex: 1, padding: '8px', borderRadius: 8,
+                      background: t.accent, border: 'none',
+                      color: '#fff', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}>Continue</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setRedoConfirming(true)}
+                  style={{
+                    width: '100%', padding: '9px', borderRadius: 10,
+                    background: 'transparent', border: `1px solid ${t.border}`,
+                    color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Redo my goals & questionnaire
+                </button>
               )}
             </div>
           )}

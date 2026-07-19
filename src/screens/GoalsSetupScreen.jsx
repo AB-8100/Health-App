@@ -21,6 +21,15 @@ function disciplinesForRaceType(raceType) {
   return ['run']; // 5K / 10K / Half Marathon / Marathon
 }
 
+// Seeds a default of 2/week for any discipline the race type needs that
+// isn't already set — used both when a race type is first picked and when
+// pre-filling from an existing saved goal (which may predate this field).
+function withDefaultDisciplineFrequency(raceType, existingFreq = {}) {
+  const freq = { ...existingFreq };
+  disciplinesForRaceType(raceType).forEach(d => { if (freq[d] === undefined) freq[d] = 2; });
+  return freq;
+}
+
 const GOAL_TYPES = [
   { id: 'event_race',         label: 'Race / Event',       sub: 'Train for a specific race or event',    icon: '🏁' },
   { id: 'strength_programme', label: 'Strength Programme', sub: 'Progressive overload & strength gains', icon: '🏋️' },
@@ -87,25 +96,44 @@ const DEFAULT_CONFIG = {
 
 // ─── GoalsSetupScreen ─────────────────────────────────────────────────────────
 
-export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', onComplete, userId }) {
+export function GoalsSetupScreen({
+  width = 390, height = 820, theme = 'light', onComplete, userId,
+  initialGoalsPayload, // re-entry (e.g. "redo my goals") — pre-fills every field below instead of starting blank
+  onExit, // re-entry only — () => void, bails out without completing (shown at the first step only)
+}) {
   const t = themes[theme];
+  const initialGoals = initialGoalsPayload?.goals || [];
 
   // ── goal selection & config ──────────────────────────────────────────────
-  const [selectedGoals, setSelectedGoals] = React.useState([]); // order = rank
-  const [goalConfigs,   setGoalConfigs]   = React.useState({});
+  const [selectedGoals, setSelectedGoals] = React.useState(() => initialGoals.map(g => g.type)); // order = rank
+  const [goalConfigs,   setGoalConfigs]   = React.useState(() => {
+    const configs = {};
+    initialGoals.forEach(g => {
+      const config = { ...DEFAULT_CONFIG[g.type], ...g.config };
+      // Older saved goals (from before per-discipline frequency existed)
+      // may have a raceType but an empty disciplineFrequency — seed the
+      // same defaults the race-type button would, so redoing doesn't
+      // silently reintroduce the empty-schedule bug for existing users.
+      if (g.type === 'event_race' && config.raceType) {
+        config.disciplineFrequency = withDefaultDisciplineFrequency(config.raceType, config.disciplineFrequency);
+      }
+      configs[g.type] = config;
+    });
+    return configs;
+  });
 
   // ── schedule ─────────────────────────────────────────────────────────────
-  const [trainingDays, setTrainingDays] = React.useState([]);
+  const [trainingDays, setTrainingDays] = React.useState(() => initialGoalsPayload?.trainingDays || []);
   const trainingDaysPerWeek = trainingDays.length;
   const unavailableDays     = DAY_KEYS.filter(d => !trainingDays.includes(d));
 
   // ── facilities ────────────────────────────────────────────────────────────
-  const [gymAccess,  setGymAccess]  = React.useState(false);
-  const [poolAccess, setPoolAccess] = React.useState(false);
-  const [poolDays,   setPoolDays]   = React.useState([]);
+  const [gymAccess,  setGymAccess]  = React.useState(() => initialGoalsPayload?.gymAccess ?? false);
+  const [poolAccess, setPoolAccess] = React.useState(() => initialGoalsPayload?.poolAccess ?? false);
+  const [poolDays,   setPoolDays]   = React.useState(() => initialGoalsPayload?.poolDays || []);
 
   // ── regular sports ────────────────────────────────────────────────────────
-  const [regularSports, setRegularSports] = React.useState([]);
+  const [regularSports, setRegularSports] = React.useState(() => initialGoalsPayload?.regularSports || []);
   const [sportDraft,    setSportDraft]    = React.useState({ sport: '', day: '', intensity: 'Moderate' });
 
   // ── step management ───────────────────────────────────────────────────────
@@ -263,6 +291,12 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
             border: `1px solid ${t.border}`, color: t.text, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0,
           }}>←</button>
+        ) : stepIdx === 0 && onExit ? (
+          <button onClick={onExit} style={{
+            width: 32, height: 32, borderRadius: 9, background: 'transparent',
+            border: `1px solid ${t.border}`, color: t.text, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0,
+          }}>×</button>
         ) : <div style={{ width: 32, flexShrink: 0 }} />}
 
         <div style={{ flex: 1 }}>
@@ -418,11 +452,7 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
                       // real state here so a user who never touches those
                       // buttons still gets a non-empty disciplineFrequency
                       // (otherwise the goal would save with none set at all).
-                      const existingFreq = goalConfigs['event_race']?.disciplineFrequency || {};
-                      const seededFreq = { ...existingFreq };
-                      disciplinesForRaceType(rt).forEach(d => {
-                        if (seededFreq[d] === undefined) seededFreq[d] = 2;
-                      });
+                      const seededFreq = withDefaultDisciplineFrequency(rt, goalConfigs['event_race']?.disciplineFrequency);
                       updateConfig('event_race', { raceType: rt, disciplineFrequency: seededFreq });
                     }} style={{
                       padding: '7px 11px', borderRadius: 9,
