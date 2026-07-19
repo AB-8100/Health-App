@@ -412,7 +412,19 @@ export function GoalsSetupScreen({ width = 390, height = 820, theme = 'light', o
                 {RACE_TYPES.map(rt => {
                   const active = goalConfigs['event_race']?.raceType === rt;
                   return (
-                    <button key={rt} onClick={() => updateConfig('event_race', { raceType: rt })} style={{
+                    <button key={rt} onClick={() => {
+                      // The frequency pickers below show a default of 2/week
+                      // for display purposes — seed that same default into
+                      // real state here so a user who never touches those
+                      // buttons still gets a non-empty disciplineFrequency
+                      // (otherwise the goal would save with none set at all).
+                      const existingFreq = goalConfigs['event_race']?.disciplineFrequency || {};
+                      const seededFreq = { ...existingFreq };
+                      disciplinesForRaceType(rt).forEach(d => {
+                        if (seededFreq[d] === undefined) seededFreq[d] = 2;
+                      });
+                      updateConfig('event_race', { raceType: rt, disciplineFrequency: seededFreq });
+                    }} style={{
                       padding: '7px 11px', borderRadius: 9,
                       background: active ? t.accent + '15' : t.surface,
                       border: `1.5px solid ${active ? t.accent : t.border}`,
