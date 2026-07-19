@@ -11,6 +11,16 @@ const DISCIPLINE_META = {
   other: { icon: '🏁', label: 'Training sessions' },
 };
 
+// Verb form used when a race has only one discipline (e.g. "How many times
+// a week do you want to run?"), so the question reads naturally instead of
+// asking about "each discipline" when there's only one.
+const DISCIPLINE_VERB = {
+  swim: 'swim',
+  bike: 'cycle',
+  run: 'run',
+  other: 'train',
+};
+
 // Which discipline frequency inputs to show for a given race type — the
 // race's own discipline(s), not the general "regular sports" list.
 function disciplinesForRaceType(raceType) {
@@ -141,7 +151,10 @@ export function GoalsSetupScreen({
     const steps = ['select'];
     if (goals.length >= 2) steps.push('rank');
     goals.forEach(g => steps.push(`config_${g}`));
-    steps.push('schedule', 'facilities', 'sports', 'done');
+    // Regular sports lives inline in config_event_race for race goals (see
+    // that step's render) rather than as its own step — schedule_access
+    // only shows it for goal combinations with no event_race goal.
+    steps.push('schedule_access', 'done');
     return steps;
   };
 
@@ -180,7 +193,7 @@ export function GoalsSetupScreen({
     if (current === 'config_general_fitness') {
       return (goalConfigs['general_fitness']?.activities || []).length >= 1;
     }
-    if (current === 'schedule') return trainingDays.length >= 1;
+    if (current === 'schedule_access') return trainingDays.length >= 1;
     return true;
   })();
 
@@ -250,7 +263,7 @@ export function GoalsSetupScreen({
       config_event_race: 'Race details', config_strength_programme: 'Strength focus',
       config_sport_activity: 'Sport details', config_micro_target: 'Your target',
       config_general_fitness: 'Activities',
-      schedule: 'Schedule', facilities: 'Access', sports: 'Regular sports', done: '',
+      schedule_access: 'Schedule & access', done: '',
     };
     return map[s] || s;
   };
@@ -504,6 +517,14 @@ export function GoalsSetupScreen({
             {(() => {
               const eventCfg = goalConfigs['event_race'] || {};
               const raceDisciplines = disciplinesForRaceType(eventCfg.raceType);
+              // A single-discipline race (e.g. Marathon, Open Water Swim) has
+              // one sport, not several "disciplines" to choose between — ask
+              // about it directly rather than the multi-discipline framing
+              // that only makes sense for triathlon.
+              const isSingleDiscipline = raceDisciplines.length === 1;
+              const frequencyQuestion = isSingleDiscipline
+                ? `How many times a week do you want to ${DISCIPLINE_VERB[raceDisciplines[0]]}?`
+                : 'How often do you want to train each discipline?';
 
               const setFrequency = (discipline, n) => updateConfig('event_race', {
                 disciplineFrequency: { ...(eventCfg.disciplineFrequency || {}), [discipline]: n },
@@ -530,15 +551,17 @@ export function GoalsSetupScreen({
 
               return (
                 <>
-                  <GField label="How often do you want to train each discipline?" t={t}>
+                  <GField label={frequencyQuestion} t={t}>
                     {raceDisciplines.map(disc => {
                       const meta = DISCIPLINE_META[disc];
                       const freq = eventCfg.disciplineFrequency?.[disc] ?? 2;
                       return (
                         <div key={disc} style={{ marginBottom: 10 }}>
-                          <div style={{ fontSize: 12, color: t.text2, marginBottom: 6 }}>
-                            {meta.icon} {meta.label} — times/week
-                          </div>
+                          {!isSingleDiscipline && (
+                            <div style={{ fontSize: 12, color: t.text2, marginBottom: 6 }}>
+                              {meta.icon} {meta.label} — times/week
+                            </div>
+                          )}
                           <div style={{ display: 'flex', gap: 6 }}>
                             {[1, 2, 3, 4, 5, 6, 7].map(n => {
                               const active = freq === n;
@@ -579,6 +602,16 @@ export function GoalsSetupScreen({
                         onChange={setCutoffTime} t={t}
                       />
                     )}
+                  </GField>
+
+                  <GField label="Do you also do other activities alongside training?" t={t}>
+                    <div style={{ fontSize: 11.5, color: t.text3, marginBottom: 10, lineHeight: 1.4 }}>
+                      Gym, football, anything regular outside your race training — we'll factor the load in. Skip if none.
+                    </div>
+                    <RegularSportsSection
+                      regularSports={regularSports} setRegularSports={setRegularSports}
+                      sportDraft={sportDraft} setSportDraft={setSportDraft} addSport={addSport} t={t}
+                    />
                   </GField>
                 </>
               );
@@ -752,14 +785,16 @@ export function GoalsSetupScreen({
           </div>
         )}
 
-        {/* ── schedule ── */}
-        {current === 'schedule' && (
+        {/* ── schedule & access (merged: training days + gym/pool + regular
+              sports for non-race goals — race goals capture sports inline
+              in config_event_race instead, so it's not duplicated here) ── */}
+        {current === 'schedule_access' && (
           <div>
             <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
-              Your training week.
+              Your training setup.
             </div>
             <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
-              Tap the days you're available to train. We'll build your plan around these.
+              Days you can train, and what you have access to.
             </div>
 
             <GField label="Training days" t={t}>
@@ -790,160 +825,57 @@ export function GoalsSetupScreen({
                 </div>
               )}
             </GField>
-          </div>
-        )}
 
-        {/* ── facilities ── */}
-        {current === 'facilities' && (
-          <div>
-            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
-              What do you have access to?
-            </div>
-            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
-              This helps us recommend sessions that actually work for you.
-            </div>
+            <GField label="Access" t={t}>
+              <ToggleCard
+                icon="🏋️" title="Gym access" sub="Weight room, machines, cables"
+                active={gymAccess} onToggle={() => setGymAccess(v => !v)} t={t}
+              />
 
-            <ToggleCard
-              icon="🏋️" title="Gym access" sub="Weight room, machines, cables"
-              active={gymAccess} onToggle={() => setGymAccess(v => !v)} t={t}
-            />
+              {isEventRaceGoal && (
+                <>
+                  <ToggleCard
+                    icon="🏊" title="Pool access" sub="Regular access to a swimming pool"
+                    active={poolAccess} onToggle={() => setPoolAccess(v => !v)} t={t}
+                  />
+                  {poolAccess && (
+                    <div style={{ marginLeft: 4, marginBottom: 8 }}>
+                      <GField label="Which days can you swim?" t={t}>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {DAYS.map((day, i) => {
+                            const key = DAY_KEYS[i];
+                            const on  = poolDays.includes(key);
+                            return (
+                              <button key={key} onClick={() => setPoolDays(prev =>
+                                on ? prev.filter(d => d !== key) : [...prev, key]
+                              )} style={{
+                                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 10.5,
+                                background: on ? t.blue + '20' : t.surface,
+                                color: on ? t.blue : t.text,
+                                border: `1px solid ${on ? t.blue : t.border}`,
+                                fontFamily: t.sans, cursor: 'pointer', fontWeight: 500,
+                              }}>{day}</button>
+                            );
+                          })}
+                        </div>
+                      </GField>
+                    </div>
+                  )}
+                </>
+              )}
+            </GField>
 
-            {isEventRaceGoal && (
-              <>
-                <ToggleCard
-                  icon="🏊" title="Pool access" sub="Regular access to a swimming pool"
-                  active={poolAccess} onToggle={() => setPoolAccess(v => !v)} t={t}
+            {!selectedGoals.includes('event_race') && (
+              <GField label="Regular sports" t={t}>
+                <div style={{ fontSize: 11.5, color: t.text3, marginBottom: 10, lineHeight: 1.4 }}>
+                  Any sport you play regularly? We'll factor the load into your plan. Skip if none.
+                </div>
+                <RegularSportsSection
+                  regularSports={regularSports} setRegularSports={setRegularSports}
+                  sportDraft={sportDraft} setSportDraft={setSportDraft} addSport={addSport} t={t}
                 />
-                {poolAccess && (
-                  <div style={{ marginLeft: 4, marginBottom: 8 }}>
-                    <GField label="Which days can you swim?" t={t}>
-                      <div style={{ display: 'flex', gap: 5 }}>
-                        {DAYS.map((day, i) => {
-                          const key = DAY_KEYS[i];
-                          const on  = poolDays.includes(key);
-                          return (
-                            <button key={key} onClick={() => setPoolDays(prev =>
-                              on ? prev.filter(d => d !== key) : [...prev, key]
-                            )} style={{
-                              flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 10.5,
-                              background: on ? t.blue + '20' : t.surface,
-                              color: on ? t.blue : t.text,
-                              border: `1px solid ${on ? t.blue : t.border}`,
-                              fontFamily: t.sans, cursor: 'pointer', fontWeight: 500,
-                            }}>{day}</button>
-                          );
-                        })}
-                      </div>
-                    </GField>
-                  </div>
-                )}
-              </>
+              </GField>
             )}
-          </div>
-        )}
-
-        {/* ── sports ── */}
-        {current === 'sports' && (
-          <div>
-            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
-              Regular sports.
-            </div>
-            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
-              Any sport you play regularly? We'll factor the load into your plan. Skip if none.
-            </div>
-
-            {regularSports.map((s, i) => (
-              <div key={i} style={{
-                padding: '10px 14px', borderRadius: 12, background: t.surface,
-                border: `1px solid ${t.border}`, marginBottom: 8,
-                display: 'flex', alignItems: 'center', gap: 10,
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{s.sport}</div>
-                  <div style={{ fontSize: 11, color: t.text3, marginTop: 2 }}>
-                    {s.day.charAt(0).toUpperCase() + s.day.slice(1)} · {s.intensity}
-                  </div>
-                </div>
-                <button onClick={() => setRegularSports(prev => prev.filter((_, j) => j !== i))} style={{
-                  width: 26, height: 26, borderRadius: 8, border: `1px solid ${t.border}`,
-                  background: 'transparent', color: t.text3, cursor: 'pointer', fontSize: 15,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>×</button>
-              </div>
-            ))}
-
-            {/* Add form */}
-            <div style={{
-              padding: '14px', borderRadius: 13, background: t.surface2,
-              border: `1px dashed ${t.border}`, marginTop: regularSports.length > 0 ? 8 : 0,
-            }}>
-              <div style={{
-                fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
-                color: t.text3, marginBottom: 10, fontWeight: 500,
-              }}>Add a sport</div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-                {SPORT_TYPES.map(st => {
-                  const active = sportDraft.sport === st;
-                  return (
-                    <button key={st} onClick={() => setSportDraft(d => ({ ...d, sport: st }))} style={{
-                      padding: '5px 9px', borderRadius: 7,
-                      background: active ? t.accent + '15' : t.surface,
-                      border: `1.5px solid ${active ? t.accent : t.border2}`,
-                      color: active ? t.accent : t.text2,
-                      fontFamily: t.sans, fontSize: 11, cursor: 'pointer',
-                    }}>{st}</button>
-                  );
-                })}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Day</div>
-                  <select
-                    value={sportDraft.day}
-                    onChange={e => setSportDraft(d => ({ ...d, day: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '9px 10px', borderRadius: 9,
-                      border: `1px solid ${t.border2}`, background: t.surface,
-                      fontFamily: t.sans, fontSize: 12, color: t.text, outline: 'none',
-                    }}
-                  >
-                    <option value="">Pick day</option>
-                    {DAYS.map((day, i) => <option key={i} value={DAY_KEYS[i]}>{day}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Intensity</div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {INTENSITY_LEVELS.map(il => {
-                      const active = sportDraft.intensity === il;
-                      return (
-                        <button key={il} onClick={() => setSportDraft(d => ({ ...d, intensity: il }))} style={{
-                          flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 9.5,
-                          background: active ? t.accent + '15' : t.surface,
-                          border: `1.5px solid ${active ? t.accent : t.border2}`,
-                          color: active ? t.accent : t.text2,
-                          fontFamily: t.sans, cursor: 'pointer',
-                        }}>{il}</button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={addSport}
-                disabled={!sportDraft.sport || !sportDraft.day}
-                style={{
-                  width: '100%', padding: '10px', borderRadius: 10,
-                  background: (sportDraft.sport && sportDraft.day) ? t.accent : t.border,
-                  color: (sportDraft.sport && sportDraft.day) ? t.accentText : t.text3,
-                  border: 'none', fontFamily: t.sans, fontSize: 12.5, fontWeight: 600,
-                  cursor: (sportDraft.sport && sportDraft.day) ? 'pointer' : 'default',
-                }}
-              >+ Add sport</button>
-            </div>
           </div>
         )}
 
@@ -1013,9 +945,7 @@ export function GoalsSetupScreen({
           cursor: canAdvance ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         }}>
-          {current === 'done'   ? 'Enter Forma →' :
-           current === 'sports' ? (regularSports.length > 0 ? 'Continue →' : 'Skip for now') :
-           'Continue →'}
+          {current === 'done' ? 'Enter Forma →' : 'Continue →'}
         </button>
       </div>
     </div>
@@ -1110,5 +1040,107 @@ function ToggleCard({ icon, title, sub, active, onToggle, t }) {
         color: active ? t.accentText : t.text3, fontSize: 12,
       }}>{active ? '✓' : ''}</div>
     </button>
+  );
+}
+
+// Shared "add a regular sport/activity" list + form — used both inline in
+// config_event_race (race goals) and in the schedule_access step (goal
+// combinations with no event_race goal), so it's not duplicated between them.
+function RegularSportsSection({ regularSports, setRegularSports, sportDraft, setSportDraft, addSport, t }) {
+  return (
+    <>
+      {regularSports.map((s, i) => (
+        <div key={i} style={{
+          padding: '10px 14px', borderRadius: 12, background: t.surface,
+          border: `1px solid ${t.border}`, marginBottom: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{s.sport}</div>
+            <div style={{ fontSize: 11, color: t.text3, marginTop: 2 }}>
+              {s.day.charAt(0).toUpperCase() + s.day.slice(1)} · {s.intensity}
+            </div>
+          </div>
+          <button onClick={() => setRegularSports(prev => prev.filter((_, j) => j !== i))} style={{
+            width: 26, height: 26, borderRadius: 8, border: `1px solid ${t.border}`,
+            background: 'transparent', color: t.text3, cursor: 'pointer', fontSize: 15,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>×</button>
+        </div>
+      ))}
+
+      {/* Add form */}
+      <div style={{
+        padding: '14px', borderRadius: 13, background: t.surface2,
+        border: `1px dashed ${t.border}`, marginTop: regularSports.length > 0 ? 8 : 0,
+      }}>
+        <div style={{
+          fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
+          color: t.text3, marginBottom: 10, fontWeight: 500,
+        }}>Add a sport</div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+          {SPORT_TYPES.map(st => {
+            const active = sportDraft.sport === st;
+            return (
+              <button key={st} onClick={() => setSportDraft(d => ({ ...d, sport: st }))} style={{
+                padding: '5px 9px', borderRadius: 7,
+                background: active ? t.accent + '15' : t.surface,
+                border: `1.5px solid ${active ? t.accent : t.border2}`,
+                color: active ? t.accent : t.text2,
+                fontFamily: t.sans, fontSize: 11, cursor: 'pointer',
+              }}>{st}</button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Day</div>
+            <select
+              value={sportDraft.day}
+              onChange={e => setSportDraft(d => ({ ...d, day: e.target.value }))}
+              style={{
+                width: '100%', padding: '9px 10px', borderRadius: 9,
+                border: `1px solid ${t.border2}`, background: t.surface,
+                fontFamily: t.sans, fontSize: 12, color: t.text, outline: 'none',
+              }}
+            >
+              <option value="">Pick day</option>
+              {DAYS.map((day, i) => <option key={i} value={DAY_KEYS[i]}>{day}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Intensity</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {INTENSITY_LEVELS.map(il => {
+                const active = sportDraft.intensity === il;
+                return (
+                  <button key={il} onClick={() => setSportDraft(d => ({ ...d, intensity: il }))} style={{
+                    flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 9.5,
+                    background: active ? t.accent + '15' : t.surface,
+                    border: `1.5px solid ${active ? t.accent : t.border2}`,
+                    color: active ? t.accent : t.text2,
+                    fontFamily: t.sans, cursor: 'pointer',
+                  }}>{il}</button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={addSport}
+          disabled={!sportDraft.sport || !sportDraft.day}
+          style={{
+            width: '100%', padding: '10px', borderRadius: 10,
+            background: (sportDraft.sport && sportDraft.day) ? t.accent : t.border,
+            color: (sportDraft.sport && sportDraft.day) ? t.accentText : t.text3,
+            border: 'none', fontFamily: t.sans, fontSize: 12.5, fontWeight: 600,
+            cursor: (sportDraft.sport && sportDraft.day) ? 'pointer' : 'default',
+          }}
+        >+ Add sport</button>
+      </div>
+    </>
   );
 }

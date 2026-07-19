@@ -1,7 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { isSupportedAIRaceType } from '../utils/planPrompt';
-import { canComputePace, deriveSplitFromBaseline, formatPaceForDiscipline, legDistanceKm } from '../utils/raceTargets';
+import { canComputePace, deriveSplitFromBaseline, formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS } from '../utils/raceTargets';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,6 @@ const EMPTY_INTAKE = {
     primaryGoal:          '', // race-day goal — finish / time / milestone
     disciplineToImprove:  '', // triathlon only
     nervousAbout:         '',
-    targetTime:           '', // optional
     priorExperience:      '', // optional
     usesSpeedTraining:    '', // optional
     lifestyleNotes:       '', // optional
@@ -734,6 +733,19 @@ export function DeepQuestionnaireScreen({
               Helps us tailor tone and priorities — everything here is optional.
             </div>
 
+            {(eventRaceConfig.hasTargetTime || eventRaceConfig.hasCutoffTime) && (
+              <div style={{
+                padding: '10px 12px', borderRadius: 10, marginBottom: 18,
+                background: t.surface2, border: `1px dashed ${t.border}`,
+                fontSize: 11.5, color: t.text2, lineHeight: 1.5,
+              }}>
+                {eventRaceConfig.hasTargetTime && `Target finish time: ${formatSecondsAsHMS(eventRaceConfig.targetTimeSeconds)}`}
+                {eventRaceConfig.hasTargetTime && eventRaceConfig.hasCutoffTime && ' · '}
+                {eventRaceConfig.hasCutoffTime && `Cutoff: ${formatSecondsAsHMS(eventRaceConfig.cutoffTimeSeconds)}`}
+                {' '}— carried over from your race details, no need to re-enter it.
+              </div>
+            )}
+
             <DQField label="What's your primary goal for race day?" hint="e.g. just finish strong / beat a specific time / milestone event" t={t}>
               <input
                 value={intake.mindset.primaryGoal}
@@ -762,14 +774,6 @@ export function DeepQuestionnaireScreen({
                 value={intake.mindset.nervousAbout}
                 onChange={e => patchIntake('mindset', { nervousAbout: e.target.value })}
                 placeholder="e.g. Open water swimming"
-                style={inputSt(t)}
-              />
-            </DQField>
-            <DQField label="Target finish time" hint="Optional — even loosely" t={t}>
-              <input
-                value={intake.mindset.targetTime}
-                onChange={e => patchIntake('mindset', { targetTime: e.target.value })}
-                placeholder="e.g. sub 6:30"
                 style={inputSt(t)}
               />
             </DQField>
