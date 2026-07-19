@@ -1,6 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { isSupportedAIRaceType } from '../utils/planPrompt';
+import { canComputePace, deriveSplitFromBaseline, formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS } from '../utils/raceTargets';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -35,11 +36,23 @@ function isRaceGoal(goals = []) {
   return goals.some(g => g.type === 'event_race');
 }
 
+// A pace/split confirmation step is only meaningful when there's a target or
+// cutoff time to convert AND the race type has a known distance to convert
+// it against (see raceTargets.js — Cycling Sportive/Open Water Swim/Other
+// have no fixed distance in this app's data model).
+function needsPaceConfirm(goals) {
+  const cfg = goals.find(g => g.type === 'event_race')?.config || {};
+  const total = cfg.hasTargetTime ? cfg.targetTimeSeconds : (cfg.hasCutoffTime ? cfg.cutoffTimeSeconds : null);
+  return isRaceGoal(goals) && canComputePace(cfg.raceType) && Number.isFinite(total) && total > 0;
+}
+
 function buildSteps(goals) {
   const steps = ['intro'];
   if (isRaceGoal(goals))       steps.push('run');
   if (isEventRaceGoal(goals))  steps.push('swim', 'bike', 'discipline_rank');
-  steps.push('availability', 'preferences', 'mindset', 'injury', 'done');
+  steps.push('availability', 'preferences', 'mindset', 'injury');
+  if (needsPaceConfirm(goals)) steps.push('pace_confirm');
+  steps.push('done');
   return steps;
 }
 
@@ -58,6 +71,9 @@ const EMPTY_INTAKE = {
   },
   // Strongest → weakest, triathlon only (e.g. ['bike', 'run', 'swim'])
   disciplineRanking: [],
+  // Confirmed (possibly user-edited) leg times in seconds, e.g. { swim, transition, bike, run }
+  // or { run } for a single-discipline race — null until the pace_confirm step runs.
+  targetPaces: null,
   availability: {
     holidays: [],            // [{ label, from, to }]
     oneOffEvents: [],        // [{ label, date }]
@@ -72,7 +88,6 @@ const EMPTY_INTAKE = {
     primaryGoal:          '', // race-day goal — finish / time / milestone
     disciplineToImprove:  '', // triathlon only
     nervousAbout:         '',
-    targetTime:           '', // optional
     priorExperience:      '', // optional
     usesSpeedTraining:    '', // optional
     lifestyleNotes:       '', // optional
@@ -159,7 +174,11 @@ export function DeepQuestionnaireScreen({
       completedAt: skipped ? null : new Date().toISOString(),
     };
     persist(payload);
-    onComplete(payload, skipped);
+    // Confirmed target paces belong on the event_race goal itself (read by
+    // both the basic scheduler and the AI prompt), not just the intake
+    // record — pass them back up so App.jsx can merge them into goals[].
+    const goalConfigPatch = intake.targetPaces ? { targetPaces: intake.targetPaces } : null;
+    onComplete(payload, skipped, goalConfigPatch);
   };
 
   const persist = (payload) => {
@@ -219,8 +238,35 @@ export function DeepQuestionnaireScreen({
     run: 'Run baseline', swim: 'Swim baseline', bike: 'Bike baseline',
     discipline_rank: 'Discipline ranking',
     availability: 'Availability', preferences: 'Day preferences', mindset: 'Goals & mindset',
-    injury: 'Health & injury', done: '',
+    injury: 'Health & injury', pace_confirm: 'Confirm pace targets', done: '',
   }[s] || '');
+
+  // ── pace/split confirmation (target-time → pace) ──────────────────────────
+
+  const eventRaceConfig = goals.find(g => g.type === 'event_race')?.config || {};
+  const targetTotalSeconds = eventRaceConfig.hasTargetTime
+    ? eventRaceConfig.targetTimeSeconds
+    : (eventRaceConfig.hasCutoffTime ? eventRaceConfig.cutoffTimeSeconds : null);
+
+  // Compute the default/baseline-derived split once, the first time this step
+  // is reached — after that, the user's edits (in intake.targetPaces) win.
+  React.useEffect(() => {
+    if (current === 'pace_confirm' && !intake.targetPaces) {
+      const computed = deriveSplitFromBaseline(eventRaceConfig.raceType, targetTotalSeconds, {
+        run: intake.runBaseline, swim: intake.swimBaseline,
+      });
+      if (computed) setIntake(prev => ({ ...prev, targetPaces: computed }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
+
+  const setPaceLeg = (discipline, hours, minutes) => {
+    const existing = intake.targetPaces?.[discipline] || 0;
+    const h = hours !== undefined ? hours : Math.floor(existing / 3600);
+    const m = minutes !== undefined ? minutes : Math.floor((existing % 3600) / 60);
+    const seconds = (parseInt(h, 10) || 0) * 3600 + (parseInt(m, 10) || 0) * 60;
+    setIntake(prev => ({ ...prev, targetPaces: { ...prev.targetPaces, [discipline]: seconds } }));
+  };
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -338,6 +384,7 @@ export function DeepQuestionnaireScreen({
                 { icon: '🗓️', label: 'Day preferences — shape your weekly structure' },
                 { icon: '✦',  label: 'Goals & mindset — what drives race day' },
                 { icon: '🩺', label: 'Injury & health — past injuries, current niggles' },
+                needsPaceConfirm(goals) && { icon: '⏱️', label: 'Confirm pace targets — from your target/cutoff time' },
               ].filter(Boolean).map((item, i, arr) => (
                 <div key={item.label} style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0',
@@ -686,6 +733,19 @@ export function DeepQuestionnaireScreen({
               Helps us tailor tone and priorities — everything here is optional.
             </div>
 
+            {(eventRaceConfig.hasTargetTime || eventRaceConfig.hasCutoffTime) && (
+              <div style={{
+                padding: '10px 12px', borderRadius: 10, marginBottom: 18,
+                background: t.surface2, border: `1px dashed ${t.border}`,
+                fontSize: 11.5, color: t.text2, lineHeight: 1.5,
+              }}>
+                {eventRaceConfig.hasTargetTime && `Target finish time: ${formatSecondsAsHMS(eventRaceConfig.targetTimeSeconds)}`}
+                {eventRaceConfig.hasTargetTime && eventRaceConfig.hasCutoffTime && ' · '}
+                {eventRaceConfig.hasCutoffTime && `Cutoff: ${formatSecondsAsHMS(eventRaceConfig.cutoffTimeSeconds)}`}
+                {' '}— carried over from your race details, no need to re-enter it.
+              </div>
+            )}
+
             <DQField label="What's your primary goal for race day?" hint="e.g. just finish strong / beat a specific time / milestone event" t={t}>
               <input
                 value={intake.mindset.primaryGoal}
@@ -714,14 +774,6 @@ export function DeepQuestionnaireScreen({
                 value={intake.mindset.nervousAbout}
                 onChange={e => patchIntake('mindset', { nervousAbout: e.target.value })}
                 placeholder="e.g. Open water swimming"
-                style={inputSt(t)}
-              />
-            </DQField>
-            <DQField label="Target finish time" hint="Optional — even loosely" t={t}>
-              <input
-                value={intake.mindset.targetTime}
-                onChange={e => patchIntake('mindset', { targetTime: e.target.value })}
-                placeholder="e.g. sub 6:30"
                 style={inputSt(t)}
               />
             </DQField>
@@ -850,6 +902,53 @@ export function DeepQuestionnaireScreen({
                 style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }}
               />
             </DQField>
+          </div>
+        )}
+
+        {/* ── pace/split confirmation ── */}
+        {current === 'pace_confirm' && intake.targetPaces && (
+          <div>
+            <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.1, marginBottom: 8, letterSpacing: '-.01em' }}>
+              Confirm your pace targets.
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, lineHeight: 1.5 }}>
+              {eventRaceConfig.hasTargetTime
+                ? 'Based on your target finish time — edit anything that looks off.'
+                : "Based on your race's cutoff time, since no personal target was given — edit anything that looks off."}
+            </div>
+
+            {['swim', 'bike', 'run'].filter(d => intake.targetPaces[d] !== undefined).map(discipline => {
+              const meta = DISCIPLINE_META[discipline];
+              const seconds = intake.targetPaces[discipline] || 0;
+              const distanceKm = legDistanceKm(discipline, eventRaceConfig.raceType);
+              const pace = formatPaceForDiscipline(discipline, seconds, distanceKm, false);
+              return (
+                <DQField key={discipline} label={`${meta.icon} ${meta.label}`} hint={pace ? `≈ ${pace}` : undefined} t={t}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <select
+                      value={Math.floor(seconds / 3600)}
+                      onChange={e => setPaceLeg(discipline, e.target.value, undefined)}
+                      style={inputSt(t)}
+                    >
+                      {Array.from({ length: 13 }, (_, h) => <option key={h} value={h}>{h}h</option>)}
+                    </select>
+                    <select
+                      value={Math.floor((seconds % 3600) / 60)}
+                      onChange={e => setPaceLeg(discipline, undefined, e.target.value)}
+                      style={inputSt(t)}
+                    >
+                      {Array.from({ length: 60 }, (_, m) => <option key={m} value={m}>{m}m</option>)}
+                    </select>
+                  </div>
+                </DQField>
+              );
+            })}
+
+            {intake.targetPaces.transition !== undefined && (
+              <div style={{ fontSize: 11.5, color: t.text3, marginTop: -8, marginBottom: 8 }}>
+                Plus an allowance of ~{Math.round(intake.targetPaces.transition / 60)} min for transitions (T1+T2).
+              </div>
+            )}
           </div>
         )}
 

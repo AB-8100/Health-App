@@ -3,6 +3,7 @@
 // prompt so that Claude returns a single structured JSON object (matching the
 // shape the app already stores for an event training plan) instead of an
 // executable Python script / downloadable spreadsheet.
+import { formatSecondsAsHMS, legDistanceKm, formatPaceForDiscipline } from './raceTargets';
 
 const RACE_TYPE_MAP = {
   '10K':                        '10K',
@@ -97,6 +98,12 @@ function buildAnswersBlock({ goalsPayload, intake }) {
 
   lines.push('## 3. Training Availability');
   lines.push(`Q17 Training days per week: ${fmt(gp.trainingDaysPerWeek)}`);
+  const freq = cfg.disciplineFrequency || {};
+  if (Object.keys(freq).length) {
+    lines.push(`Requested weekly frequency per discipline (set by the athlete — match these, don't invent your own): ${
+      Object.entries(freq).map(([d, n]) => `${d} x${n}/week`).join(', ')
+    }`);
+  }
   lines.push(`Q18 Fixed unavailable days: ${daysLabel(gp.unavailableDays)}`);
   lines.push(`Q19 Standing commitments: ${(avail.standingCommitments || []).length
     ? avail.standingCommitments.map(c => `${c.label} (${dayLabel(c.day)}${c.time ? ' ' + c.time : ''}) — outside training load`).join('; ')
@@ -133,7 +140,26 @@ function buildAnswersBlock({ goalsPayload, intake }) {
   lines.push('');
 
   lines.push('## 7. Optional');
-  lines.push(`Q31 Target finish time: ${fmt(mind.targetTime, 'Not specified')}`);
+  // Target/cutoff time and the confirmed pace split were captured earlier
+  // (Stage 2 race details + Stage 3's pace-confirm step) — read the
+  // structured values instead of asking the athlete to restate them here,
+  // and instead of re-deriving your own pacing when they're present.
+  const targetSeconds = cfg.hasTargetTime ? cfg.targetTimeSeconds : null;
+  const cutoffSeconds = cfg.hasCutoffTime ? cfg.cutoffTimeSeconds : null;
+  lines.push(`Q31 Target finish time: ${targetSeconds ? formatSecondsAsHMS(targetSeconds) : 'Not specified'}`);
+  if (cutoffSeconds) {
+    lines.push(`Race cutoff / qualifying time: ${formatSecondsAsHMS(cutoffSeconds)} — the plan must realistically get the athlete under this`);
+  }
+  const targetPaces = intake?.targetPaces;
+  if (targetPaces && Object.keys(targetPaces).length) {
+    const paceLines = Object.entries(targetPaces).map(([disc, secs]) => {
+      if (disc === 'transition') return `T1+T2 allowance ${formatSecondsAsHMS(secs)}`;
+      const distanceKm = legDistanceKm(disc, cfg.raceType);
+      const pace = formatPaceForDiscipline(disc, secs, distanceKm, false);
+      return `${disc} ${formatSecondsAsHMS(secs)}${pace ? ` (${pace})` : ''}`;
+    });
+    lines.push(`Confirmed target split (already calculated and approved by the athlete — use these numbers directly rather than deriving your own pacing): ${paceLines.join(', ')}`);
+  }
   lines.push(`Q32 Prior race experience: ${fmt(mind.priorExperience, 'Not specified')}`);
   lines.push(`Q33 Current speed/interval training: ${fmt(mind.usesSpeedTraining, 'Not specified')}`);
   lines.push(`Q34 Other lifestyle/schedule notes: ${fmt(mind.lifestyleNotes, 'None')}`);

@@ -3,6 +3,8 @@ import React from 'react';
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
+import { isDuplicateSignupResponse } from './utils/authErrors';
+import { generateActivitySchedule, getAutoSplitDays } from './utils/scheduleGeneration';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -45,77 +47,9 @@ const DEFAULT_PLAN = { splitDays: null, todayIdx: 0, overrides: {} };
 const DEFAULT_EVENT_PLAN = { meta: {}, phases: [], sessions: {} };
 
 // ─── Onboarding helpers ───────────────────────────────────────────────────────
-
-const DAY_KEY_TO_IDX = { monday:0, tuesday:1, wednesday:2, thursday:3, friday:4, saturday:5, sunday:6 };
-
-const ACTIVITY_DEFS = {
-  gym:      { type:'gym',   label:'Gym',     emoji:'🏋️', color:'#BE5A38', duration:60, isGym: true },
-  running:  { type:'run',   label:'Run',     emoji:'🏃', color:'#0090FF', duration:45 },
-  cycling:  { type:'cycle', label:'Cycle',   emoji:'🚴', color:'#9333EA', duration:60 },
-  swimming: { type:'swim',  label:'Swim',    emoji:'🏊', color:'#0369A1', duration:45 },
-  rowing:   { type:'other', label:'Row',     emoji:'🚣', color:'#4B5563', duration:45 },
-  yoga:     { type:'yoga',  label:'Yoga',    emoji:'🧘', color:'#6D4AAF', duration:60 },
-  hiit:     { type:'other', label:'HIIT',    emoji:'⚡', color:'#DC2626', duration:30 },
-  walking:  { type:'walk',  label:'Walk',    emoji:'🚶', color:'#15803D', duration:60 },
-  pilates:  { type:'other', label:'Pilates', emoji:'🤸', color:'#6D4AAF', duration:45 },
-  climbing: { type:'other', label:'Climb',   emoji:'🧗', color:'#854D0E', duration:90 },
-  dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
-};
-
-// Spreads selected activities across training days (capped at trainingDays.length).
-// Gym sessions are not stored in the activities state — they're tracked via plan.splitDays.
-// Returns { schedule, gymDayCount } so the caller can pick the right gym split.
-function generateActivitySchedule(goalsPayload) {
-  const { goals = [], trainingDays = [], gymAccess = false } = goalsPayload;
-  const generalGoal = goals.find(g => g.type === 'general_fitness');
-  let selectedIds = [...(generalGoal?.config?.activities || [])];
-
-  // Ensure gym appears in the rotation whenever the user has gym access
-  if (gymAccess && !selectedIds.includes('gym')) {
-    selectedIds = ['gym', ...selectedIds];
-  }
-
-  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
-
-  // Only gym (or nothing selected) → all training days count as gym sessions
-  const nonGymActivities = selectedIds.filter(id => id !== 'gym');
-  if (!nonGymActivities.length) {
-    return { schedule: {}, gymDayCount: gymAccess ? trainingDays.length : 0 };
-  }
-
-  // Cycle through activity list (gym + others) across training days
-  const schedule = {};
-  let gymDayCount = 0;
-
-  trainingDays.forEach((day, i) => {
-    const dayIdx = DAY_KEY_TO_IDX[day];
-    if (dayIdx === undefined) return;
-    const actId = selectedIds[i % selectedIds.length];
-
-    if (actId === 'gym') {
-      gymDayCount++;
-      // Gym days are represented by plan.splitDays — no entry needed in activities
-    } else {
-      const def = ACTIVITY_DEFS[actId];
-      if (def) {
-        schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
-      }
-    }
-  });
-
-  return { schedule, gymDayCount };
-}
-
-// Gym split is determined by how many gym sessions are in the weekly plan,
-// not the total number of training days.
-function getAutoSplitDays(gymDayCount) {
-  if (!gymDayCount || gymDayCount <= 0) return null;
-  if (gymDayCount === 1) return 1;
-  if (gymDayCount === 2) return 2;
-  if (gymDayCount === 3) return 3;
-  if (gymDayCount === 4) return 4;
-  return 5;
-}
+// generateActivitySchedule / getAutoSplitDays now live in
+// utils/scheduleGeneration.js (imported above) so their pure logic is
+// directly testable.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error boundary — catches render crashes so the app never goes fully blank
@@ -482,9 +416,40 @@ function App() {
     setOnboardingStage('intake');
   };
 
+  // Re-enters Stage 2 (Goals Setup) from within the app, pre-filled with the
+  // user's saved goals — used by "Redo my goals & questionnaire" in About Me.
+  // Flows into Stage 3 as normal afterward (handleGoalsSetupComplete above),
+  // then Stage 3's own completion (handleIntakeComplete below) applies the
+  // regenerated schedule — nothing changes until that whole redo completes.
+  const handleRedoGoals = (fromScreen) => {
+    screenBeforeIntakeRef.current = fromScreen || screen;
+    setOnboarding(false);
+    setOnboardingStage('goals');
+  };
+
+  // Called when the user exits the goals redo at its first step without completing
+  const handleExitGoalsRedo = () => {
+    setOnboardingStage(null);
+    const returnTo = screenBeforeIntakeRef.current || 'weekly';
+    screenBeforeIntakeRef.current = null;
+    setScreen(returnTo);
+  };
+
   // Called when Stage 3 (DeepQuestionnaire) completes or is skipped
-  const handleIntakeComplete = (intakePayload, skipped) => {
-    const gp = pendingGoalsPayload || {};
+  const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch) => {
+    let gp = pendingGoalsPayload || {};
+    // A confirmed (possibly user-edited) target pace/split from the
+    // pace_confirm step belongs on the event_race goal itself — both the
+    // rule-based scheduler and the AI prompt read it from there — so merge
+    // it in before anything below reads `gp.goals`.
+    if (goalConfigPatch) {
+      gp = {
+        ...gp,
+        goals: (gp.goals || []).map(g =>
+          g.type === 'event_race' ? { ...g, config: { ...g.config, ...goalConfigPatch } } : g
+        ),
+      };
+    }
     const primaryGoalType = gp.goals?.[0]?.type ?? '';
     const hasEvent = gp.goals?.some(g => g.type === 'event_race');
     const hasTrainingActivities =
@@ -506,12 +471,18 @@ function App() {
       intakeCompleted: !skipped,
     };
 
-    // Persist intake to Supabase
+    // Persist intake, and re-save goals if the pace_confirm step added
+    // target paces after Stage 2's own save already ran, to Supabase
     if (currentUserIdRef.current) {
       saveUserIntake(currentUserIdRef.current, intakePayload)
         .catch(e => console.warn('Forma: intake save failed', e));
+      if (goalConfigPatch) {
+        saveUserGoals(currentUserIdRef.current, gp)
+          .catch(e => console.warn('Forma: goals save failed', e));
+      }
     }
     setIntakePayload(intakePayload);
+    setGoalsPayload(gp);
 
     setPendingGoalsPayload(null);
 
@@ -597,13 +568,17 @@ function App() {
   };
 
   const handleSignUp = async (displayName, email, password) => {
-    const { data, error } = await supabase.auth.signUp({
+    const result = await supabase.auth.signUp({
       email, password,
       options: {
         data: { full_name: displayName },
         emailRedirectTo: import.meta.env.VITE_APP_URL || (window.location.origin + import.meta.env.BASE_URL),
       },
     });
+    if (isDuplicateSignupResponse(result)) {
+      throw new Error('An account with this email already exists — try logging in instead.');
+    }
+    const { data, error } = result;
     if (error) throw new Error(error.message);
     // If email confirmation is disabled in Supabase, session is returned immediately
     if (data.session) return; // onAuthStateChange handles the rest
@@ -984,11 +959,14 @@ function App() {
     if (onboardingStage === 'goals')
       return <GoalsSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
-               onComplete={handleGoalsSetupComplete} />;
+               initialGoalsPayload={goalsPayload}
+               onComplete={handleGoalsSetupComplete}
+               onExit={screenBeforeIntakeRef.current !== null ? handleExitGoalsRedo : undefined} />;
     if (onboardingStage === 'intake')
       return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                goalsPayload={pendingGoalsPayload}
+               initialIntake={intakePayload}
                onComplete={handleIntakeComplete}
                onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
                onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
@@ -1121,7 +1099,8 @@ function App() {
                onUploadTrainingPlan={handleUploadTrainingPlan}
                goalsPayload={goalsPayload}
                intake={intakePayload}
-               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)} />;
+               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)}
+               onRedoGoals={() => handleRedoGoals('about-me')} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}

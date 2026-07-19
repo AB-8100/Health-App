@@ -77,7 +77,7 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
         id: act.id || `act-${dk}-${act.label}`,
         type: act.type || 'other',
         label: act.label || act.type || '',
-        detail: act.duration ? `${act.duration}min` : '',
+        detail: act.note || (act.duration ? `${act.duration}min` : ''),
         source: 'activity',
         actData: act,
         dayIdx: i,
