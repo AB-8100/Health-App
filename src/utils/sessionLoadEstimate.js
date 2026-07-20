@@ -13,7 +13,11 @@ import { SESSION_TYPE_INTENSITY, classifySessionTier } from '../data/sessionDisp
 // ── Configurable thresholds (spec §5 P0.3, kept as named constants rather
 // than inlined magic numbers so they're easy to tune post-launch — see §9) ──
 export const HIGH_INTENSITY_RPE_THRESHOLD = 7;
-export const WEEKLY_HARD_SESSION_RATIO_THRESHOLD = 0.2;
+// Below HIGH_INTENSITY_RPE_THRESHOLD but at/above this is "medium" rather
+// than "low" — needed so the same-day pairing rule (below) can tell a hard
+// session from a moderate one, not just high-vs-everything-else. Not in the
+// original spec; added to support the day-level volume/pairing rule.
+export const MEDIUM_INTENSITY_RPE_THRESHOLD = 4;
 // How many logged instances of a session name count as "personalized" before
 // trusting the average over the generic/tag-based tiers (spec §8: with only
 // 1 entry, fall through to tier 3/4 rather than treat it as personalized).
@@ -22,6 +26,21 @@ export const MIN_PERSONAL_SAMPLES = 2;
 // yet (P0.1 tier 3), so same-day/next-day checks can compare tag-based and
 // RPE-based sessions on one scale.
 export const TIER_RPE_EQUIVALENT = { high: 8, medium: 5, low: 2 };
+// Same-day volume cap (P0.3, product decision): more than this many
+// sessions in one day always flags, regardless of resolved intensity.
+export const MAX_SESSIONS_PER_DAY = 2;
+
+const VALID_TIERS = new Set(['high', 'medium', 'low']);
+
+// Maps a resolved personal/fuzzy RPE average onto the same low/medium/high
+// scale event-plan tags and ref_activities rows already use, so every
+// resolution path (personal, tag, or ref-matched generic) produces one
+// consistent `tier` the day-level checks can compare directly.
+function rpeToTier(rpe) {
+  if (rpe >= HIGH_INTENSITY_RPE_THRESHOLD) return 'high';
+  if (rpe >= MEDIUM_INTENSITY_RPE_THRESHOLD) return 'medium';
+  return 'low';
+}
 
 // ── Ref-activities load scoring (moved here from overtrain.js so this module
 // stays free of the Supabase-backed ref cache; overtrain.js re-exports these
@@ -172,7 +191,7 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
         expectedLoad: rpe * durationFactor,
         confidence: 'high',
         source: `personal:${normalized}`,
-        rpe, tier: null, sampleCount: exact.length, matchedKeyword: null,
+        rpe, tier: rpeToTier(rpe), sampleCount: exact.length, matchedKeyword: null,
       };
     }
 
@@ -191,7 +210,7 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
           expectedLoad: rpe * durationFactor,
           confidence: 'medium',
           source: `personal-fuzzy:${fuzzyName}`,
-          rpe, tier: null, sampleCount: fuzzyEntries.length, matchedKeyword: null,
+          rpe, tier: rpeToTier(rpe), sampleCount: fuzzyEntries.length, matchedKeyword: null,
         };
       }
     }
@@ -199,26 +218,33 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
 
   // Tier 3 — no personal match, but an event-plan type tag classifies.
   const tagSource = session.eventPlanTag || session.name;
-  const tier = classifySessionTier(tagSource);
-  if (tier) {
+  const tagTier = classifySessionTier(tagSource);
+  if (tagTier) {
     return {
-      expectedLoad: TIER_RPE_EQUIVALENT[tier] * durationFactor,
+      expectedLoad: TIER_RPE_EQUIVALENT[tagTier] * durationFactor,
       confidence: 'low',
-      source: `event-tag:${tier}`,
-      rpe: null, tier, sampleCount: 0,
-      matchedKeyword: matchedKeywordForTier(tagSource, tier),
+      source: `event-tag:${tagTier}`,
+      rpe: null, tier: tagTier, sampleCount: 0,
+      matchedKeyword: matchedKeywordForTier(tagSource, tagTier),
     };
   }
 
   // Tier 4 — generic ref_activities / FALLBACK_LOAD lookup (no regression
-  // vs. the pre-existing behaviour).
+  // vs. the pre-existing behaviour). Confidence stays 'none' — this still
+  // isn't personalized to the user — but a matched ref_activities row's
+  // intensity_default is real, curated data (not a guess), so it still
+  // populates `tier` for the day-level same-day/next-day checks. Previously
+  // this branch discarded that signal entirely (tier always null), which
+  // meant e.g. an unlogged "Full body" gym session could never be detected
+  // as high-intensity even though ref_activities explicitly flags it so.
   const ref = findRef(session.name || session.type, refActivities);
   if (ref) {
+    const refTier = VALID_TIERS.has(ref.intensity_default) ? ref.intensity_default : null;
     return {
       expectedLoad: scoreLoad(ref.intensity_default) * durationFactor,
       confidence: 'none',
       source: `generic-ref:${ref.name}`,
-      rpe: null, tier: null, sampleCount: 0, matchedKeyword: null,
+      rpe: null, tier: refTier, sampleCount: 0, matchedKeyword: null,
     };
   }
   const key = session.type in FALLBACK_LOAD.cardio ? session.type : 'conditioning';
@@ -230,36 +256,43 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
   };
 }
 
-// High-intensity per spec P0.3: personal/fuzzy RPE >=7, OR a tag-classified
-// 'high' tier. Generic fallback (confidence 'none') is never high-intensity
-// on its own — there's no real signal behind it, and asserting otherwise
-// would reintroduce the "everything defaults to medium" noise this feature
-// is replacing.
+// High-intensity (P0.3/P0.4 gate): tier === 'high', regardless of which
+// resolution path produced it — personal/fuzzy RPE mapped through
+// rpeToTier, an event-plan tag's classified tier, or a matched
+// ref_activities row's intensity_default. A session with no resolvable
+// tier at all (no personal data, no tag, no ref match) is correctly
+// excluded — there's genuinely nothing to go on there — but that's now the
+// narrow "truly unknown" case, not every unlogged session.
 export function isHighIntensity(resolved) {
-  if (!resolved) return false;
-  if (resolved.confidence === 'high' || resolved.confidence === 'medium') {
-    return resolved.rpe != null && resolved.rpe >= HIGH_INTENSITY_RPE_THRESHOLD;
-  }
-  if (resolved.confidence === 'low') {
-    return resolved.tier === 'high';
-  }
-  return false;
+  return resolved?.tier === 'high';
+}
+
+// Same scale as isHighIntensity, for the day-level pairing rule below,
+// which also needs to distinguish medium from low (not just high-vs-rest).
+function isNonLowIntensity(resolved) {
+  return resolved?.tier === 'high' || resolved?.tier === 'medium';
 }
 
 // ── P0.6 — confidence surfaced in UI copy ───────────────────────────────────
 // Every phrase carries a qualifier ("likely"/"possibly") plus the basis for
 // the estimate, per spec: no prompt should assert load as fact when
-// confidence is below 'high'.
+// confidence is below 'high'. Reflects the actual resolved tier rather than
+// always saying "high load" — the same-day pairing rule (below) can now
+// also trigger on medium+medium, so the copy needs to match what was
+// actually detected.
 export function describeLoadCopy(resolved, sessionName) {
   const name = sessionName || 'this session';
+  const loadPhrase = resolved?.tier ? `${resolved.tier} load` : 'a heavier load';
   switch (resolved?.confidence) {
     case 'high':
     case 'medium':
-      return `likely high load (based on your last ${resolved.sampleCount} ${name} session${resolved.sampleCount === 1 ? '' : 's'})`;
+      return `likely ${loadPhrase} (based on your last ${resolved.sampleCount} ${name} session${resolved.sampleCount === 1 ? '' : 's'})`;
     case 'low':
-      return `likely high load (based on session type — ${resolved.matchedKeyword})`;
+      return `likely ${loadPhrase} (based on session type — ${resolved.matchedKeyword})`;
     default:
-      return `possibly high load (estimated — no logged data yet for ${name})`;
+      return resolved?.tier
+        ? `possibly ${loadPhrase} (typical for this kind of session — no personal data logged yet for ${name})`
+        : `possibly ${loadPhrase} (estimated — no logged data yet for ${name})`;
   }
 }
 
@@ -379,24 +412,42 @@ export function buildSequencingDecisions(resolvedSessions, allWeekDates = null) 
   const byDate = {};
   resolvedSessions.forEach(s => { (byDate[s.date] ||= []).push(s); });
 
-  const weekHighCount = resolvedSessions.filter(s => isHighIntensity(s.resolved)).length;
-  const weekTotal = resolvedSessions.length;
-  const weekHardRatio = weekTotal ? weekHighCount / weekTotal : 0;
-
-  // ── P0.3 same-day ──────────────────────────────────────────────────────
+  // ── P0.3 same-day (revised, product decision) ───────────────────────────
+  // Two rules, both unconditional — no weekly-ratio softening (superseded
+  // the original ratio-based rule, which only ever fired on 1 high-intensity
+  // + a weekly-hard-ratio check; that's gone now in favour of a flat
+  // day-level rule):
+  //   1. Volume cap — more than 2 sessions in one day always flags,
+  //      regardless of intensity (e.g. 3 easy sessions still flags — the
+  //      count itself is the problem).
+  //   2. Pairing cap — with exactly 2 sessions, flags only if BOTH resolve
+  //      to a non-low tier (medium or high). Two low-effort sessions (e.g.
+  //      a walk + an easy run) are fine; a high-intensity session leaves
+  //      room for exactly one easy session alongside it, nothing heavier.
+  // A session with no resolvable tier at all (confidence 'none' and no ref
+  // match) is deliberately NOT treated as "non-low" for rule 2 — there's
+  // nothing to base that on, and guessing would reintroduce false
+  // positives. It still counts toward rule 1's plain volume cap, though.
   weekDates.forEach(date => {
     const sessions = byDate[date];
     if (sessions.length < 2) return;
-    const highSessions = sessions.filter(s => isHighIntensity(s.resolved));
 
-    const triggered = highSessions.length >= 2 ||
-      (highSessions.length === 1 && weekHardRatio > WEEKLY_HARD_SESSION_RATIO_THRESHOLD);
-    if (!triggered) return;
+    const overVolumeCap = sessions.length > MAX_SESSIONS_PER_DAY;
+    const tiersResolved = sessions.every(s => s.resolved?.tier != null);
+    const nonLowCount = sessions.filter(s => isNonLowIntensity(s.resolved)).length;
+    const pairingViolation = sessions.length === MAX_SESSIONS_PER_DAY && tiersResolved && nonLowCount >= 2;
 
-    const primary = highSessions[0];
-    const confidence = highSessions.reduce((c, s) => higherConfidence(c, s.resolved.confidence), 'none');
+    if (!overVolumeCap && !pairingViolation) return;
+
+    const primary = sessions.find(s => s.resolved?.tier === 'high')
+      || sessions.find(s => s.resolved?.tier === 'medium')
+      || sessions[0];
+    const confidence = sessions.reduce((c, s) => higherConfidence(c, s.resolved.confidence), 'none');
     const names = sessions.map(s => s.name).join(' + ');
-    const trigger = `${primary.dayLabel}: ${names} — both same-day, ${highSessions.length >= 2 ? 'both high-intensity' : "week's hard-session ratio leaves no slack"}`;
+    const reason = overVolumeCap
+      ? `${sessions.length} sessions scheduled same-day — max 2`
+      : 'both non-easy sessions stacked same-day';
+    const trigger = `${primary.dayLabel}: ${names} — ${reason}`;
 
     decisions.push({
       trigger,

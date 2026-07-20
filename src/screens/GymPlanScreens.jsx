@@ -3159,14 +3159,27 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
 // If a gym session is added, recommends the best session type based on
 // what else is already in the weekly plan.
 
+// `refName`, where set, is the canonical `ref_activities` row this quick-add
+// category defaults to (the "moderate" variant, unless a specific one is
+// picked instead via WeeklyOverviewScreen's "+ Add session" panel, which
+// lets you choose any ref_activities row by name). It becomes the created
+// item's actual `label` — not just a lookup key — so the same name is used
+// for display, for sequencing-advisor matching, and for RPE-history
+// personalization, all in one place; previously this screen stored a bare
+// generic label ("Swim") while the other add-entry-point stored full
+// ref_activities names ("Swimming (moderate)"), which meant the two could
+// never resolve to the same personalized history or session-load estimate.
+// Left unset for categories with no unambiguous "moderate" ref_activities
+// row (walk, yoga, hike) or that aren't a single named activity (gym,
+// other) — those keep today's generic-fallback behaviour.
 const ACTIVITY_TYPES = [
   { id:'gym',   label:'Gym session', emoji:'🏋️', color:'#BE5A38', isGym: true  },
-  { id:'run',   label:'Run',         emoji:'🏃', color:'#0090FF', isGym: false },
+  { id:'run',   label:'Run',         emoji:'🏃', color:'#0090FF', isGym: false, refName: 'Running (tempo)' },
   { id:'walk',  label:'Walk',        emoji:'🚶', color:'#15803D', isGym: false },
-  { id:'swim',  label:'Swim',        emoji:'🏊', color:'#0369A1', isGym: false },
+  { id:'swim',  label:'Swim',        emoji:'🏊', color:'#0369A1', isGym: false, refName: 'Swimming (moderate)' },
   { id:'yoga',  label:'Yoga',        emoji:'🧘', color:'#6D4AAF', isGym: false },
   { id:'hike',  label:'Hike',        emoji:'⛰️', color:'#854D0E', isGym: false },
-  { id:'cycle', label:'Cycle',       emoji:'🚴', color:'#9333EA', isGym: false },
+  { id:'cycle', label:'Cycle',       emoji:'🚴', color:'#9333EA', isGym: false, refName: 'Cycling (moderate ride)' },
   { id:'other', label:'Other',       emoji:'⚡', color:'#4B5563', isGym: false },
 ];
 
@@ -3235,7 +3248,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
     const newItem = {
       id: Date.now().toString(),
       type: addType,
-      label: typeInfo.label,
+      label: typeInfo.refName || typeInfo.label,
       emoji: typeInfo.emoji,
       duration: Number(duration) || 45,
       time,
