@@ -351,6 +351,23 @@ describe('decision output (P0.5)', () => {
   });
 });
 
+describe('quick-add / AddSessionPanel naming convergence (fix #4)', () => {
+  it('a Swim added via the quick-add picker and one added via the ref_activities picker resolve identically', () => {
+    // DayActivitiesScreen's quick-add now stores the canonical ref name
+    // directly (ACTIVITY_TYPES swim.refName = "Swimming (moderate)"),
+    // matching exactly what WeeklyOverviewScreen's AddSessionPanel already
+    // stored when a user picked "Swimming (moderate)" from the full list —
+    // so RPE logged under either entry point personalizes the other.
+    const history = buildPersonalRpeHistory([
+      { workout: 'Swimming (moderate)', rpe: 6, date: '2026-07-01T00:00:00Z' },
+      { workout: 'Swimming (moderate)', rpe: 7, date: '2026-07-08T00:00:00Z' },
+    ]);
+    const viaQuickAdd = resolveExpectedLoad({ name: 'Swimming (moderate)', durationMinutes: 45 }, history, []);
+    expect(viaQuickAdd.confidence).toBe('high');
+    expect(viaQuickAdd.tier).toBe('medium');
+  });
+});
+
 describe('buildPersonalRpeHistory', () => {
   it('derives normalized, sorted-recent-first history from completedSessions', () => {
     const completedSessions = [
