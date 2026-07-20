@@ -154,6 +154,12 @@ function App() {
   const [eventOverrides, setEventOverrides] = React.useState({});
   const [preselectedQueues, setPreselectedQueues] = React.useState({});
   const [planSessionsDone, setPlanSessionsDone]           = React.useState({});
+  // Sequencing Advisor reduce/move/keep choices, keyed by the decision's
+  // stable key (utils/sessionLoadEstimate.js's buildDecisionKey) so the same
+  // conflict shows the user's earlier choice instead of the full prompt
+  // again, persisted like the rest of the app's state rather than reset on
+  // every re-render.
+  const [sequencingDecisions, setSequencingDecisions]     = React.useState({});
   const [eventPlan, setEventPlan]         = React.useState(DEFAULT_EVENT_PLAN);
   const [session, setSession]             = React.useState({
     active: false, paused: false, elapsed: 0, workout: '', queue: null,
@@ -215,6 +221,7 @@ function App() {
         setEventOverrides({});
         setPreselectedQueues({});
         setPlanSessionsDone({});
+        setSequencingDecisions({});
         setEventPlan(DEFAULT_EVENT_PLAN);
         setCustomFoods([]);
         // Stage 1: collect profile basics before anything else
@@ -326,6 +333,7 @@ function App() {
     if (data.planSessionsDone)        setPlanSessionsDone(data.planSessionsDone);
     if (data.eventPlan)        setEventPlan(data.eventPlan);
     if (data.customFoods)          setCustomFoods(data.customFoods);
+    if (data.sequencingDecisions) setSequencingDecisions(data.sequencingDecisions);
     setOnboarding(!data.profile || !data.profile.name);
   };
 
@@ -333,6 +341,7 @@ function App() {
     profile, plan, userSettings,
     completedSessions, foodLog, activities, customFoods,
     eventOverrides, preselectedQueues, planSessionsDone, eventPlan,
+    sequencingDecisions,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -354,7 +363,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, preselectedQueues, planSessionsDone, eventPlan]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, preselectedQueues, planSessionsDone, eventPlan, sequencingDecisions]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
@@ -388,6 +397,7 @@ function App() {
     setEventOverrides({});
     setPreselectedQueues({});
     setPlanSessionsDone({});
+    setSequencingDecisions({});
     setEventPlan(DEFAULT_EVENT_PLAN);
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
@@ -553,6 +563,7 @@ function App() {
     setEventOverrides({});
     setPreselectedQueues({});
     setPlanSessionsDone({});
+    setSequencingDecisions({});
     setCustomFoods([]);
     setSession({ active: false, paused: false, elapsed: 0, workout: '', queue: null });
     setOnboarding(false);
@@ -879,6 +890,7 @@ function App() {
     setPreselectedQueues({});
     setPlanSessionsDone({});
     setActivities({});
+    setSequencingDecisions({});
     setPlanRaw(DEFAULT_PLAN);
     const nextProfile = {
       ...profile,
@@ -888,6 +900,7 @@ function App() {
     setProfileRaw(nextProfile);
     const overrides = {
       eventPlan: parsed, eventOverrides: {}, preselectedQueues: {}, planSessionsDone: {}, activities: {},
+      sequencingDecisions: {},
       plan: DEFAULT_PLAN, profile: nextProfile,
     };
     setTimeout(() => scheduleSave(overrides), 0);
@@ -1129,7 +1142,12 @@ function App() {
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
                onStartQuestionnaire={() => handleStartQuestionnaire('weekly')}
-               completedSessions={completedSessions} />;
+               completedSessions={completedSessions}
+               sequencingDecisions={sequencingDecisions}
+               onUpdateSequencingDecisions={(next) => {
+                 setSequencingDecisions(next);
+                 setTimeout(() => scheduleSave({ sequencingDecisions: next }), 0);
+               }} />;
     if (s === 'session-detail')
       return <SessionDetailScreen width={contentW} height={contentH} theme={tweaks.theme}
                day={viewingDay}

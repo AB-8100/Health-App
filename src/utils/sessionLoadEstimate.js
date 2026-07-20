@@ -310,6 +310,17 @@ function higherConfidence(a, b) {
   return (CONFIDENCE_RANK[a] ?? -1) >= (CONFIDENCE_RANK[b] ?? -1) ? a : b;
 }
 
+// A stable identity for a conflict, independent of the human-readable
+// `trigger` string (which can change wording across releases). Built from
+// the participating sessions' ids so a user's reduce/move/keep choice can
+// be persisted and matched back up on the next render — the same pair of
+// sessions colliding the same way always produces the same key; a
+// genuinely different conflict (a session moved, one side changed) gets a
+// different key and is correctly treated as new, not still-acknowledged.
+function buildDecisionKey(checkType, sessionIds) {
+  return `${checkType}:${[...sessionIds].sort().join('|')}`;
+}
+
 // `reasonSession` is whichever session's load is actually driving the
 // conflict (itself, for same-day; the earlier session, for next-day) —
 // that's whose confidence-qualified copy belongs in the explanation, not
@@ -454,10 +465,13 @@ export function buildSequencingDecisions(resolvedSessions, allWeekDates = null) 
       check_type: 'same_day',
       confidence,
       options: buildDecisionOptions(primary, primary, resolvedSessions, moveCandidateDates),
-      // Not part of the spec's literal output shape, but the UI needs to
-      // know which day's card to render this under (P0.8 keeps the same
-      // "below that day's session list" anchor the old warnings used).
+      // Neither field is part of the spec's literal output shape, but the
+      // UI needs them: anchorDate says which day's card to render this
+      // under (P0.8 keeps the same "below that day's session list" anchor
+      // the old warnings used), key is the stable id a persisted
+      // reduce/move/keep choice is matched back up against.
       anchorDate: date,
+      key: buildDecisionKey('same_day', sessions.map(s => s.id)),
     });
   });
 
@@ -488,6 +502,7 @@ export function buildSequencingDecisions(resolvedSessions, allWeekDates = null) 
         confidence: earlier.resolved.confidence,
         options: buildDecisionOptions(later, earlier, resolvedSessions, moveCandidateDates),
         anchorDate: laterDate,
+        key: buildDecisionKey('next_day', [earlier.id, later.id]),
       });
     }
   }
