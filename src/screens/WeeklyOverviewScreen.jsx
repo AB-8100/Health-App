@@ -244,20 +244,23 @@ const CHOSEN_ACK = { reduce: '✓ Noted — dial it back', move: '✓ Noted — 
 // Sequencing Advisor decision card (spec P0.5/P0.6) — renders in the exact
 // spot the old passive warning text used to (below that day's session list,
 // P0.8), but as an interactive reduce/move/keep prompt instead of a static
-// message.
-function DecisionCard({ decision, t }) {
-  const [chosen, setChosen] = React.useState(null);
+// message. `decidedChoice` is the persisted choice for this decision's key
+// (or undefined if not yet decided) — once set, the full reduce/move/keep
+// prompt doesn't render again for this same conflict, on this device or any
+// other, since it's saved like the rest of the app's state rather than
+// tracked in local component state.
+function DecisionCard({ decision, t, decidedChoice, onDecide }) {
   const reduceOption = decision.options.find(o => o.type === 'reduce');
 
-  if (chosen) {
+  if (decidedChoice) {
     return (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
         background: t.surface2, border: `1px solid ${t.border}`,
         borderRadius: 8, padding: '5px 8px',
       }}>
-        <span style={{ fontSize: 10, color: t.text2 }}>{CHOSEN_ACK[chosen]}</span>
-        <button onClick={(e) => { e.stopPropagation(); setChosen(null); }} style={{
+        <span style={{ fontSize: 10, color: t.text2 }}>{CHOSEN_ACK[decidedChoice]}</span>
+        <button onClick={(e) => { e.stopPropagation(); onDecide(null); }} style={{
           background: 'transparent', border: 'none', color: t.text3,
           fontSize: 9.5, cursor: 'pointer', fontFamily: t.sans, textDecoration: 'underline',
         }}>Undo</button>
@@ -281,7 +284,7 @@ function DecisionCard({ decision, t }) {
         {decision.options.map(opt => (
           <button
             key={opt.type}
-            onClick={(e) => { e.stopPropagation(); setChosen(opt.type); }}
+            onClick={(e) => { e.stopPropagation(); onDecide(opt.type); }}
             disabled={opt.type === 'move' && !opt.suggested_days?.length}
             title={opt.detail}
             style={{
@@ -436,7 +439,7 @@ function WeekCompletionBar({ weekData, t }) {
   );
 }
 
-function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, i, t, onClick }) {
+function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, sequencingDecisions, onDecide, i, t, onClick }) {
   return (
     <div
       style={{
@@ -511,7 +514,15 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, i, t, onClick }) 
               {/* Sequencing Advisor decision cards */}
               {decisions.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  {decisions.map((d, di) => <DecisionCard key={di} decision={d} t={t} />)}
+                  {decisions.map((d, di) => (
+                    <DecisionCard
+                      key={d.key || di}
+                      decision={d}
+                      t={t}
+                      decidedChoice={sequencingDecisions[d.key]?.choice}
+                      onDecide={(choice) => onDecide(d.key, choice)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -538,6 +549,8 @@ export function WeeklyOverviewScreen({
   intakeDraft = false,
   onStartQuestionnaire,
   completedSessions = [],
+  sequencingDecisions = {},
+  onUpdateSequencingDecisions,
 }) {
   const t = themes[theme];
 
@@ -574,6 +587,22 @@ export function WeeklyOverviewScreen({
     });
     return () => { cancelled = true; };
   }, [weekData, completedSessions]);
+
+  // Persists a reduce/move/keep choice against a decision's stable key, so
+  // the same conflict shows the user's earlier choice instead of the full
+  // prompt again — on this device or any other, since it's saved like the
+  // rest of the app's state. Passing `choice: null` (the "Undo" path)
+  // removes the entry, putting the full card back.
+  const handleDecide = (key, choice) => {
+    if (!onUpdateSequencingDecisions) return;
+    const next = { ...sequencingDecisions };
+    if (choice) {
+      next[key] = { choice, decidedAt: new Date().toISOString() };
+    } else {
+      delete next[key];
+    }
+    onUpdateSequencingDecisions(next);
+  };
 
   // Adds a one-off session to a specific date in the currently-viewed week,
   // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
@@ -775,6 +804,8 @@ export function WeeklyOverviewScreen({
                 {...day}
                 i={i}
                 decisions={decisions[day.dk] || []}
+                sequencingDecisions={sequencingDecisions}
+                onDecide={handleDecide}
                 t={t}
                 onClick={() => onTapDay?.(day)}
               />

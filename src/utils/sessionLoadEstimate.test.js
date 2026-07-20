@@ -297,6 +297,45 @@ describe('next-day recovery-window check (P0.4)', () => {
 
 // ── Decision output (P0.5) ────────────────────────────────────────────────────
 
+describe('decision key stability (persisted reduce/move/keep choices match back up)', () => {
+  it('the same conflict produces the same key across separate calls', () => {
+    const sessions = [
+      session('a', 'Wed', '2026-08-05', 'Football', HIGH, FOOTBALL_REF),
+      session('b', 'Thu', '2026-08-06', 'Easy run', LOW, RUN_REF),
+    ];
+    const first = buildSequencingDecisions(sessions)[0].key;
+    const second = buildSequencingDecisions([...sessions])[0].key;
+    expect(first).toBe(second);
+    expect(first).toBeTruthy();
+  });
+
+  it('a different pair of colliding sessions gets a different key', () => {
+    const weekA = [
+      session('a', 'Mon', '2026-08-03', 'Full body', HIGH, GYM_FULL_BODY_REF),
+      session('b', 'Mon', '2026-08-03', 'Football', TAG_HIGH, FOOTBALL_REF),
+    ];
+    const weekB = [
+      session('c', 'Tue', '2026-08-04', 'Full body', HIGH, GYM_FULL_BODY_REF),
+      session('d', 'Tue', '2026-08-04', 'Football', TAG_HIGH, FOOTBALL_REF),
+    ];
+    const keyA = buildSequencingDecisions(weekA)[0].key;
+    const keyB = buildSequencingDecisions(weekB)[0].key;
+    expect(keyA).not.toBe(keyB);
+  });
+
+  it('is independent of session array order', () => {
+    const forward = buildSequencingDecisions([
+      session('a', 'Mon', '2026-08-03', 'Full body', HIGH, GYM_FULL_BODY_REF),
+      session('b', 'Mon', '2026-08-03', 'Football', TAG_HIGH, FOOTBALL_REF),
+    ])[0].key;
+    const backward = buildSequencingDecisions([
+      session('b', 'Mon', '2026-08-03', 'Football', TAG_HIGH, FOOTBALL_REF),
+      session('a', 'Mon', '2026-08-03', 'Full body', HIGH, GYM_FULL_BODY_REF),
+    ])[0].key;
+    expect(forward).toBe(backward);
+  });
+});
+
 describe('decision output (P0.5)', () => {
   it('every conflict includes all three option types', () => {
     const sessions = [

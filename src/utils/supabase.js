@@ -76,6 +76,7 @@ export async function loadUserData(userId) {
     eventOverrides:    trainingPlans?.find(p => p.training_type === 'event')?.overrides ?? {},
     planSessionsDone:  trainingPlans?.find(p => p.training_type === 'event')?.done      ?? {},
     preselectedQueues: trainingPlans?.find(p => p.training_type === 'event')?.preselected_queues ?? {},
+    sequencingDecisions: trainingPlans?.find(p => p.training_type === 'event')?.sequencing_decisions ?? {},
     eventPlan: (() => {
       const row = trainingPlans?.find(p => p.training_type === 'event');
       return row ? { meta: row.meta ?? {}, phases: row.phases ?? [], sessions: row.sessions ?? {} } : undefined;
@@ -139,17 +140,18 @@ export async function saveUserData(userId, snapshot) {
       )
     );
   }
-  if (snapshot.eventOverrides !== undefined || snapshot.planSessionsDone !== undefined || snapshot.eventPlan !== undefined || snapshot.preselectedQueues !== undefined) {
+  if (snapshot.eventOverrides !== undefined || snapshot.planSessionsDone !== undefined || snapshot.eventPlan !== undefined || snapshot.preselectedQueues !== undefined || snapshot.sequencingDecisions !== undefined) {
     ops.push(supabase.from('training_plans').upsert({
-      user_id:            userId,
-      training_type:      'event',
-      overrides:          snapshot.eventOverrides    ?? {},
-      done:               snapshot.planSessionsDone  ?? {},
-      meta:               snapshot.eventPlan?.meta,
-      phases:             snapshot.eventPlan?.phases,
-      sessions:           snapshot.eventPlan?.sessions,
-      preselected_queues: snapshot.preselectedQueues  ?? {},
-      updated_at:         new Date().toISOString(),
+      user_id:              userId,
+      training_type:        'event',
+      overrides:            snapshot.eventOverrides    ?? {},
+      done:                 snapshot.planSessionsDone  ?? {},
+      meta:                 snapshot.eventPlan?.meta,
+      phases:               snapshot.eventPlan?.phases,
+      sessions:             snapshot.eventPlan?.sessions,
+      preselected_queues:   snapshot.preselectedQueues  ?? {},
+      sequencing_decisions: snapshot.sequencingDecisions ?? {},
+      updated_at:           new Date().toISOString(),
     }, { onConflict: 'user_id,training_type' }));
   }
 

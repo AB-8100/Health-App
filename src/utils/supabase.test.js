@@ -47,6 +47,7 @@ describe('saveUserData — training_plans upsert', () => {
       eventOverrides: { '2026-01-06': [] },
       planSessionsDone: { '2026-01-05': true },
       eventPlan,
+      sequencingDecisions: { 'same_day:a|b': { choice: 'keep', decidedAt: '2026-01-05T00:00:00Z' } },
     });
 
     expect(tablesUsed).toEqual(['training_plans']);
@@ -62,7 +63,24 @@ describe('saveUserData — training_plans upsert', () => {
       meta: eventPlan.meta,
       phases: eventPlan.phases,
       sessions: eventPlan.sessions,
+      sequencing_decisions: { 'same_day:a|b': { choice: 'keep', decidedAt: '2026-01-05T00:00:00Z' } },
     });
+  });
+
+  it('writes sequencing_decisions on its own, without any other training_plans field present', async () => {
+    // onUpdateSequencingDecisions only ever changes this one field — confirm
+    // the upsert still fires (buildSnapshot in App.jsx always populates the
+    // other training_plans fields from closure state, but this pins the
+    // contract at the supabase.js layer too).
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    await saveUserData('user-1', { sequencingDecisions: { 'next_day:c|d': { choice: 'move', decidedAt: '2026-01-06T00:00:00Z' } } });
+
+    const upsertCall = builder.calls.find(([name]) => name === 'upsert');
+    expect(upsertCall).toBeTruthy();
+    const [, [payload]] = upsertCall;
+    expect(payload.sequencing_decisions).toEqual({ 'next_day:c|d': { choice: 'move', decidedAt: '2026-01-06T00:00:00Z' } });
   });
 
   it('surfaces (does not swallow) an upsert error, e.g. from a not-yet-migrated column', async () => {
@@ -90,7 +108,7 @@ describe('loadUserData — eventPlan reconstruction', () => {
     day_activities: { data: [], error: null },
   };
 
-  it('reconstructs eventPlan/eventOverrides/planSessionsDone from the stored training_plans row', async () => {
+  it('reconstructs eventPlan/eventOverrides/planSessionsDone/sequencingDecisions from the stored training_plans row', async () => {
     const responses = {
       ...baseResponses,
       training_plans: {
@@ -101,6 +119,7 @@ describe('loadUserData — eventPlan reconstruction', () => {
           meta: { startDate: '2026-01-05', totalWeeks: 18 },
           phases: [{ label: 'Foundation', weeks: [1, 4] }],
           sessions: { '2026-01-05': [{ type: 'swim', label: 'Swim' }] },
+          sequencing_decisions: { 'same_day:a|b': { choice: 'keep', decidedAt: '2026-01-05T00:00:00Z' } },
         }],
         error: null,
       },
@@ -115,6 +134,7 @@ describe('loadUserData — eventPlan reconstruction', () => {
     });
     expect(result.eventOverrides).toEqual({ '2026-01-06': [] });
     expect(result.planSessionsDone).toEqual({ '2026-01-05': true });
+    expect(result.sequencingDecisions).toEqual({ 'same_day:a|b': { choice: 'keep', decidedAt: '2026-01-05T00:00:00Z' } });
   });
 
   it('returns an empty (not undefined) eventPlan when no training_plans row exists yet', async () => {
@@ -125,6 +145,7 @@ describe('loadUserData — eventPlan reconstruction', () => {
     expect(result.eventPlan).toBeUndefined();
     expect(result.eventOverrides).toEqual({});
     expect(result.planSessionsDone).toEqual({});
+    expect(result.sequencingDecisions).toEqual({});
   });
 
   it('falls back to {}/[]/{}"} when the row exists but meta/phases/sessions are null', async () => {
