@@ -42,3 +42,32 @@ export function getSessionDisplay(actData, type) {
   }
   return SESSION_DISPLAY[type] || SESSION_DISPLAY.other;
 }
+
+// [DATA] Keyword → intensity-tier classification for uploaded event-plan
+// sessions (Sequencing Advisor P0.2). Runs against the session name/description
+// string parsed out of an uploaded .xlsx plan (trainingPlanImport.js). Kept
+// here (not in overtrain.js) so it's reusable anywhere a session's tier needs
+// to be shown, matching this file's existing role as the name/type → display
+// lookup.
+export const SESSION_TYPE_INTENSITY = {
+  low:    ['easy', 'recovery', 'long slow', 'long run'],
+  medium: ['tempo', 'steady', 'moderate'],
+  high:   ['interval', 'sprint', 'hill', 'race-pace', 'race pace', 'threshold'],
+};
+
+// Checked high → medium → low so a name matching keywords from more than one
+// tier (e.g. "Easy interval recovery") resolves to the highest-intensity
+// match — under-flagging a hard session is worse than over-flagging an easy
+// one.
+const TIER_PRECEDENCE = ['high', 'medium', 'low'];
+
+// Returns 'high' | 'medium' | 'low' | null (no keyword match — caller should
+// fall back to discipline-level generic load, not crash or return undefined).
+export function classifySessionTier(text) {
+  if (!text) return null;
+  const lower = String(text).toLowerCase();
+  for (const tier of TIER_PRECEDENCE) {
+    if (SESSION_TYPE_INTENSITY[tier].some(kw => lower.includes(kw))) return tier;
+  }
+  return null;
+}

@@ -237,15 +237,65 @@ function SessionBar({ session, isDragging }) {
   );
 }
 
-function WarningChip({ text }) {
+const CONFIDENCE_LABEL = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence', none: 'Estimated' };
+const OPTION_LABEL = { reduce: 'Reduce', move: 'Move', keep: 'Keep' };
+const CHOSEN_ACK = { reduce: '✓ Noted — dial it back', move: '✓ Noted — plan to move it', keep: '✓ Kept as scheduled' };
+
+// Sequencing Advisor decision card (spec P0.5/P0.6) — renders in the exact
+// spot the old passive warning text used to (below that day's session list,
+// P0.8), but as an interactive reduce/move/keep prompt instead of a static
+// message.
+function DecisionCard({ decision, t }) {
+  const [chosen, setChosen] = React.useState(null);
+  const reduceOption = decision.options.find(o => o.type === 'reduce');
+
+  if (chosen) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        background: t.surface2, border: `1px solid ${t.border}`,
+        borderRadius: 8, padding: '5px 8px',
+      }}>
+        <span style={{ fontSize: 10, color: t.text2 }}>{CHOSEN_ACK[chosen]}</span>
+        <button onClick={(e) => { e.stopPropagation(); setChosen(null); }} style={{
+          background: 'transparent', border: 'none', color: t.text3,
+          fontSize: 9.5, cursor: 'pointer', fontFamily: t.sans, textDecoration: 'underline',
+        }}>Undo</button>
+      </div>
+    );
+  }
+
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 3,
-      background: '#DC262612', border: '1px solid #DC262630',
-      borderRadius: 6, padding: '2px 6px', flexShrink: 0,
+      background: '#DC262610', border: '1px solid #DC262630',
+      borderRadius: 10, padding: '7px 9px', display: 'flex', flexDirection: 'column', gap: 5,
     }}>
-      <span style={{ fontSize: 9 }}>⚠️</span>
-      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#DC2626' }}>{text}</span>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+        <span style={{ fontSize: 10 }}>⚠️</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: '#B91C1C', lineHeight: 1.35 }}>{decision.trigger}</span>
+      </div>
+      {reduceOption && (
+        <div style={{ fontSize: 9.5, color: t.text2, lineHeight: 1.4 }}>{reduceOption.detail}</div>
+      )}
+      <div style={{ display: 'flex', gap: 5 }}>
+        {decision.options.map(opt => (
+          <button
+            key={opt.type}
+            onClick={(e) => { e.stopPropagation(); setChosen(opt.type); }}
+            disabled={opt.type === 'move' && !opt.suggested_days?.length}
+            title={opt.detail}
+            style={{
+              flex: 1, padding: '5px 0', borderRadius: 7,
+              background: t.surface, border: `1px solid ${t.border}`,
+              color: (opt.type === 'move' && !opt.suggested_days?.length) ? t.text3 : t.text,
+              fontSize: 9.5, fontWeight: 600, fontFamily: t.sans,
+              cursor: (opt.type === 'move' && !opt.suggested_days?.length) ? 'default' : 'pointer',
+              opacity: (opt.type === 'move' && !opt.suggested_days?.length) ? 0.5 : 1,
+            }}
+          >{OPTION_LABEL[opt.type]}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 8.5, color: t.text3 }}>{CONFIDENCE_LABEL[decision.confidence]}</div>
     </div>
   );
 }
@@ -386,7 +436,7 @@ function WeekCompletionBar({ weekData, t }) {
   );
 }
 
-function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
+function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, i, t, onClick }) {
   return (
     <div
       style={{
@@ -424,7 +474,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
               onClick={onClick}
               style={{
                 flex: 1, borderLeft: `1px solid ${t.border}`,
-                paddingLeft: 10, paddingTop: 8, paddingBottom: warnings.length ? 4 : 8, paddingRight: 8,
+                paddingLeft: 10, paddingTop: 8, paddingBottom: decisions.length ? 4 : 8, paddingRight: 8,
                 display: 'flex', flexDirection: 'column', gap: 5, cursor: 'pointer',
                 minHeight: 44,
                 background: snapshot.isDraggingOver ? t.accent + '08' : 'transparent',
@@ -458,10 +508,10 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, warnings, i, t, onClick }) {
                 {provided.placeholder}
               </div>
 
-              {/* Overtrain warnings */}
-              {warnings.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                  {warnings.map(w => <WarningChip key={w} text={w} />)}
+              {/* Sequencing Advisor decision cards */}
+              {decisions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {decisions.map((d, di) => <DecisionCard key={di} decision={d} t={t} />)}
                 </div>
               )}
             </div>
@@ -498,12 +548,32 @@ export function WeeklyOverviewScreen({
   const [weekData,      setWeekData]      = React.useState(() =>
     buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions)
   );
-  const [warnings,      setWarnings]      = React.useState({});
+  const [decisions,     setDecisions]     = React.useState({});
   const [addOpen,       setAddOpen]       = React.useState(false);
 
   React.useEffect(() => {
     setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions));
   }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions]);
+
+  // Sequencing Advisor (spec P0.7): must run on page load / week render, not
+  // just after a drag — this effect covers both, plus any other cause of a
+  // weekData rebuild (e.g. a new RPE log changing completedSessions, which
+  // feeds resolveExpectedLoad's personal-history tier). Previously checkWeek
+  // only ever ran from the drag handler, so an existing conflict was
+  // invisible until you dragged something.
+  React.useEffect(() => {
+    let cancelled = false;
+    checkWeek(weekData, completedSessions).then(built => {
+      if (cancelled) return;
+      const byDate = {};
+      built.forEach(d => {
+        if (!d.anchorDate) return;
+        (byDate[d.anchorDate] ||= []).push(d);
+      });
+      setDecisions(byDate);
+    });
+    return () => { cancelled = true; };
+  }, [weekData, completedSessions]);
 
   // Adds a one-off session to a specific date in the currently-viewed week,
   // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
@@ -549,29 +619,8 @@ export function WeeklyOverviewScreen({
     dstRow.sessions.splice(destination.index, 0, { ...moved, dayIdx: dstRow.dayIdx });
 
     setWeekData(newWeekData);
-
-    // Async overtrain check across the full updated week
-    const weekArray = newWeekData.map(row => ({
-      day:        DAY_SHORT[row.dayIdx],
-      date:       row.dk,
-      activities: row.sessions.map(s => ({
-        name:      s.label || s.type || '',
-        intensity: s.intensity || 'medium',
-        duration:  s.actData?.duration,
-      })),
-    }));
-    checkWeek(weekArray).then(conflicts => {
-      const built = {};
-      conflicts.forEach(c => {
-        if (c.day === 'week') return;
-        const row = newWeekData.find(r => DAY_SHORT[r.dayIdx] === c.day);
-        if (row) {
-          if (!built[row.dk]) built[row.dk] = [];
-          built[row.dk].push(c.message);
-        }
-      });
-      setWarnings(built);
-    });
+    // The sequencing-check effect (depends on weekData) re-runs from this
+    // setWeekData call — no separate checkWeek call needed here.
 
     // Persist event plan session moves
     if (moved.source === 'event_plan' && onUpdateOverrides) {
@@ -725,7 +774,7 @@ export function WeeklyOverviewScreen({
                 key={day.dk}
                 {...day}
                 i={i}
-                warnings={warnings[day.dk] || []}
+                decisions={decisions[day.dk] || []}
                 t={t}
                 onClick={() => onTapDay?.(day)}
               />
