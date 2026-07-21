@@ -8,6 +8,7 @@ import { SPLITS } from './GymPlanScreens';
 import { SESSION_DISPLAY, getSessionDisplay } from '../data/sessionDisplay';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { completedDateKey, isSessionCompleted } from '../utils/sessionCompletion';
+import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from '../utils/scheduleReconciliation';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -25,9 +26,16 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
   const todayKey  = getTodayDateKey();
 
   const split    = hasGym && plan.splitDays ? SPLITS[plan.splitDays] : null;
-  const splitIds = new Set((split?.days || []).map(d => d.id));
-  const overrideValid = plan.scheduleOverride?.every(s => s === '—' || splitIds.has(s));
-  const gymSched = (overrideValid ? plan.scheduleOverride : null) || split?.schedule || [];
+  const splitIds = (split?.days || []).map(d => d.id);
+  // A stored scheduleOverride is the source of truth for which days are
+  // training days (see AboutScreen.jsx's "Training days" toggle) — if the
+  // active split template has since changed, its content is reconciled onto
+  // the same days rather than discarding the day selection entirely.
+  const gymSched = plan.scheduleOverride
+    ? (isScheduleValidForSplit(plan.scheduleOverride, splitIds)
+        ? plan.scheduleOverride
+        : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitIds))
+    : (split?.schedule || []);
 
   return Array.from({ length: 7 }, (_, i) => {
     const d  = new Date(weekStart);
@@ -666,9 +674,13 @@ export function WeeklyOverviewScreen({
     if (moved.source === 'gym' && plan.splitDays) {
       const split = SPLITS[plan.splitDays];
       if (split) {
-        const splitIds = new Set(split.days.map(d => d.id));
-        const overrideValid = plan.scheduleOverride?.every(s => s === '—' || splitIds.has(s));
-        const sched = [...((overrideValid ? plan.scheduleOverride : null) || split.schedule)];
+        const splitIds = split.days.map(d => d.id);
+        const base = plan.scheduleOverride
+          ? (isScheduleValidForSplit(plan.scheduleOverride, splitIds)
+              ? plan.scheduleOverride
+              : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitIds))
+          : split.schedule;
+        const sched = [...base];
         const tmp = sched[srcRow.dayIdx];
         sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
         sched[dstRow.dayIdx] = tmp;

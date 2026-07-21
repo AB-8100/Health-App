@@ -7,6 +7,7 @@ import { getSessionDisplay } from '../data/sessionDisplay';
 import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { SwimDistanceFields, RpeField } from './GymSessionScreen';
+import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from '../utils/scheduleReconciliation';
 const EX_LIB = {
   // Compounds
   bench:          { name:'Bench press',          muscle:'Chest',         type:'compound' },
@@ -1732,12 +1733,18 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
     };
   });
 
-  // Use plan.scheduleOverride only if all its day IDs still exist in the current split.
-  const splitDayIds = split ? new Set(split.days.map(d => d.id)) : new Set();
-  const scheduleOverrideIsValid = split && plan.scheduleOverride &&
-    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
+  // A stored scheduleOverride is which days are training days (see
+  // AboutScreen.jsx's Training days toggle) — reconciled onto the current
+  // split's ids if the split changed since it was last saved, rather than
+  // falling all the way back to the template default and silently
+  // disagreeing with what About screen / Weekly Overview show.
+  const splitDayIds = split ? split.days.map(d => d.id) : [];
   const schedule = split
-    ? (scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule)
+    ? (plan.scheduleOverride
+        ? (isScheduleValidForSplit(plan.scheduleOverride, splitDayIds)
+            ? plan.scheduleOverride
+            : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitDayIds))
+        : split.schedule)
     : ['—','—','—','—','—','—','—'];
 
   // viewDayIdx: which day the exercise focus card shows (defaults to today's day of week)
@@ -2665,20 +2672,32 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
   const [selected, setSelected] = React.useState(plan.splitDays || 3);
   const split = SPLITS[selected];
 
-  // Editable schedule — initialise from plan override if valid, else default
+  // Editable schedule — initialise from plan override if valid, else
+  // reconcile it onto the current split's ids (preserves which days the
+  // user picked in About → Training days), else the template default.
   const initSchedule = () => {
     const s = SPLITS[plan.splitDays];
     if (!s) return SPLITS[3].schedule.slice();
-    const ids = new Set(s.days.map(d => d.id));
-    const valid = plan.scheduleOverride && plan.scheduleOverride.every(slot => slot === '—' || ids.has(slot));
-    return valid ? [...plan.scheduleOverride] : [...s.schedule];
+    if (!plan.scheduleOverride) return [...s.schedule];
+    const ids = s.days.map(d => d.id);
+    return isScheduleValidForSplit(plan.scheduleOverride, ids)
+      ? [...plan.scheduleOverride]
+      : reconcileScheduleWithSplitIds(plan.scheduleOverride, ids);
   };
   const [customSchedule, setCustomSchedule] = React.useState(initSchedule);
   const [movingIdx, setMovingIdx] = React.useState(null); // slot index currently selected for move
 
-  // Reset schedule when user picks a different day count
+  // Reassign content onto the same training days when the user picks a
+  // different split — which days are training days lives in About →
+  // Training days now, so changing the split here must not reset that
+  // selection (previously this ran on every mount too, silently discarding
+  // plan.scheduleOverride before the user had touched anything — the ref
+  // guard below skips that first, unwanted run).
+  const isFirstRender = React.useRef(true);
   React.useEffect(() => {
-    setCustomSchedule([...SPLITS[selected].schedule]);
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    const newIds = SPLITS[selected].days.map(d => d.id);
+    setCustomSchedule(prev => reconcileScheduleWithSplitIds(prev, newIds));
     setMovingIdx(null);
   }, [selected]);
 
@@ -2716,7 +2735,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
         </div>
       </div>
 
-      <ScreenHeader theme={theme} title="Choose split" sub="Gym week"
+      <ScreenHeader theme={theme} title="Customize split" sub="Split content"
         onBack={onBack}
         right={
           <button onClick={() => onSave(selected, customSchedule)} style={{
@@ -2729,7 +2748,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
       <div style={{ flex:1, overflowY:'auto', padding:'14px 18px 16px' }} className="phone-scroll">
 
         <div style={{ fontSize:12, color:t.text2, marginBottom:14, lineHeight:1.5 }}>
-          How many gym days per week? The split structure adapts — more frequency means more focused sessions.
+          Choose how many different sessions rotate through your training days. To add or remove which days you train, use Training days in About me.
         </div>
 
         {/* Day count toggle */}
@@ -2750,7 +2769,7 @@ function SplitPickerScreen({ width = 390, height = 820, theme = 'light',
                 fontFamily:t.sans, fontSize:9, letterSpacing:'.1em',
                 color: d === selected ? '#fff' : t.text3, fontWeight:500
               }}>
-                DAY{d > 1 ? 'S' : ''}
+                SESSION{d > 1 ? 'S' : ''}
               </span>
             </button>
           ))}
@@ -2873,12 +2892,16 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
     ? ((plan.overrides && plan.overrides[dayId]) || split.days.find(d => d.id === dayId) || split.days[0])
     : (split ? split.days[0] : null);
 
-  // Compute the effective schedule
-  const splitDayIds = split ? new Set(split.days.map(d => d.id)) : new Set();
-  const scheduleOverrideIsValid = plan.scheduleOverride &&
-    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
+  // Compute the effective schedule — reconcile a stored scheduleOverride
+  // onto the current split's ids rather than discarding it wholesale (see
+  // the comment in GymHubScreen above for why).
+  const splitDayIds = split ? split.days.map(d => d.id) : [];
   const baseSchedule = split
-    ? (scheduleOverrideIsValid ? plan.scheduleOverride : split.schedule)
+    ? (plan.scheduleOverride
+        ? (isScheduleValidForSplit(plan.scheduleOverride, splitDayIds)
+            ? plan.scheduleOverride
+            : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitDayIds))
+        : split.schedule)
     : Array(7).fill('—');
   const initialSlotIdx = baseSchedule.findIndex(slot => slot === dayId);
 
@@ -3228,12 +3251,16 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
 
   const dayName = DAY_NAMES[currentDayIdx] || 'Day';
 
-  // Resolve the active schedule — respects plan.scheduleOverride when valid
+  // Resolve the active schedule — reconciles plan.scheduleOverride onto the
+  // current split's ids rather than discarding it when the split changed
+  // since it was saved (see the matching comment in GymHubScreen above).
   const split = SPLITS[plan.splitDays];
-  const splitDayIds = new Set((split?.days || []).map(d => d.id));
-  const scheduleOverrideIsValid = plan.scheduleOverride &&
-    plan.scheduleOverride.every(slot => slot === '—' || splitDayIds.has(slot));
-  const activeSchedule = (scheduleOverrideIsValid ? plan.scheduleOverride : split?.schedule) || [];
+  const splitDayIds = (split?.days || []).map(d => d.id);
+  const activeSchedule = (plan.scheduleOverride
+    ? (isScheduleValidForSplit(plan.scheduleOverride, splitDayIds)
+        ? plan.scheduleOverride
+        : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitDayIds))
+    : split?.schedule) || [];
   const scheduledSlot = activeSchedule[currentDayIdx];
   const baseDay = scheduledSlot && scheduledSlot !== '—'
     ? split.days.find(d => d.id === scheduledSlot) : null;

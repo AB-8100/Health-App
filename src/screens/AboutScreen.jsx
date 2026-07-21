@@ -6,7 +6,14 @@ import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
 import { isSupportedAIRaceType } from '../utils/planPrompt';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
+import { SPLITS } from './GymPlanScreens';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
+import {
+  getTrainingDayIndices, toggleTrainingDay,
+  isScheduleValidForSplit, reconcileScheduleWithSplitIds,
+} from '../utils/scheduleReconciliation';
+
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Height/weight are always stored canonically in cm/kg (profile.height,
 // profile.weight — see docs/PROJECT_CONTEXT.md §9), regardless of which
@@ -113,6 +120,7 @@ function AboutScreen({
   onGenerateAIPlan,
   onRedoGoals,
   onResetOnboardingSchedule,
+  onUpdateSchedule,
 }) {
   const t = themes[theme];
 
@@ -139,7 +147,29 @@ function AboutScreen({
 
   const hasGym          = localProfile.hasGym !== false;
   const hasEventTraining = !!localProfile.hasEventTraining;
-  const gymDays          = hasGym && plan.splitDays ? plan.splitDays : 0;
+
+  // Training days now come from the actual schedule (which weekdays are
+  // non-'—'), not from plan.splitDays — splitDays is just "how many
+  // distinct sessions rotate through those days" (see Customize split /
+  // SplitPickerScreen). A stored scheduleOverride is reconciled onto the
+  // current split's ids if the split changed since it was last saved.
+  const activeSplit    = hasGym && plan.splitDays ? SPLITS[plan.splitDays] : null;
+  const activeSplitIds = activeSplit ? activeSplit.days.map(d => d.id) : [];
+  const effectiveSchedule = plan.scheduleOverride
+    ? (isScheduleValidForSplit(plan.scheduleOverride, activeSplitIds)
+        ? plan.scheduleOverride
+        : reconcileScheduleWithSplitIds(plan.scheduleOverride, activeSplitIds))
+    : (activeSplit?.schedule || Array(7).fill('—'));
+  const trainingDayIndices = hasGym ? getTrainingDayIndices(effectiveSchedule) : [];
+  const gymDays = trainingDayIndices.length;
+
+  const handleToggleTrainingDay = (dayIdx) => {
+    const effectiveSplitDays = plan.splitDays || 3; // sensible default so a first toggle has content to assign
+    const ids = SPLITS[effectiveSplitDays].days.map(d => d.id);
+    const nextSchedule = toggleTrainingDay(effectiveSchedule, ids, dayIdx);
+    onUpdateSchedule?.(nextSchedule, plan.splitDays ? undefined : effectiveSplitDays);
+  };
+
   const totalPlanWeeks   = eventPlan.meta?.totalWeeks || localProfile.eventTotalWeeks || 18;
   const currentWeek      = getCurrentPlanWeek(eventPlan.meta?.startDate, totalPlanWeeks);
   const phaseMeta        = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(totalPlanWeeks);
@@ -780,40 +810,39 @@ function AboutScreen({
           )}
         </Section>
 
-        {/* Training split — disabled while an uploaded event plan is driving
-            the Weekly Overview, since a configured split would inject gym
-            sessions alongside the plan's own sessions. */}
-        <Section title="Training split" theme={theme}>
+        {/* Training days — which weekdays you train, decoupled from any
+            specific split template. Disabled while an uploaded event plan
+            is driving the Weekly Overview, since a configured schedule
+            would inject gym sessions alongside the plan's own sessions. */}
+        <Section title="Training days" theme={theme}>
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
             {hasEventTraining
               ? "Disabled while your uploaded training plan is active. Add one-off sessions from the Weekly Overview's + Add session button instead."
-              : 'Gym sessions per week. Tap a number or open the picker to adjust your schedule and exercises.'}
+              : 'Tap the days you train — this feeds straight into your Weekly Overview.'}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, opacity: hasEventTraining ? 0.45 : 1 }}>
-            {[1, 2, 3, 4, 5].map(n => {
-              const isActive = (plan.splitDays || 0) === n;
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5, opacity: hasEventTraining ? 0.45 : 1 }}>
+            {WEEKDAY_LABELS.map((label, i) => {
+              const isActive = trainingDayIndices.includes(i);
               return (
                 <button
-                  key={n}
+                  key={label}
                   disabled={hasEventTraining}
-                  onClick={() => onNav?.('gym-split')}
+                  onClick={() => handleToggleTrainingDay(i)}
                   style={{
-                    padding: '12px 0 8px', borderRadius: 11,
+                    padding: '10px 0 7px', borderRadius: 10,
                     background: isActive ? t.text : t.surface2,
                     color: isActive ? '#fff' : t.text,
                     border: `1px solid ${isActive ? t.text : t.border}`,
-                    fontFamily: t.serif, fontSize: 20, lineHeight: 1,
+                    fontFamily: t.sans, fontSize: 11, fontWeight: 600, lineHeight: 1,
                     cursor: hasEventTraining ? 'not-allowed' : 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                   }}
                 >
-                  {n}
+                  {label}
                   <span style={{
-                    fontFamily: t.sans, fontSize: 8.5, letterSpacing: '.08em',
-                    color: isActive ? 'rgba(255,255,255,.7)' : t.text3, fontWeight: 500,
-                  }}>
-                    {n === 1 ? 'DAY' : 'DAYS'}
-                  </span>
+                    width: 5, height: 5, borderRadius: '50%',
+                    background: isActive ? 'rgba(255,255,255,.8)' : t.border2,
+                  }} />
                 </button>
               );
             })}
@@ -854,7 +883,7 @@ function AboutScreen({
               cursor: hasEventTraining ? 'not-allowed' : 'pointer',
               opacity: hasEventTraining ? 0.45 : 1,
             }}
-          >Open split picker →</button>
+          >Customize split content →</button>
 
           {hasEventTraining && (
             <button
@@ -864,7 +893,7 @@ function AboutScreen({
                 background: 'transparent', border: `1px solid ${t.border}`,
                 color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
               }}
-            >Switch to training split instead →</button>
+            >Switch to training days instead →</button>
           )}
         </Section>
 

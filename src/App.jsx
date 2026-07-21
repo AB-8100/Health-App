@@ -5,6 +5,7 @@ import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, lo
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
 import { isDuplicateSignupResponse } from './utils/authErrors';
 import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
+import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from './utils/scheduleReconciliation';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -817,9 +818,13 @@ function App() {
     if (sess.source === 'gym') {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
       if (!split) return;
-      const splitIds = new Set(split.days.map(d => d.id));
-      const overrideValid = plan.scheduleOverride?.every(s => s === '—' || splitIds.has(s));
-      const sched = [...((overrideValid ? plan.scheduleOverride : null) || split.schedule)];
+      const splitIds = split.days.map(d => d.id);
+      const base = plan.scheduleOverride
+        ? (isScheduleValidForSplit(plan.scheduleOverride, splitIds)
+            ? plan.scheduleOverride
+            : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitIds))
+        : split.schedule;
+      const sched = [...base];
       sched[sess.dayIdx] = '—';
       setPlan(p => ({ ...p, scheduleOverride: sched }));
     } else if (sess.source === 'event_plan') {
@@ -1212,7 +1217,12 @@ function App() {
                goalsPayload={goalsPayload}
                intake={intakePayload}
                onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)}
-               onRedoGoals={() => handleRedoGoals('about-me')} />;
+               onRedoGoals={() => handleRedoGoals('about-me')}
+               onUpdateSchedule={(newSched, splitDaysDefault) => setPlan(p => ({
+                 ...p,
+                 scheduleOverride: newSched,
+                 ...(splitDaysDefault && !p.splitDays ? { splitDays: splitDaysDefault } : {}),
+               }))} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}

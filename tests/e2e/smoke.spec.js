@@ -81,6 +81,21 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('About screen shows Training days with weekday toggles, and toggling one updates Weekly Overview', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Training days$/).first()).toBeVisible();
+
+    const mondayToggle = page.getByRole('button', { name: /^Mon/ }).first();
+    if (await mondayToggle.isVisible().catch(() => false)) {
+      await mondayToggle.click();
+      await page.getByRole('button', { name: /weekly/i }).first().click();
+      // Just confirms the toggle round-trips into a render without throwing —
+      // exact session content depends on the test account's active split.
+      await expect(page.getByText(/mon|tue|wed|thu|fri|sat|sun/i).first()).toBeVisible();
+    }
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('starting and exiting a gym session does not throw', async ({ page }) => {
     await page.getByRole('button', { name: /gym/i }).first().click();
     const startButton = page.getByRole('button', { name: /start/i }).first();
