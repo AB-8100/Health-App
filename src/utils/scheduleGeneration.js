@@ -207,6 +207,39 @@ export function generateActivitySchedule(goalsPayload) {
   return goalAwareGenerateActivitySchedule(goalsPayload);
 }
 
+// Decides whether Stage 3 (DeepQuestionnaireScreen) completing should be
+// allowed to apply its generated gym split / activity schedule onto
+// plan.splitDays / activities. When the user already has an active event
+// training plan (uploaded or AI-generated — real session data, not just the
+// flag) and hasn't explicitly opted to discard it, applying a generated
+// schedule would inject gym-split/activity sessions on the same Weekly
+// Overview days as the race plan's own sessions ("populated over the top of
+// my training plan"). Default is to block; only an explicit opt-in unblocks it.
+export function shouldBlockGeneratedSchedule({ hasEventTraining, eventPlanSessions, discardEventPlan }) {
+  const hasActiveEventPlan = !!hasEventTraining && Object.keys(eventPlanSessions || {}).length > 0;
+  return hasActiveEventPlan && !discardEventPlan;
+}
+
+// Profile fields onboarding (Stage 3, or a redo) derives and writes — reset
+// back to "never done onboarding" by the About screen's "Remove
+// app-generated schedule" action. Deliberately narrow: only clears fields
+// this app's own onboarding writes to (goal, splitDays, hasTrainingActivities,
+// intakeCompleted). Does NOT touch hasEventTraining, hasGym, or any
+// identity/body-stat field — and callers must build their save overrides
+// from only { profile, plan, activities }, leaving eventPlan/eventOverrides/
+// preselectedQueues/planSessionsDone/sequencingDecisions/completedSessions/
+// foodLog/customFoods out entirely, so an active uploaded/generated race
+// plan and all other account data are left completely untouched.
+export function resetOnboardingProfileFields(profile) {
+  return {
+    ...profile,
+    goal: '',
+    splitDays: null,
+    hasTrainingActivities: false,
+    intakeCompleted: false,
+  };
+}
+
 // Gym split is determined by how many gym sessions are in the weekly plan,
 // not the total number of training days.
 export function getAutoSplitDays(gymDayCount) {
