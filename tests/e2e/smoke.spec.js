@@ -47,6 +47,28 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('About screen shows Body stats above Data sync, no Connected apps stub', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    const bodyText = await page.locator('body').innerText();
+
+    // Connected apps was a UI-only stub (Strava/Apple Health/etc. never
+    // actually connected) — removed per features/specs/about-me-cosmetic-cleanup.md.
+    expect(bodyText).not.toMatch(/Connected apps/i);
+
+    // Body stats and Calorie targets should render above Data sync now that
+    // they've been moved to the top of the screen.
+    const bodyStatsIdx = bodyText.search(/Body stats/i);
+    const calorieIdx   = bodyText.search(/Calorie targets/i);
+    const dataSyncIdx  = bodyText.search(/Data sync/i);
+    expect(bodyStatsIdx).toBeGreaterThan(-1);
+    expect(dataSyncIdx).toBeGreaterThan(-1);
+    expect(bodyStatsIdx).toBeLessThan(dataSyncIdx);
+    expect(calorieIdx).toBeGreaterThan(-1);
+    expect(calorieIdx).toBeLessThan(dataSyncIdx);
+
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('starting and exiting a gym session does not throw', async ({ page }) => {
     await page.getByRole('button', { name: /gym/i }).first().click();
     const startButton = page.getByRole('button', { name: /start/i }).first();

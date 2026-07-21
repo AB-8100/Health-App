@@ -1207,6 +1207,7 @@ function App() {
                intakeDraft={intakeDraft}
                onStartQuestionnaire={() => handleStartQuestionnaire('about-me')}
                eventPlan={eventPlan}
+               eventOverrides={eventOverrides}
                onUploadTrainingPlan={handleUploadTrainingPlan}
                goalsPayload={goalsPayload}
                intake={intakePayload}
