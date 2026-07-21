@@ -858,14 +858,26 @@ function App() {
     else setScreen(target);
   };
 
+  // NOTE: despite the name, this is reached by more than genuinely brand-new
+  // signups — bootstrapUser routes any *existing* account with no `goal` set
+  // into Stage 2, and About Me's "Complete your profile / Set up training
+  // plan" button (onSetupTrainingPlan) opens Stage 2 the same direct way, and
+  // both land here via handleIntakeComplete once Stage 3 finishes. This used
+  // to hardcode completedSessions: [], foodLog: {}, and userSettings:
+  // DEFAULT_SETTINGS into the saved snapshot regardless — harmless for an
+  // actually-new account (those are already empty) but a silent full wipe of
+  // a returning user's logged history and food log (both delete-then-insert
+  // on save) the moment they went through onboarding again. Preserve
+  // whatever's actually in state for everything that isn't onboarding output
+  // (profile/plan/activities) — a no-op for new users, and no longer
+  // destructive for anyone else who ends up here.
   const completeOnboarding = (newProfile, initialActivities = {}) => {
     const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
-    setSettingsRaw(DEFAULT_SETTINGS);
     setActivities(initialActivities);
-    const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
-                       completedSessions: [], foodLog: {}, activities: initialActivities,
+    const snapshot = { profile: newProfile, plan: newPlan, userSettings,
+                       completedSessions, foodLog, activities: initialActivities, customFoods,
                        savedAt: new Date().toISOString() };
     saveToCache(snapshot, currentUserIdRef.current);
     if (sheetsConnectedRef.current) saveToSheets(snapshot);
@@ -1035,7 +1047,14 @@ function App() {
                userId={currentUser?.id}
                initialGoalsPayload={goalsPayload}
                onComplete={handleGoalsSetupComplete}
-               onExit={screenBeforeIntakeRef.current !== null ? handleExitGoalsRedo : undefined} />;
+               // Always exitable, not just when re-entered via "redo goals" —
+               // bootstrapUser's auto-route (existing account, no `goal` set)
+               // and About Me's "Set up training plan" button both land here
+               // the same direct way, with nothing to distinguish them from a
+               // real first-time signup. handleExitGoalsRedo already falls
+               // back to 'weekly' when there's no prior screen to return to,
+               // so it's always safe to offer a way out.
+               onExit={handleExitGoalsRedo} />;
     if (onboardingStage === 'intake')
       return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
@@ -1044,7 +1063,10 @@ function App() {
                hasActiveEventPlan={shouldBlockGeneratedSchedule({ hasEventTraining, eventPlanSessions: eventPlan.sessions, discardEventPlan: false })}
                onComplete={handleIntakeComplete}
                onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
-               onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
+               // Same reasoning as GoalsSetupScreen's onExit above — always
+               // exitable, since Stage 3 is just as reachable via a direct
+               // auto-route as via an explicit "redo"/"start questionnaire" entry.
+               onExit={handleExitQuestionnaire} />;
     if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}

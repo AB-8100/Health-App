@@ -327,7 +327,19 @@ export function GoalsSetupScreen({
             <span style={{ textTransform: 'uppercase' }}>{stepLabel(current)}</span>
           </div>
         </div>
-        <div style={{ width: 32 }} />
+        {/* Exit is also reachable from every later step (not just step 0,
+            where it already shares the back-button slot on the left) — the
+            left slot is busy with "back" once stepIdx > 0, so a returning
+            user who got routed straight into onboarding (bootstrapUser
+            auto-route, or About Me's "Set up training plan") isn't stuck
+            pressing back repeatedly just to find a way out. */}
+        {stepIdx > 0 && onExit ? (
+          <button onClick={onExit} style={{
+            width: 32, height: 32, borderRadius: 9, background: 'transparent',
+            border: `1px solid ${t.border}`, color: t.text3, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0,
+          }}>×</button>
+        ) : <div style={{ width: 32 }} />}
       </div>
 
       {/* Body */}
