@@ -35,6 +35,7 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
   const [form, setForm] = React.useState({
     name: '',
     dob: '',
+    sex: '',
     heightCm: '',
     heightFt: '',
     heightIn: '',
@@ -95,6 +96,8 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
       if (new Date(form.dob) > new Date()) errs.dob = 'Date of birth cannot be in the future.';
     }
 
+    if (!form.sex) errs.sex = 'Please select an option.';
+
     if (units === 'metric') {
       const h = Number(form.heightCm);
       if (!form.heightCm || isNaN(h) || h < 50 || h > 300) errs.heightCm = 'Enter height between 50–300 cm.';
@@ -134,6 +137,7 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
         user_id:    userId,
         name:       form.name.trim(),
         age,
+        sex:        form.sex,
         height_cm:  heightCm,
         weight_kg:  weightKg,
         bmi,
@@ -160,6 +164,7 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
         profile: {
           name:      form.name.trim(),
           age,
+          sex:       form.sex,
           height:    heightCm,
           weight:    weightKg,
           bmi,
@@ -283,6 +288,28 @@ export function ProfileSetupScreen({ width = 390, height = 820, theme = 'light',
             }}
           />
           {errors.dob && <FieldError msg={errors.dob} />}
+        </div>
+
+        {/* Sex — used to personalise the calorie calculation (Mifflin-St
+            Jeor needs it; "Prefer not to say" falls back to a neutral
+            average, see utils/calorieCalc.js) */}
+        <div style={{ marginBottom: 16 }}>
+          <FieldLabel>Sex</FieldLabel>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[['male', 'Male'], ['female', 'Female'], ['prefer_not_to_say', 'Prefer not to say']].map(([val, label]) => (
+              <button key={val} onClick={() => update({ sex: val })} style={{
+                flex: 1, padding: '10px 6px', borderRadius: 11,
+                background: form.sex === val ? t.text : t.surface,
+                color: form.sex === val ? '#fff' : t.text,
+                border: `1.5px solid ${form.sex === val ? t.text : (errors.sex ? '#EF4444' : (t.border2 || t.border))}`,
+                fontFamily: t.sans, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                transition: 'all .15s',
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {errors.sex && <FieldError msg={errors.sex} />}
         </div>
 
         {/* Height */}

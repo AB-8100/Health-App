@@ -6,6 +6,19 @@ import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
 import { isSupportedAIRaceType } from '../utils/planPrompt';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
+import { computeSuggestedCalories } from '../utils/calorieCalc';
+
+// Height/weight are always stored canonically in cm/kg (profile.height,
+// profile.weight — see docs/PROJECT_CONTEXT.md §9), regardless of which
+// unit is selected for display. These convert for display/edit only.
+const cmToDecimalFt = (cm) => Math.round((Number(cm) / 30.48) * 100) / 100;
+const decimalFtToCm = (ft) => Math.round(Number(ft) * 30.48);
+const kgToLbs = (kg) => Math.round(Number(kg) * 2.20462 * 10) / 10;
+const lbsToKg = (lbs) => Math.round(Number(lbs) * 0.453592 * 10) / 10;
+
+const SEX_OPTIONS = [
+  ['male', 'Male'], ['female', 'Female'], ['prefer_not_to_say', 'Prefer not to say'],
+];
 
 // Simple editable field row
 function FieldRow({ label, value, unit, type = 'number', step, onChange, theme }) {
@@ -159,6 +172,31 @@ function AboutScreen({
   const primaryGoalLabel = realGoals.length
     ? (GOAL_TYPES.find(g => g.id === realGoals[0].type)?.label || realGoals[0].type)
     : null;
+
+  // Suggested calorie targets — computed from body stats + weekly session
+  // count, never auto-applied over the editable fields below (see
+  // "Use suggestion" button in the Calorie targets section).
+  const calorieSuggestion = React.useMemo(() => computeSuggestedCalories({
+    heightCm: localProfile.height,
+    weightKg: localProfile.weight,
+    age: localProfile.age,
+    sex: localProfile.sex,
+    weeklyTrainingSessions: totalWeeklySessions,
+  }), [localProfile.height, localProfile.weight, localProfile.age, localProfile.sex, totalWeeklySessions]);
+
+  const useCalorieSuggestion = () => {
+    if (!calorieSuggestion) return;
+    // Both fields together in one update — two sequential updateSettings()
+    // calls would each spread the same stale localSettings snapshot and the
+    // second call would silently drop the first field's change.
+    const updated = {
+      ...localSettings,
+      dailyCaloriesBase: calorieSuggestion.suggestedDailyBase,
+      gymDayBoost: calorieSuggestion.suggestedGymDayBoost,
+    };
+    setLS(updated);
+    if (onSaveSettings) onSaveSettings(updated);
+  };
 
   // ── Training plan upload ──────────────────────────────────────────────────
   const fileInputRef = React.useRef(null);
@@ -337,12 +375,45 @@ function AboutScreen({
             onChange={(v) => updateProfile('name', v)} theme={theme} />
           <FieldRow label="Age" value={localProfile.age || 30} unit="years"
             onChange={(v) => updateProfile('age', v)} theme={theme} />
-          <FieldRow label="Height" value={localProfile.height || 168}
-            unit={localSettings.heightUnit} step={1}
-            onChange={(v) => updateProfile('height', v)} theme={theme} />
-          <FieldRow label="Weight" value={localProfile.weight || 65}
-            unit={localSettings.weightUnit} step={0.1}
-            onChange={(v) => updateProfile('weight', v)} theme={theme} />
+          {/* Sex — feeds the calorie suggestion below (Mifflin-St Jeor
+              differs by sex); also collected at onboarding. */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '11px 0', borderBottom: `1px solid ${t.border}`,
+          }}>
+            <span style={{ fontSize: 13, color: t.text }}>Sex</span>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {SEX_OPTIONS.map(([val, label]) => {
+                const active = localProfile.sex === val;
+                return (
+                  <button key={val} onClick={() => updateProfile('sex', val)} style={{
+                    padding: '4px 9px', borderRadius: 7,
+                    background: active ? t.text : 'transparent',
+                    color: active ? '#fff' : t.text2,
+                    border: `1px solid ${active ? t.text : t.border}`,
+                    fontSize: 10.5, cursor: 'pointer', fontFamily: t.sans, fontWeight: 500,
+                  }}>{label}</button>
+                );
+              })}
+            </div>
+          </div>
+          {/* Height/weight are stored canonically in cm/kg — convert for
+              display and on save so an imperial-unit edit doesn't write a
+              raw ft/lbs number into a field everything else treats as cm/kg. */}
+          <FieldRow
+            label="Height"
+            value={localSettings.heightUnit === 'ft' ? cmToDecimalFt(localProfile.height || 168) : (localProfile.height || 168)}
+            unit={localSettings.heightUnit} step={localSettings.heightUnit === 'ft' ? 0.1 : 1}
+            onChange={(v) => updateProfile('height', localSettings.heightUnit === 'ft' ? decimalFtToCm(v) : v)}
+            theme={theme}
+          />
+          <FieldRow
+            label="Weight"
+            value={localSettings.weightUnit === 'lbs' ? kgToLbs(localProfile.weight || 65) : (localProfile.weight || 65)}
+            unit={localSettings.weightUnit} step={localSettings.weightUnit === 'lbs' ? 1 : 0.1}
+            onChange={(v) => updateProfile('weight', localSettings.weightUnit === 'lbs' ? lbsToKg(v) : v)}
+            theme={theme}
+          />
           {/* Unit toggle */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -387,6 +458,34 @@ function AboutScreen({
             </span>
             {' '}(adjusts with active days)
           </div>
+
+          {/* Suggested target — computed from body stats + weekly session
+              count (Mifflin-St Jeor + activity multiplier), never applied
+              automatically over the editable fields above. */}
+          {calorieSuggestion ? (
+            <div style={{
+              marginTop: 4, padding: '10px 12px', borderRadius: 10,
+              background: t.surface2, border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: 11.5, color: t.text, lineHeight: 1.5 }}>
+                Suggested: <strong>{calorieSuggestion.suggestedDailyBase.toLocaleString()} kcal</strong> base
+                {' · +'}<strong>{calorieSuggestion.suggestedGymDayBoost.toLocaleString()} kcal</strong> gym day
+              </div>
+              <div style={{ fontSize: 10, color: t.text3, marginTop: 2 }}>
+                Based on your height, weight, age, sex, and {totalWeeklySessions} session{totalWeeklySessions === 1 ? '' : 's'}/week ({calorieSuggestion.activityTier} activity).
+              </div>
+              <button onClick={useCalorieSuggestion} style={{
+                marginTop: 8, padding: '6px 12px', borderRadius: 8,
+                background: t.accent + '15', color: t.accent,
+                border: `1px solid ${t.accent + '30'}`,
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+              }}>Use suggestion</button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+              Fill in your age, height, and weight in Body stats above for a suggested target.
+            </div>
+          )}
         </Section>
 
         {/* Training plan */}

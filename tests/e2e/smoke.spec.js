@@ -69,6 +69,18 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('About screen Body stats includes a Sex control and Calorie targets shows a suggestion', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Sex$/).first()).toBeVisible();
+    // The suggestion only renders once age/height/weight are present (test
+    // account is past onboarding, so they should be) — falls back to a
+    // "fill in your stats" prompt otherwise, either of which proves the
+    // Calorie targets section rendered without throwing.
+    const suggestionOrPrompt = page.getByText(/Suggested:|for a suggested target/i).first();
+    await expect(suggestionOrPrompt).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('starting and exiting a gym session does not throw', async ({ page }) => {
     await page.getByRole('button', { name: /gym/i }).first().click();
     const startButton = page.getByRole('button', { name: /start/i }).first();
