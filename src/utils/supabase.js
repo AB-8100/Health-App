@@ -21,7 +21,7 @@ export const supabase = createClient(
 
 export async function loadUserData(userId) {
   const [
-    { data: profile },
+    { data: profile, error: profileErr },
     { data: settings },
     { data: plan },
     { data: sessions },
@@ -39,6 +39,17 @@ export async function loadUserData(userId) {
     supabase.from('day_activities').select('*').eq('user_id', userId),
     supabase.from('training_plans').select('*').eq('user_id', userId),
   ]);
+
+  // .single() returns `data: null` both when the row genuinely doesn't exist
+  // (error code PGRST116, "no rows") and for any other failure (RLS hiccup,
+  // dropped connection, etc). Only the former means "this user has no
+  // profile yet" — treating every other error the same way silently handed
+  // back an empty profile (hasEventTraining, goal, everything) even though
+  // the real row — and the user's uploaded event plan flag on it — was
+  // sitting there untouched. Anything else propagates so the caller's
+  // existing network-error fallback (bootstrapUser falls back to the local
+  // cache) kicks in instead of quietly treating a real profile as missing.
+  if (profileErr && profileErr.code !== 'PGRST116') throw profileErr;
 
   if (!profile && !settings && !plan) return null;
 
