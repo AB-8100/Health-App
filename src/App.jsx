@@ -858,14 +858,26 @@ function App() {
     else setScreen(target);
   };
 
+  // NOTE: despite the name, this is reached by more than genuinely brand-new
+  // signups — bootstrapUser routes any *existing* account with no `goal` set
+  // into Stage 2, and About Me's "Complete your profile / Set up training
+  // plan" button (onSetupTrainingPlan) opens Stage 2 the same direct way, and
+  // both land here via handleIntakeComplete once Stage 3 finishes. This used
+  // to hardcode completedSessions: [], foodLog: {}, and userSettings:
+  // DEFAULT_SETTINGS into the saved snapshot regardless — harmless for an
+  // actually-new account (those are already empty) but a silent full wipe of
+  // a returning user's logged history and food log (both delete-then-insert
+  // on save) the moment they went through onboarding again. Preserve
+  // whatever's actually in state for everything that isn't onboarding output
+  // (profile/plan/activities) — a no-op for new users, and no longer
+  // destructive for anyone else who ends up here.
   const completeOnboarding = (newProfile, initialActivities = {}) => {
     const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
-    setSettingsRaw(DEFAULT_SETTINGS);
     setActivities(initialActivities);
-    const snapshot = { profile: newProfile, plan: newPlan, userSettings: DEFAULT_SETTINGS,
-                       completedSessions: [], foodLog: {}, activities: initialActivities,
+    const snapshot = { profile: newProfile, plan: newPlan, userSettings,
+                       completedSessions, foodLog, activities: initialActivities, customFoods,
                        savedAt: new Date().toISOString() };
     saveToCache(snapshot, currentUserIdRef.current);
     if (sheetsConnectedRef.current) saveToSheets(snapshot);
