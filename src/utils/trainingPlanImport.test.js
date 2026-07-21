@@ -246,6 +246,27 @@ describe('parseTrainingPlanWorkbook', () => {
     expect(parsed.sessions['2026-01-05'][0].label).toBe('Swim');
   });
 
+  // Regression test: real-world exports commonly lead with a title row
+  // ("Ironman UK Build Plan") and/or a blank spacer row before the actual
+  // header row. The parser used to only check a sheet's first non-blank row
+  // for the header, so a well-formed plan like this was rejected outright as
+  // "not a training plan" — the exact "uploaded plan not recognised" bug.
+  it('finds the header row even when preceded by a title row and a blank spacer row', async () => {
+    const rows = [
+      ['Ironman UK — Build Plan'],
+      [],
+      HEADER,
+      [excelSerial(2026, 1, 5), 1, 'Foundation', 'Swim', '30 min', 'Endurance', '', ''],
+      [excelSerial(2026, 1, 6), 1, 'Foundation', 'Run', '45 min', 'Tempo', '', 'TRUE'],
+    ];
+    const file = await fakeFile(rows);
+    const parsed = await parseTrainingPlanWorkbook(file);
+
+    expect(parsed.meta.startDate).toBe('2026-01-05');
+    expect(parsed.sessions['2026-01-05'][0].label).toBe('Swim');
+    expect(parsed.sessions['2026-01-06'][0].label).toBe('Run');
+  });
+
   it('rejects a workbook whose only sheet is missing a required header column', async () => {
     const rows = [
       ['Date', 'Wk', 'Phase'], // missing "Discipline"
