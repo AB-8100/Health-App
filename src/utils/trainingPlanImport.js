@@ -208,9 +208,17 @@ export async function parseTrainingPlanWorkbook(file) {
     if (!entry) continue;
     const doc = parseXml(await entry.async('text'));
     const rows = readSheetRows(doc, sharedStrings);
-    const headerRowNum = rows.findIndex(r => r);
-    const colMap = matchHeader(rows[headerRowNum]);
-    if (colMap) { matched = { rows, colMap, sheetName: sheet.name }; break; }
+    // The header row isn't always the sheet's first non-blank row — real
+    // exports commonly lead with a title ("Ironman UK Build") or metadata
+    // ("Athlete: ...") row, sometimes followed by a blank spacer row. Only
+    // checking the first non-blank row meant any such file was rejected
+    // outright as "not a training plan" even though a valid header existed
+    // a few rows down, so scan every row in the sheet for one instead.
+    for (const row of rows) {
+      const colMap = matchHeader(row);
+      if (colMap) { matched = { rows, colMap, sheetName: sheet.name }; break; }
+    }
+    if (matched) break;
   }
 
   if (!matched) {

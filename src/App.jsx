@@ -338,7 +338,19 @@ function App() {
     if (data.eventPlan)        setEventPlan(data.eventPlan);
     if (data.customFoods)          setCustomFoods(data.customFoods);
     if (data.sequencingDecisions) setSequencingDecisions(data.sequencingDecisions);
-    setOnboarding(!data.profile || !data.profile.name);
+    // NOTE: this used to also call setOnboarding(!data.profile || !data.profile.name)
+    // here, forcing the legacy single-screen OnboardingScreen over whatever
+    // was actually loaded. That ran on *every* hydrate — including a
+    // Supabase profile fetch that came back empty for a reason that has
+    // nothing to do with onboarding status (a transient query hiccup, or
+    // just this one field not having loaded yet) — and took priority over
+    // the real, carefully-guarded onboarding decision in bootstrapUser
+    // (which already sets onboardingStage explicitly for a genuinely new
+    // user). The net effect: a fully-onboarded user with a real uploaded
+    // event plan could get bounced back into onboarding, with no relation
+    // to their actual profile/plan state. onboardingActive is now only ever
+    // set explicitly (TweaksPanel's dev-only screen jump, or the onboarding
+    // completion/reset handlers) — see docs/PROJECT_CONTEXT.md §6.
   };
 
   const buildSnapshot = (overrides = {}) => ({

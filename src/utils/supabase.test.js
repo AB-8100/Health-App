@@ -148,6 +148,38 @@ describe('loadUserData — eventPlan reconstruction', () => {
     expect(result.sequencingDecisions).toEqual({});
   });
 
+  // Regression test: a `.single()` call returns `data: null` both when the
+  // row genuinely doesn't exist (PGRST116) and for any other failure (RLS
+  // hiccup, dropped connection). Before this fix, loadUserData treated both
+  // cases identically — silently returning an empty profile even when the
+  // real row (and its hasEventTraining flag, tied to an uploaded event plan)
+  // was untouched in the database. That falsely-empty profile is what made
+  // bootstrapUser route an already-onboarded user with a real uploaded plan
+  // back into onboarding, and made About Me claim no plan was uploaded.
+  it('throws on a genuine profiles fetch error instead of silently treating it as "no profile"', async () => {
+    const responses = {
+      ...baseResponses,
+      profiles: { data: null, error: { code: '500', message: 'connection reset' } },
+      training_plans: { data: [], error: null },
+    };
+    fromMock.mockImplementation((table) => makeBuilder(responses[table]));
+
+    await expect(loadUserData('user-1')).rejects.toMatchObject({ message: 'connection reset' });
+  });
+
+  it('treats a genuine "no rows" (PGRST116) result as simply no profile yet, not an error', async () => {
+    const responses = {
+      ...baseResponses,
+      profiles: { data: null, error: { code: 'PGRST116', message: 'no rows' } },
+      user_settings: { data: { user_id: 'user-1' }, error: null },
+      training_plans: { data: [], error: null },
+    };
+    fromMock.mockImplementation((table) => makeBuilder(responses[table]));
+
+    const result = await loadUserData('user-1');
+    expect(result.profile).toBeUndefined();
+  });
+
   it('falls back to {}/[]/{}"} when the row exists but meta/phases/sessions are null', async () => {
     // A row saved before the 20260702 migration backfilled these columns
     // would have real column defaults on INSERT, but a row updated by an
