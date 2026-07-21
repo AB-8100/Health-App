@@ -220,6 +220,26 @@ export function shouldBlockGeneratedSchedule({ hasEventTraining, eventPlanSessio
   return hasActiveEventPlan && !discardEventPlan;
 }
 
+// Profile fields onboarding (Stage 3, or a redo) derives and writes — reset
+// back to "never done onboarding" by the About screen's "Remove
+// app-generated schedule" action. Deliberately narrow: only clears fields
+// this app's own onboarding writes to (goal, splitDays, hasTrainingActivities,
+// intakeCompleted). Does NOT touch hasEventTraining, hasGym, or any
+// identity/body-stat field — and callers must build their save overrides
+// from only { profile, plan, activities }, leaving eventPlan/eventOverrides/
+// preselectedQueues/planSessionsDone/sequencingDecisions/completedSessions/
+// foodLog/customFoods out entirely, so an active uploaded/generated race
+// plan and all other account data are left completely untouched.
+export function resetOnboardingProfileFields(profile) {
+  return {
+    ...profile,
+    goal: '',
+    splitDays: null,
+    hasTrainingActivities: false,
+    intakeCompleted: false,
+  };
+}
+
 // Gym split is determined by how many gym sessions are in the weekly plan,
 // not the total number of training days.
 export function getAutoSplitDays(gymDayCount) {

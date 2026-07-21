@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule } from './scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './scheduleGeneration';
 
 describe('generateActivitySchedule — backward compatibility (no event_race/sport_activity/regularSports)', () => {
   // These fix today's exact behavior in place — every non-race onboarding
@@ -252,5 +252,96 @@ describe('shouldBlockGeneratedSchedule', () => {
   it('handles missing/undefined eventPlanSessions without throwing', () => {
     expect(() => shouldBlockGeneratedSchedule({ hasEventTraining: true, discardEventPlan: false })).not.toThrow();
     expect(shouldBlockGeneratedSchedule({ hasEventTraining: true, discardEventPlan: false })).toBe(false);
+  });
+});
+
+describe('resetOnboardingProfileFields', () => {
+  it('clears only the fields onboarding itself writes', () => {
+    const profile = {
+      name: 'Alex', age: 34, height: 178, weight: 74,
+      hasGym: true, hasEventTraining: true, eventTotalWeeks: 18,
+      goal: 'event_race', splitDays: 3, hasTrainingActivities: true, intakeCompleted: true,
+    };
+    const result = resetOnboardingProfileFields(profile);
+    expect(result).toEqual({
+      name: 'Alex', age: 34, height: 178, weight: 74,
+      hasGym: true, hasEventTraining: true, eventTotalWeeks: 18,
+      goal: '', splitDays: null, hasTrainingActivities: false, intakeCompleted: false,
+    });
+  });
+
+  it('does not mutate the input profile', () => {
+    const profile = { goal: 'event_race', hasEventTraining: true, splitDays: 3 };
+    const snapshot = { ...profile };
+    resetOnboardingProfileFields(profile);
+    expect(profile).toEqual(snapshot);
+  });
+
+  it('preserves hasEventTraining as-is (reset never flips it)', () => {
+    expect(resetOnboardingProfileFields({ hasEventTraining: true }).hasEventTraining).toBe(true);
+    expect(resetOnboardingProfileFields({ hasEventTraining: false }).hasEventTraining).toBe(false);
+  });
+});
+
+// Regression test for the actual guarantee behind the About screen's
+// "Remove app-generated schedule" button: clearing the onboarding-generated
+// gym split/activities must never touch the uploaded/AI-generated event
+// plan or any other account data. App.jsx's handleResetOnboardingSchedule
+// builds its save payload the same way handleUploadTrainingPlan and
+// completeOnboarding do — buildSnapshot(overrides), where
+// buildSnapshot = (overrides) => ({ ...currentState, ...overrides }) — so
+// the guarantee holds as long as `overrides` only ever contains
+// { plan, activities, profile }. This simulates that exact merge.
+describe('reset-onboarding-schedule save payload (App.jsx handleResetOnboardingSchedule contract)', () => {
+  it('leaves eventPlan and every other account data field untouched in the merged snapshot', () => {
+    const uploadedEventPlan = {
+      meta: { totalWeeks: 18, eventDistances: 'Olympic' },
+      phases: [{ label: 'Base', weeks: [1, 6] }],
+      sessions: { '2026-08-03': [{ type: 'swim', label: 'Swim' }] },
+    };
+    const currentState = {
+      profile: { name: 'Alex', hasEventTraining: true, goal: 'event_race', splitDays: 3, intakeCompleted: true },
+      plan: { splitDays: 3, todayIdx: 2, overrides: { 'push-day': { name: 'Custom Push' } } },
+      userSettings: { dailyCaloriesBase: 1800 },
+      completedSessions: [{ id: 's1', date: '2026-08-01' }],
+      foodLog: { '2026-08-01': [{ name: 'Oats' }] },
+      activities: { 1: [{ id: 'gen-1', type: 'run', source: 'generated' }] },
+      customFoods: [{ name: 'Protein bar' }],
+      eventOverrides: { '2026-08-05': [{ type: 'bike' }] },
+      preselectedQueues: { 'push-day': ['bench-press'] },
+      planSessionsDone: { '2026-08-01': true },
+      eventPlan: uploadedEventPlan,
+      sequencingDecisions: { 'conflict-1': { choice: 'keep' } },
+      savedAt: '2026-07-20T00:00:00.000Z',
+    };
+
+    // What handleResetOnboardingSchedule actually passes as `overrides`.
+    const nextPlan = { splitDays: null, todayIdx: 0, overrides: {} };
+    const nextProfile = resetOnboardingProfileFields(currentState.profile);
+    const overrides = { plan: nextPlan, activities: {}, profile: nextProfile };
+
+    // buildSnapshot(overrides) in App.jsx.
+    const savedSnapshot = { ...currentState, ...overrides, savedAt: '2026-07-21T00:00:00.000Z' };
+
+    expect(savedSnapshot.eventPlan).toBe(uploadedEventPlan);
+    expect(savedSnapshot.eventPlan.sessions).toEqual(uploadedEventPlan.sessions);
+    expect(savedSnapshot.eventOverrides).toEqual(currentState.eventOverrides);
+    expect(savedSnapshot.preselectedQueues).toEqual(currentState.preselectedQueues);
+    expect(savedSnapshot.planSessionsDone).toEqual(currentState.planSessionsDone);
+    expect(savedSnapshot.sequencingDecisions).toEqual(currentState.sequencingDecisions);
+    expect(savedSnapshot.completedSessions).toEqual(currentState.completedSessions);
+    expect(savedSnapshot.foodLog).toEqual(currentState.foodLog);
+    expect(savedSnapshot.customFoods).toEqual(currentState.customFoods);
+    expect(savedSnapshot.userSettings).toEqual(currentState.userSettings);
+
+    // What actually got reset.
+    expect(savedSnapshot.plan).toEqual({ splitDays: null, todayIdx: 0, overrides: {} });
+    expect(savedSnapshot.activities).toEqual({});
+    expect(savedSnapshot.profile.goal).toBe('');
+    expect(savedSnapshot.profile.splitDays).toBeNull();
+    expect(savedSnapshot.profile.intakeCompleted).toBe(false);
+    // hasEventTraining (the flag driving whether the race plan is shown at
+    // all) is left exactly as it was — the reset never turns it off.
+    expect(savedSnapshot.profile.hasEventTraining).toBe(true);
   });
 });

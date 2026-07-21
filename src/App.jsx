@@ -4,7 +4,7 @@ import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
 import { isDuplicateSignupResponse } from './utils/authErrors';
-import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule } from './utils/scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -967,13 +967,7 @@ function App() {
   // real plan without losing the plan itself or any other account data.
   const handleResetOnboardingSchedule = () => {
     const nextPlan = DEFAULT_PLAN;
-    const nextProfile = {
-      ...profile,
-      goal: '',
-      splitDays: null,
-      hasTrainingActivities: false,
-      intakeCompleted: false,
-    };
+    const nextProfile = resetOnboardingProfileFields(profile);
     setPlanRaw(nextPlan);
     setActivities({});
     setProfileRaw(nextProfile);
