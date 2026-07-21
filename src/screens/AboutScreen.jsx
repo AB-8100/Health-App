@@ -98,7 +98,7 @@ function Section({ title, children, theme }) {
 
 function AboutScreen({
   width = 390, height = 820, theme = 'light',
-  profile = {}, userSettings = {}, plan = {},
+  profile = {}, userSettings = {}, plan = {}, activities = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, onSetupTrainingPlan,
   tracksCycle = true,
@@ -113,6 +113,7 @@ function AboutScreen({
   intake,
   onGenerateAIPlan,
   onRedoGoals,
+  onResetOnboardingSchedule,
 }) {
   const t = themes[theme];
 
@@ -252,6 +253,20 @@ function AboutScreen({
   // ── redo goals & questionnaire (basic or AI — the choice happens again at
   // the end of Stage 3, same as first-time onboarding) ────────────────────
   const [redoConfirming, setRedoConfirming] = React.useState(false);
+
+  // ── reset the onboarding-generated gym split / activity schedule ────────
+  // Only offered when there's actually something onboarding produced to
+  // undo — never touches the uploaded/generated event plan.
+  const hasGeneratedSchedule = !!plan.splitDays ||
+    Object.values(activities || {}).some(day => (day || []).length > 0) ||
+    !!localProfile.intakeCompleted;
+  const [resetConfirming, setResetConfirming] = React.useState(false);
+  const [resetDone, setResetDone] = React.useState(false);
+  const handleResetSchedule = () => {
+    onResetOnboardingSchedule?.();
+    setResetConfirming(false);
+    setResetDone(true);
+  };
 
   return (
     <div style={{
@@ -893,6 +908,66 @@ function AboutScreen({
             >Switch to training split instead →</button>
           )}
         </Section>
+
+        {/* Onboarding-generated schedule reset — undoes the gym split /
+            activity schedule that onboarding (or a redo) generated, without
+            touching an uploaded or AI-generated event training plan, or any
+            logged history. */}
+        {typeof onResetOnboardingSchedule === 'function' && (hasGeneratedSchedule || resetDone) && (
+          <Section title="Onboarding data" theme={theme}>
+            <div style={{ fontSize: 11, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
+              Remove the gym split and weekly activity schedule Forma generated for you from onboarding.
+              This does <strong>not</strong> touch an uploaded or AI-generated race training plan, and does
+              not delete any other account data (logged sessions, food log, custom foods).
+            </div>
+            {resetDone ? (
+              <div style={{
+                padding: '9px 12px', borderRadius: 10,
+                background: '#16A34A12', border: '1px solid #16A34A30',
+                fontSize: 11.5, color: '#15803D',
+              }}>
+                Generated schedule removed. Your uploaded/generated race plan and other data are untouched.
+              </div>
+            ) : resetConfirming ? (
+              <div style={{
+                padding: '10px 12px', borderRadius: 10,
+                background: '#DC262612', border: '1px solid #DC262635',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
+                  Remove your generated schedule?
+                </div>
+                <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+                  This clears the gym split and any weekday activities onboarding added, and resets your
+                  saved goal. Your uploaded/generated event training plan, logged sessions, food log, and
+                  custom foods are not affected.
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setResetConfirming(false)} style={{
+                    flex: 1, padding: '8px', borderRadius: 8,
+                    background: 'transparent', border: `1px solid ${t.border}`,
+                    color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}>Cancel</button>
+                  <button onClick={handleResetSchedule} style={{
+                    flex: 1, padding: '8px', borderRadius: 8,
+                    background: '#DC2626', border: 'none',
+                    color: '#fff', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}>Remove schedule</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setResetConfirming(true)}
+                style={{
+                  width: '100%', padding: '9px', borderRadius: 10,
+                  background: 'transparent', border: `1px solid ${t.border}`,
+                  color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Remove app-generated schedule
+              </button>
+            )}
+          </Section>
+        )}
 
         {/* Connected apps */}
         <Section title="Connected apps" theme={theme}>

@@ -4,7 +4,7 @@ import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
 import { isDuplicateSignupResponse } from './utils/authErrors';
-import { generateActivitySchedule, getAutoSplitDays } from './utils/scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule } from './utils/scheduleGeneration';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -226,8 +226,12 @@ function App() {
         setCustomFoods([]);
         // Stage 1: collect profile basics before anything else
         setOnboardingStage('profile');
-      } else if (loadedProfile && !loadedProfile.goal) {
-        // Has profile but no goal set yet — send to Stage 2
+      } else if (loadedProfile && !loadedProfile.goal && !loadedProfile.hasEventTraining) {
+        // Has profile but no goal set yet, and no active event plan already
+        // driving the Weekly Overview — send to Stage 2. A user who uploaded
+        // a plan directly (About screen) never sets the legacy `goal` field,
+        // so without the hasEventTraining check they'd be routed straight
+        // back into onboarding and risk generating a schedule over their plan.
         setOnboardingStage('goals');
       }
 
@@ -445,8 +449,24 @@ function App() {
     setScreen(returnTo);
   };
 
-  // Called when Stage 3 (DeepQuestionnaire) completes or is skipped
-  const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch) => {
+  // Called when Stage 3 (DeepQuestionnaire) completes or is skipped.
+  // `discardEventPlan` is an explicit, user-confirmed opt-in (surfaced by
+  // DeepQuestionnaireScreen when an active uploaded/generated event plan
+  // already exists) to replace that plan with the freshly generated
+  // split/activity schedule below. Without it, an existing active event plan
+  // is left completely untouched — see `hasActiveEventPlan` below.
+  const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch, discardEventPlan = false) => {
+    // Snapshot this *before* any state below is computed from the new
+    // answers — otherwise a redo/re-entry that doesn't reselect the race
+    // goal would silently flip `hasEventTraining` off and orphan the still-
+    // loaded plan data while also layering a new gym split on top of it in
+    // the Weekly Overview (the exact "onboarding overwrote my race plan" bug).
+    const blockScheduleApply = shouldBlockGeneratedSchedule({
+      hasEventTraining: profile.hasEventTraining,
+      eventPlanSessions: eventPlan.sessions,
+      discardEventPlan,
+    });
+
     let gp = pendingGoalsPayload || {};
     // A confirmed (possibly user-edited) target pace/split from the
     // pace_confirm step belongs on the event_race goal itself — both the
@@ -475,9 +495,12 @@ function App() {
       ...profile,
       goal: primaryGoalType,
       hasGym: gymAccess,
-      hasEventTraining: hasEvent,
+      // Keep the existing plan in charge unless the user explicitly opted to
+      // discard it — otherwise freshly submitted goals that don't reselect
+      // event_race would flip this off and orphan the still-loaded plan.
+      hasEventTraining: blockScheduleApply ? true : hasEvent,
       hasTrainingActivities: !!hasTrainingActivities,
-      splitDays: autoSplitDays,
+      splitDays: blockScheduleApply ? profile.splitDays : autoSplitDays,
       intakeCompleted: !skipped,
     };
 
@@ -496,25 +519,44 @@ function App() {
 
     setPendingGoalsPayload(null);
 
+    // Explicit, confirmed replace: fully clear the old plan so nothing from
+    // it lingers in the Weekly Overview alongside the new split/activities.
+    if (discardEventPlan) {
+      setEventPlan(DEFAULT_EVENT_PLAN);
+      setEventOverrides({});
+      setPreselectedQueues({});
+      setPlanSessionsDone({});
+      setSequencingDecisions({});
+    }
+
     // If opened from the main app (not initial onboarding), apply the newly
     // computed split/activity schedule (same as completeOnboarding does) and
     // return — previously this only saved `profile`, so the split/activities
     // it just generated were silently dropped and the weekly plan kept
-    // showing rest days after navigating away and back.
+    // showing rest days after navigating away and back. Skipped entirely
+    // when blockScheduleApply is true, so an active event plan's days stay
+    // exactly as they were.
     if (screenBeforeIntakeRef.current !== null) {
       const returnTo = screenBeforeIntakeRef.current;
       screenBeforeIntakeRef.current = null;
-      const nextPlan = { ...plan, splitDays: autoSplitDays };
-      const nextActivities = { ...activities, ...initialActivities };
+      const nextPlan = blockScheduleApply ? plan : { ...plan, splitDays: autoSplitDays };
+      const nextActivities = blockScheduleApply ? activities : { ...activities, ...initialActivities };
       setProfileRaw(updatedProfile);
       setPlanRaw(nextPlan);
       setActivities(nextActivities);
       setOnboardingStage(null);
       setIntakeDraft(skipped);
-      setTimeout(() => scheduleSave({ profile: updatedProfile, plan: nextPlan, activities: nextActivities }), 0);
+      const overrides = { profile: updatedProfile, plan: nextPlan, activities: nextActivities };
+      if (discardEventPlan) {
+        Object.assign(overrides, {
+          eventPlan: DEFAULT_EVENT_PLAN, eventOverrides: {}, preselectedQueues: {},
+          planSessionsDone: {}, sequencingDecisions: {},
+        });
+      }
+      setTimeout(() => scheduleSave(overrides), 0);
       setScreen(returnTo);
     } else {
-      completeOnboarding(updatedProfile, initialActivities);
+      completeOnboarding(updatedProfile, blockScheduleApply ? {} : initialActivities);
     }
   };
 
@@ -916,6 +958,31 @@ function App() {
     return saveUserData(currentUserIdRef.current, buildSnapshot(overrides));
   };
 
+  // Clears the app-generated gym split + weekday activity schedule that
+  // onboarding (Stage 3 intake, or a "redo goals" pass) produces, along with
+  // the profile flags it derived — WITHOUT touching an uploaded/generated
+  // event training plan (`eventPlan`/`eventOverrides`/etc.) or any logged
+  // history (`completedSessions`, `foodLog`, `customFoods`). Lets a user
+  // undo an onboarding-generated schedule that ended up layered over their
+  // real plan without losing the plan itself or any other account data.
+  const handleResetOnboardingSchedule = () => {
+    const nextPlan = DEFAULT_PLAN;
+    const nextProfile = {
+      ...profile,
+      goal: '',
+      splitDays: null,
+      hasTrainingActivities: false,
+      intakeCompleted: false,
+    };
+    setPlanRaw(nextPlan);
+    setActivities({});
+    setProfileRaw(nextProfile);
+    const overrides = { plan: nextPlan, activities: {}, profile: nextProfile };
+    setTimeout(() => scheduleSave(overrides), 0);
+    if (!currentUserIdRef.current) return Promise.resolve();
+    return saveUserData(currentUserIdRef.current, buildSnapshot(overrides));
+  };
+
   // Generates a training plan via the Claude API (through the
   // generate-training-plan edge function) from the athlete's saved goals +
   // intake answers, then applies it exactly like an uploaded spreadsheet
@@ -980,6 +1047,7 @@ function App() {
                userId={currentUser?.id}
                goalsPayload={pendingGoalsPayload}
                initialIntake={intakePayload}
+               hasActiveEventPlan={shouldBlockGeneratedSchedule({ hasEventTraining, eventPlanSessions: eventPlan.sessions, discardEventPlan: false })}
                onComplete={handleIntakeComplete}
                onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
                onExit={screenBeforeIntakeRef.current !== null ? handleExitQuestionnaire : undefined} />;
@@ -1092,6 +1160,8 @@ function App() {
                profile={profile}
                userSettings={userSettings}
                plan={plan}
+               activities={activities}
+               onResetOnboardingSchedule={handleResetOnboardingSchedule}
                onSaveProfile={(p) => setProfile(prev => ({ ...prev, ...p }))}
                onSaveSettings={(s) => setUserSettings(prev => ({ ...prev, ...s }))}
                onBack={() => setScreen('gym-hub')}

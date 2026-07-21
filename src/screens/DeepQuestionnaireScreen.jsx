@@ -106,11 +106,16 @@ const EMPTY_INTAKE = {
 export function DeepQuestionnaireScreen({
   width = 390, height = 820, theme = 'light',
   goalsPayload,   // from Stage 2
-  onComplete,     // (intakePayload, skipped: bool) => void
+  onComplete,     // (intakePayload, skipped: bool, goalConfigPatch, discardEventPlan: bool) => void
   onGeneratePlan, // (intakePayload) => Promise — generates + applies a plan via Claude
   onExit,         // () => void — save draft and go back without completing
   userId,
   initialIntake,  // for re-opening from settings
+  // True when an uploaded or AI-generated event training plan is already
+  // active. Finishing this questionnaire normally leaves it completely
+  // untouched — the 'done' step below only allows the app-generated
+  // schedule to replace it if the user explicitly opts in.
+  hasActiveEventPlan = false,
 }) {
   const t     = themes[theme];
   const goals = goalsPayload?.goals ?? [];
@@ -124,6 +129,10 @@ export function DeepQuestionnaireScreen({
   const [stepIdx, setStepIdx] = React.useState(0);
   const current = steps[stepIdx] || 'intro';
   const isLast  = stepIdx === steps.length - 1;
+
+  // Explicit opt-in to replace an already-active event plan with the
+  // schedule this questionnaire generates — surfaced on the 'done' step.
+  const [discardEventPlan, setDiscardEventPlan] = React.useState(false);
 
   const [intake, setIntake] = React.useState(() => ({
     ...EMPTY_INTAKE,
@@ -167,7 +176,7 @@ export function DeepQuestionnaireScreen({
     onExit?.();
   };
 
-  const handleComplete = (skipped = false) => {
+  const handleComplete = (skipped = false, discardEventPlan = false) => {
     const payload = {
       ...intake,
       status:      skipped ? 'draft' : 'complete',
@@ -178,7 +187,7 @@ export function DeepQuestionnaireScreen({
     // both the basic scheduler and the AI prompt), not just the intake
     // record — pass them back up so App.jsx can merge them into goals[].
     const goalConfigPatch = intake.targetPaces ? { targetPaces: intake.targetPaces } : null;
-    onComplete(payload, skipped, goalConfigPatch);
+    onComplete(payload, skipped, goalConfigPatch, discardEventPlan);
   };
 
   const persist = (payload) => {
@@ -1005,6 +1014,39 @@ export function DeepQuestionnaireScreen({
               )}
             </div>
 
+            {hasActiveEventPlan && (
+              <div style={{
+                marginTop: 14, padding: '10px 12px', borderRadius: 10, textAlign: 'left',
+                background: '#F59E0B12', border: '1px solid #F59E0B35',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
+                  You already have an active race training plan
+                </div>
+                <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+                  By default, finishing this <strong>won't</strong> touch it — your answers are saved, but no
+                  gym split or activity schedule will be generated on top of your plan's days.
+                  {canGenerate && ' Generating a new plan with AI below replaces it entirely.'}
+                </div>
+                {!canGenerate && (
+                  <label style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer',
+                    fontSize: 11.5, color: t.text2, lineHeight: 1.5,
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={discardEventPlan}
+                      onChange={e => setDiscardEventPlan(e.target.checked)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      Instead, <strong>completely remove my race training plan</strong> and replace it with a
+                      gym split / activity schedule generated from these answers.
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+
             {canGenerate && aiGen === 'error' && (
               <div style={{
                 marginTop: 14, padding: '10px 12px', borderRadius: 10, textAlign: 'left',
@@ -1059,6 +1101,22 @@ export function DeepQuestionnaireScreen({
               Enter Forma without a plan →
             </button>
           </div>
+        ) : current === 'done' && hasActiveEventPlan && discardEventPlan ? (
+          <button onClick={() => handleComplete(false, true)} style={{
+            width: '100%', padding: '14px', borderRadius: 13,
+            background: '#DC2626', color: '#fff',
+            border: 'none', fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}>
+            Remove race plan & apply this schedule →
+          </button>
+        ) : current === 'done' && hasActiveEventPlan ? (
+          <button onClick={() => handleComplete(false, false)} style={{
+            width: '100%', padding: '14px', borderRadius: 13,
+            background: t.accent, color: t.accentText,
+            border: 'none', fontFamily: t.sans, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}>
+            Save answers & keep my race plan →
+          </button>
         ) : (
           <button onClick={next} style={{
             width: '100%', padding: '14px', borderRadius: 13,

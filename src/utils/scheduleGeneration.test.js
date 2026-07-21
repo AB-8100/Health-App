@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateActivitySchedule, getAutoSplitDays } from './scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule } from './scheduleGeneration';
 
 describe('generateActivitySchedule — backward compatibility (no event_race/sport_activity/regularSports)', () => {
   // These fix today's exact behavior in place — every non-race onboarding
@@ -213,5 +213,44 @@ describe('getAutoSplitDays', () => {
     expect(getAutoSplitDays(1)).toBe(1);
     expect(getAutoSplitDays(4)).toBe(4);
     expect(getAutoSplitDays(7)).toBe(5);
+  });
+});
+
+describe('shouldBlockGeneratedSchedule', () => {
+  it('blocks by default when an active event plan exists', () => {
+    expect(shouldBlockGeneratedSchedule({
+      hasEventTraining: true,
+      eventPlanSessions: { '2026-08-01': [{ type: 'run' }] },
+      discardEventPlan: false,
+    })).toBe(true);
+  });
+
+  it('does not block when explicitly discarding the event plan', () => {
+    expect(shouldBlockGeneratedSchedule({
+      hasEventTraining: true,
+      eventPlanSessions: { '2026-08-01': [{ type: 'run' }] },
+      discardEventPlan: true,
+    })).toBe(false);
+  });
+
+  it('does not block when hasEventTraining is true but there are no actual sessions (flag-only, no plan data)', () => {
+    expect(shouldBlockGeneratedSchedule({
+      hasEventTraining: true,
+      eventPlanSessions: {},
+      discardEventPlan: false,
+    })).toBe(false);
+  });
+
+  it('does not block when there is no event plan at all', () => {
+    expect(shouldBlockGeneratedSchedule({
+      hasEventTraining: false,
+      eventPlanSessions: {},
+      discardEventPlan: false,
+    })).toBe(false);
+  });
+
+  it('handles missing/undefined eventPlanSessions without throwing', () => {
+    expect(() => shouldBlockGeneratedSchedule({ hasEventTraining: true, discardEventPlan: false })).not.toThrow();
+    expect(shouldBlockGeneratedSchedule({ hasEventTraining: true, discardEventPlan: false })).toBe(false);
   });
 });
