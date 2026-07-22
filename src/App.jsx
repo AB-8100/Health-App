@@ -16,9 +16,9 @@ import { themes, RefinedHome } from './screens/HomeScreen';
 import { GymSessionScreen, GymSummaryScreen, ActivityTimerScreen, PlaceholderScreen } from './screens/GymSessionScreen';
 import { SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivitiesScreen, buildQueueFromExerciseIds } from './screens/GymPlanScreens';
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
-import { WeeklyOverviewScreen } from './screens/WeeklyOverviewScreen';
+import { WeeklyOverviewScreen, buildWeekData } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
-import { computeEventPhases, getTodayDateKey } from './data/eventPlan';
+import { computeEventPhases, getTodayDateKey, getWeekNumberForDate } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -151,6 +151,10 @@ function App() {
   const [editingDayId, setEditingDayId]   = React.useState(null);
   const [editingDayIdx, setEditingDayIdx] = React.useState(null);
   const [viewingDay, setViewingDay] = React.useState(null);
+  // The Weekly Overview week to resume on, restored from localStorage after
+  // bootstrap (see the nav-position restore effect below); null lets
+  // WeeklyOverviewScreen fall back to its normal "current week" default.
+  const [savedViewWeek, setSavedViewWeek] = React.useState(null);
   const [activities, setActivities]             = React.useState({});
   const [eventOverrides, setEventOverrides] = React.useState({});
   const [preselectedQueues, setPreselectedQueues] = React.useState({});
@@ -308,12 +312,38 @@ function App() {
 
   // Scale phone frame to fit viewport on desktop; fill viewport on real phones
   React.useEffect(() => {
+    // iOS/Android browser chrome (address bar, tab strip) collapsing and
+    // expanding as the user scrolls fires `resize` with a smaller transient
+    // `window.innerHeight`, repeatedly, mid-animation — reacting to every
+    // one of those made every screen visibly resize (chips/bubbles clipped,
+    // text re-wrapping) even though nothing the user did actually changed.
+    // Track the tallest height seen for the current width and only drop it
+    // when the width itself changes (a real rotation or a different
+    // device), so the transient shrink is ignored instead of propagated.
+    let stableMobileHeight = 0;
+    let lastMobileWidth = 0;
+    let debounceTimer = null;
+
+    const applyMobileSize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (w !== lastMobileWidth) {
+        lastMobileWidth = w;
+        stableMobileHeight = h;
+      } else {
+        stableMobileHeight = Math.max(stableMobileHeight, h);
+      }
+      setContentW(w);
+      setContentH(stableMobileHeight);
+      document.documentElement.style.setProperty('--phone-scale', '1');
+    };
+
     const update = () => {
       if (window.innerWidth <= 430) {
-        setContentW(window.innerWidth);
-        setContentH(window.innerHeight);
-        document.documentElement.style.setProperty('--phone-scale', '1');
+        applyMobileSize();
       } else {
+        lastMobileWidth = 0;
+        stableMobileHeight = 0;
         setContentW(374);
         setContentH(804);
         const scale = Math.min(
@@ -325,8 +355,12 @@ function App() {
       }
     };
     update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    const onResize = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(update, 150);
+    };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); clearTimeout(debounceTimer); };
   }, []);
 
   const hydrateState = (data) => {
@@ -956,6 +990,53 @@ function App() {
     return { phases, totalWeeks, startDate: eventPlan.meta?.startDate || null, sessions: eventPlan.sessions || {} };
   }, [eventPlan, profile.eventTotalWeeks]);
 
+  const hasGym = profile.hasGym !== false;
+  const hasEventTraining = !!profile.hasEventTraining;
+  const hasTrainingActivities = !!profile.hasTrainingActivities;
+
+  // Remembers where the user was in Weekly Overview / Session Detail so a
+  // mobile browser silently reloading the page after the app is backgrounded
+  // (common on iOS once it's not the foreground tab) doesn't snap them back
+  // to the current week and drop whichever past day's editor they had open —
+  // see docs/PROJECT_CONTEXT.md's Weekly Overview gotchas. Deliberately kept
+  // separate from bootstrapUser (auth flow) — this only ever reads state
+  // bootstrapUser has already hydrated, never the other way round.
+  const navRestoredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (navRestoredRef.current) return;
+    if (authState !== 'app' || !currentUser?.id || screen !== 'weekly') return;
+    navRestoredRef.current = true;
+    try {
+      const savedScreen = localStorage.getItem(`forma_nav_screen_${currentUser.id}`);
+      const savedWeekRaw = localStorage.getItem(`forma_nav_week_${currentUser.id}`);
+      const savedDay = localStorage.getItem(`forma_nav_day_${currentUser.id}`);
+      if (savedWeekRaw) setSavedViewWeek(Number(savedWeekRaw));
+      if (savedScreen === 'session-detail' && savedDay) {
+        const weekNum = getWeekNumberForDate(savedDay, eventPhasePlan.startDate);
+        const week = buildWeekData(
+          weekNum, plan, activities, eventOverrides, hasGym, hasEventTraining,
+          eventPhasePlan.startDate, eventPhasePlan.sessions, completedSessions
+        );
+        const day = week.find(d => d.dk === savedDay);
+        if (day) { setViewingDay(day); setScreen('session-detail'); }
+      }
+    } catch (e) { console.warn('Forma: nav position restore failed', e); }
+  }, [authState, currentUser?.id, screen, plan, activities, eventOverrides, hasGym, hasEventTraining, completedSessions, eventPhasePlan]);
+
+  // Persists the position above whenever it changes. Scoped to just these two
+  // screens (Weekly Overview + its day detail) — the ones the reported bug
+  // was about — rather than every screen, since resuming mid-workout or
+  // mid-onboarding safely would need a lot more care than "remember where I
+  // was browsing."
+  React.useEffect(() => {
+    if (!currentUser?.id) return;
+    if (screen !== 'weekly' && screen !== 'session-detail') return;
+    localStorage.setItem(`forma_nav_screen_${currentUser.id}`, screen);
+    if (screen === 'session-detail' && viewingDay?.dk) {
+      localStorage.setItem(`forma_nav_day_${currentUser.id}`, viewingDay.dk);
+    }
+  }, [screen, viewingDay, currentUser?.id]);
+
   // Replaces the whole event training plan from an uploaded spreadsheet, and
   // wipes every other source that feeds sessions into the Weekly Overview
   // (gym split, manually-added activities, per-day overrides/completion
@@ -1054,10 +1135,6 @@ function App() {
       </div>
     );
   }
-
-  const hasGym = profile.hasGym !== false;
-  const hasEventTraining = !!profile.hasEventTraining;
-  const hasTrainingActivities = !!profile.hasTrainingActivities;
 
   const renderScreen = (s) => {
     if (onboardingStage === 'profile')
@@ -1261,6 +1338,10 @@ function App() {
                onUpdateSequencingDecisions={(next) => {
                  setSequencingDecisions(next);
                  setTimeout(() => scheduleSave({ sequencingDecisions: next }), 0);
+               }}
+               initialViewWeek={savedViewWeek}
+               onViewWeekChange={(w) => {
+                 if (currentUser?.id) localStorage.setItem(`forma_nav_week_${currentUser.id}`, String(w));
                }} />;
     if (s === 'session-detail')
       return <SessionDetailScreen width={contentW} height={contentH} theme={tweaks.theme}

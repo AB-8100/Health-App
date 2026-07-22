@@ -559,18 +559,28 @@ export function WeeklyOverviewScreen({
   completedSessions = [],
   sequencingDecisions = {},
   onUpdateSequencingDecisions,
+  initialViewWeek,
+  onViewWeekChange,
 }) {
   const t = themes[theme];
 
   const { phases, totalWeeks, startDate: eventStartDate, sessions: eventSessions = {} } = eventPhasePlan;
 
   const initWeek = getCurrentPlanWeek(eventStartDate, totalWeeks);
-  const [viewWeek,      setViewWeek]      = React.useState(initWeek);
+  const [viewWeek,      setViewWeek]      = React.useState(initialViewWeek ?? initWeek);
   const [weekData,      setWeekData]      = React.useState(() =>
-    buildWeekData(initWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions)
+    buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions)
   );
   const [decisions,     setDecisions]     = React.useState({});
   const [addOpen,       setAddOpen]       = React.useState(false);
+
+  // Remembers which week is on screen (App.jsx persists it) so backgrounding
+  // the app — and a mobile browser reloading the page as a result — doesn't
+  // silently snap the view back to the current week (see the "flicks to the
+  // current week" bug reported against this screen).
+  React.useEffect(() => {
+    onViewWeekChange?.(viewWeek);
+  }, [viewWeek]);
 
   React.useEffect(() => {
     setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions));

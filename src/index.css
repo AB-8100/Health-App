@@ -1,6 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 html, body { margin:0; padding:0; height:100%; font-family:'DM Sans', system-ui, sans-serif; }
+html {
+  /* Stop WebKit/Blink's automatic text-size inflation, which boosts font
+     sizes in tall narrow columns independently of anything the app sets —
+     the source of "text size randomly increases" on mobile. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   background: #E6E3DC;
   display:flex; align-items:center; justify-content:center;

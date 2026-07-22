@@ -52,6 +52,16 @@ export function getPlanWeekStart(weekNum, startDate) {
   return d;
 }
 
+// Inverse of getPlanWeekStart: given a date key, returns which plan week it
+// falls in. Used to restore the Weekly Overview to a specific previously-
+// viewed date (e.g. after the page reloads) without walking week-by-week.
+export function getWeekNumberForDate(dk, startDate) {
+  const weekOneStart = getPlanWeekStart(1, startDate);
+  const target = parseUTCDate(dk);
+  const diffDays = Math.round((target.getTime() - weekOneStart.getTime()) / 86400000);
+  return Math.floor(diffDays / 7) + 1;
+}
+
 // Derives training phase ranges from total weeks to event. Used only as a
 // fallback when no phases were parsed from an uploaded plan.
 // Proportions: Foundation 33% · Build 44% · Peak 17% · Taper remainder (min 1wk)
