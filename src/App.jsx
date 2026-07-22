@@ -226,14 +226,18 @@ function App() {
         setCustomFoods([]);
         // Stage 1: collect profile basics before anything else
         setOnboardingStage('profile');
-      } else if (loadedProfile && !loadedProfile.goal && !loadedProfile.hasEventTraining) {
-        // Has profile but no goal set yet, and no active event plan already
-        // driving the Weekly Overview — send to Stage 2. A user who uploaded
-        // a plan directly (About screen) never sets the legacy `goal` field,
-        // so without the hasEventTraining check they'd be routed straight
-        // back into onboarding and risk generating a schedule over their plan.
-        setOnboardingStage('goals');
       }
+      // Deliberately no automatic Stage 2 (goals) trigger here anymore. This
+      // used to auto-route any returning user with a profile but no `goal`
+      // and no `hasEventTraining` straight back into onboarding on every
+      // login — meant to catch someone who'd never finished setup, but it
+      // fired just as easily for a returning user who'd simply exited Stage
+      // 2 early, or hit any of the profile-load edge cases that leave those
+      // two fields looking unset. The onboarding view should only appear (a)
+      // for a genuinely brand-new account (handled above) or (b) when the
+      // user explicitly asks for it — "Set up training plan" / "Redo my
+      // goals & questionnaire" in About Me (onSetupTrainingPlan /
+      // handleRedoGoals), both of which still open Stage 2 directly.
 
       // Best-effort — used only to power the "Generate my plan with AI"
       // action from About Me; missing/failed loads just disable that button.
