@@ -615,16 +615,19 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
   const isSwim = workoutType === 'swim';
   const [hours, setHours] = React.useState('');
   const [minutes, setMinutes] = React.useState('');
+  const [seconds, setSeconds] = React.useState('');
   const [distance, setDistance] = React.useState('');
   const [swimExtras, setSwimExtras] = React.useState({ distance: null, distanceUnit: 'm', poolLengthM: null, lengths: null });
   const [rpe, setRpe] = React.useState(null);
+  const [notes, setNotes] = React.useState('');
 
   const handleSave = () => {
-    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
+    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
     onSave({
       elapsed: totalSecs,
       type: workoutType || null,
       rpe,
+      notes,
       ...(isSwim ? swimExtras : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' }),
     });
   };
@@ -659,7 +662,7 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
           }}>Cancel</button>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:12 }}>
           <div>
             <div style={labelStyle}>Hours</div>
             <input type="number" min="0" placeholder="0" value={hours}
@@ -669,6 +672,11 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
             <div style={labelStyle}>Minutes</div>
             <input type="number" min="0" max="59" placeholder="0" value={minutes}
               onChange={e => setMinutes(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <div style={labelStyle}>Seconds</div>
+            <input type="number" min="0" max="59" placeholder="0" value={seconds}
+              onChange={e => setSeconds(e.target.value)} style={inputStyle} />
           </div>
         </div>
 
@@ -686,6 +694,15 @@ function MarkCompleteSheet({ theme, workoutLabel, workoutType, onClose, onSave }
 
         <div style={{ marginBottom:20 }}>
           <RpeField theme={theme} value={rpe} onChange={setRpe} />
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <div style={labelStyle}>Notes <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
+          <textarea placeholder="How did it feel? Any tweaks for next time?"
+            value={notes} onChange={e => setNotes(e.target.value)}
+            style={{
+              ...inputStyle, minHeight:64, resize:'vertical', lineHeight:1.5,
+            }}/>
         </div>
 
         <button onClick={handleSave} style={{
