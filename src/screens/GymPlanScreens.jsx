@@ -228,6 +228,7 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
   const elapsedTotal = session.elapsed || 0;
   const [hours, setHours] = React.useState(String(Math.floor(elapsedTotal / 3600)));
   const [minutes, setMinutes] = React.useState(String(Math.floor((elapsedTotal % 3600) / 60)));
+  const [seconds, setSeconds] = React.useState(String(elapsedTotal % 60));
   const [distance, setDistance] = React.useState(session.distance != null ? String(session.distance) : '');
   const [swimExtras, setSwimExtras] = React.useState({
     distance: session.distance ?? null,
@@ -236,6 +237,7 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
     lengths: session.lengths ?? null,
   });
   const [rpe, setRpe] = React.useState(session.rpe ?? null);
+  const [notes, setNotes] = React.useState(session.notes || '');
 
   const inputStyle = {
     padding:'9px 12px', borderRadius:10, border:`1px solid ${t.border}`,
@@ -245,11 +247,11 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
   const labelStyle = { fontSize:11, color:t.text3, marginBottom:5, textTransform:'uppercase', letterSpacing:.4 };
 
   const handleSave = () => {
-    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
+    const totalSecs = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
     const extras = isSwim
       ? swimExtras
       : { distance: distance !== '' ? Number(distance) : null, distanceUnit: 'km' };
-    onSave({ ...session, elapsed: totalSecs, rpe, ...extras });
+    onSave({ ...session, elapsed: totalSecs, rpe, notes, ...extras });
     onClose();
   };
 
@@ -278,7 +280,7 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
         </div>
 
         <div style={{ overflowY:'auto', flex:1 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:12 }}>
             <div>
               <div style={labelStyle}>Hours</div>
               <input type="number" min="0" placeholder="0" value={hours}
@@ -288,6 +290,11 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
               <div style={labelStyle}>Minutes</div>
               <input type="number" min="0" max="59" placeholder="0" value={minutes}
                 onChange={e => setMinutes(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <div style={labelStyle}>Seconds</div>
+              <input type="number" min="0" max="59" placeholder="0" value={seconds}
+                onChange={e => setSeconds(e.target.value)} style={inputStyle} />
             </div>
           </div>
 
@@ -312,6 +319,15 @@ function EditActivitySessionSheet({ theme, session, onClose, onSave }) {
 
           <div style={{ marginTop:12 }}>
             <RpeField theme={theme} value={rpe} onChange={setRpe} />
+          </div>
+
+          <div style={{ marginTop:12 }}>
+            <div style={labelStyle}>Notes <span style={{ color:t.text3, fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span></div>
+            <textarea placeholder="How did it feel? Any tweaks for next time?"
+              value={notes} onChange={e => setNotes(e.target.value)}
+              style={{
+                ...inputStyle, minHeight:64, resize:'vertical', lineHeight:1.5,
+              }}/>
           </div>
         </div>
 
@@ -361,6 +377,7 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
   const removeExercise = (ei) => setQueue(prev => prev.filter((_, e) => e !== ei));
 
   const [rpe, setRpe] = React.useState(session.rpe ?? null);
+  const [notes, setNotes] = React.useState(session.notes || '');
 
   return (
     <div style={{
@@ -392,6 +409,21 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
             padding:'12px 14px', marginBottom:10
           }}>
             <RpeField theme={theme} value={rpe} onChange={setRpe} />
+          </div>
+          <div style={{
+            background:t.surface2, border:`1px solid ${t.border}`, borderRadius:14,
+            padding:'12px 14px', marginBottom:10
+          }}>
+            <div style={{ fontSize:11, color:t.text3, marginBottom:5, textTransform:'uppercase', letterSpacing:.4 }}>
+              Notes <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>— optional</span>
+            </div>
+            <textarea placeholder="How did it feel? Any tweaks for next time?"
+              value={notes} onChange={e => setNotes(e.target.value)}
+              style={{
+                width:'100%', minHeight:64, border:'none', resize:'vertical',
+                fontFamily:t.sans, fontSize:12.5, color:t.text,
+                background:'transparent', outline:'none', lineHeight:1.5,
+              }}/>
           </div>
           {queue.map((ex, ei) => (
             <div key={ex.id || ei} style={{
@@ -443,7 +475,7 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
           ))}
         </div>
 
-        <button onClick={() => { onSave({ ...session, queue, rpe }); onClose(); }} style={{
+        <button onClick={() => { onSave({ ...session, queue, rpe, notes }); onClose(); }} style={{
           marginTop:12, width:'100%', padding:'13px', borderRadius:12, border:'none',
           fontFamily:t.sans, fontSize:13, fontWeight:600, cursor:'pointer',
           background:t.accent, color:t.accentText, flexShrink:0
