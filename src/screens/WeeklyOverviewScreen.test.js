@@ -59,6 +59,27 @@ describe('buildWeekData', () => {
     expect(week[0].sessions.some(s => s.source === 'event_plan' && s.label === 'Swim')).toBe(true);
   });
 
+  // Regression test: a scheduleOverride can hold split-day ids from a split
+  // template that isn't the currently active one (e.g. the user changed
+  // splits via "Customize split" after this override was saved, or it's
+  // stale data). Before scheduleReconciliation.js, this silently dropped
+  // the gym session for that day (def lookup failed and was skipped) even
+  // though the day was clearly meant to be a training day — buildWeekData
+  // must now reconcile onto the active split's ids instead of dropping it.
+  it('reconciles a scheduleOverride holding ids from a different split rather than dropping the day', () => {
+    const plan = {
+      splitDays: 3, // Push/Pull/Legs — day ids: push, pull, legs
+      overrides: {},
+      // 'upper'/'lower' belong to splitDays=2, not splitDays=3
+      scheduleOverride: ['upper', '—', '—', 'lower', '—', '—', '—'],
+    };
+    const week = buildWeekData(1, plan, {}, {}, true, false, START_DATE, {});
+    expect(week[0].sessions.some(s => s.type === 'gym')).toBe(true);
+    expect(week[3].sessions.some(s => s.type === 'gym')).toBe(true);
+    // Days that were rest in the override stay rest.
+    expect(week[1].sessions.some(s => s.type === 'gym')).toBe(false);
+  });
+
   it('marks the day matching today\'s real date as isToday', () => {
     const week = buildWeekData(1, noPlan, {}, {}, false, true, START_DATE, eventSessions);
     expect(week.filter(d => d.isToday).length).toBeLessThanOrEqual(1);

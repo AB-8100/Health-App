@@ -47,6 +47,55 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('About screen shows Body stats above Data sync, no Connected apps stub', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    const bodyText = await page.locator('body').innerText();
+
+    // Connected apps was a UI-only stub (Strava/Apple Health/etc. never
+    // actually connected) — removed per features/specs/about-me-cosmetic-cleanup.md.
+    expect(bodyText).not.toMatch(/Connected apps/i);
+
+    // Body stats and Calorie targets should render above Data sync now that
+    // they've been moved to the top of the screen.
+    const bodyStatsIdx = bodyText.search(/Body stats/i);
+    const calorieIdx   = bodyText.search(/Calorie targets/i);
+    const dataSyncIdx  = bodyText.search(/Data sync/i);
+    expect(bodyStatsIdx).toBeGreaterThan(-1);
+    expect(dataSyncIdx).toBeGreaterThan(-1);
+    expect(bodyStatsIdx).toBeLessThan(dataSyncIdx);
+    expect(calorieIdx).toBeGreaterThan(-1);
+    expect(calorieIdx).toBeLessThan(dataSyncIdx);
+
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
+  test('About screen Body stats includes a Sex control and Calorie targets shows a suggestion', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Sex$/).first()).toBeVisible();
+    // The suggestion only renders once age/height/weight are present (test
+    // account is past onboarding, so they should be) — falls back to a
+    // "fill in your stats" prompt otherwise, either of which proves the
+    // Calorie targets section rendered without throwing.
+    const suggestionOrPrompt = page.getByText(/Suggested:|for a suggested target/i).first();
+    await expect(suggestionOrPrompt).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
+  test('About screen shows Training days with weekday toggles, and toggling one updates Weekly Overview', async ({ page }) => {
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Training days$/).first()).toBeVisible();
+
+    const mondayToggle = page.getByRole('button', { name: /^Mon/ }).first();
+    if (await mondayToggle.isVisible().catch(() => false)) {
+      await mondayToggle.click();
+      await page.getByRole('button', { name: /weekly/i }).first().click();
+      // Just confirms the toggle round-trips into a render without throwing —
+      // exact session content depends on the test account's active split.
+      await expect(page.getByText(/mon|tue|wed|thu|fri|sat|sun/i).first()).toBeVisible();
+    }
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('starting and exiting a gym session does not throw', async ({ page }) => {
     await page.getByRole('button', { name: /gym/i }).first().click();
     const startButton = page.getByRole('button', { name: /start/i }).first();

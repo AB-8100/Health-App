@@ -40,7 +40,7 @@ function withDefaultDisciplineFrequency(raceType, existingFreq = {}) {
   return freq;
 }
 
-const GOAL_TYPES = [
+export const GOAL_TYPES = [
   { id: 'event_race',         label: 'Race / Event',       sub: 'Train for a specific race or event',    icon: '🏁' },
   { id: 'strength_programme', label: 'Strength Programme', sub: 'Progressive overload & strength gains', icon: '🏋️' },
   { id: 'sport_activity',     label: 'Sport Activity',     sub: 'Improve performance in a sport',        icon: '⚽' },
@@ -84,7 +84,7 @@ const GENERAL_ACTIVITIES = [
 const DAYS     = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-const RANK_LABELS  = ['Primary', 'Secondary', 'Supporting'];
+export const RANK_LABELS  = ['Primary', 'Secondary', 'Supporting'];
 const RANK_COLOURS = ['#BE5A38', '#6D4AAF', '#15803D'];
 
 // ─── Default per-type config ──────────────────────────────────────────────────
