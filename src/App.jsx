@@ -753,7 +753,7 @@ function App() {
     setScreen('gym-hub');
   };
 
-  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null, date = null, rpe = null } = {}) => {
+  const markSessionComplete = ({ elapsed = 0, distance = null, distanceUnit = 'km', poolLengthM = null, lengths = null, workout = null, type = null, date = null, rpe = null, notes = null } = {}) => {
     let workoutName = workout;
     if (!workoutName) {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
@@ -775,6 +775,7 @@ function App() {
       poolLengthM,
       lengths,
       rpe,
+      notes,
       queue: null,
     };
     setCompletedSessions(prev => {
