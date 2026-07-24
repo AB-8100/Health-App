@@ -249,10 +249,19 @@ describe('next-day recovery-window check (P0.4)', () => {
   });
 
   it('does not flag when the later session is outside the recovery window', () => {
-    // Football's recovery_hours is 48h -> covers +1 and +2 days; +3 days should be clear
     const sessions = [
       session('a', 'Wed', '2026-08-05', 'Football', HIGH, FOOTBALL_REF),
       session('b', 'Sun', '2026-08-09', 'Easy run', LOW, RUN_REF),
+    ];
+    expect(buildSequencingDecisions(sessions).filter(d => d.check_type === 'next_day')).toEqual([]);
+  });
+
+  it('does not flag two calendar days out even for a 48h-recovery activity (up to 48h is a full rest window, not a violation)', () => {
+    // Monday hard session + Wednesday hard session — this gap can be a full
+    // 48h of rest, so it should never trigger, regardless of recovery_hours.
+    const sessions = [
+      session('a', 'Mon', '2026-08-03', 'Football', HIGH, FOOTBALL_REF),
+      session('b', 'Wed', '2026-08-05', 'Easy run', LOW, RUN_REF),
     ];
     expect(buildSequencingDecisions(sessions).filter(d => d.check_type === 'next_day')).toEqual([]);
   });
@@ -274,8 +283,10 @@ describe('next-day recovery-window check (P0.4)', () => {
     expect(buildSequencingDecisions(sessions).filter(d => d.check_type === 'next_day')).toEqual([]);
   });
 
-  it('recovery window boundary — inclusive at the day-rounded hour boundary', () => {
-    // recovery_hours 24 -> exactly 1 day later is inside the window
+  it('flags the immediate next day regardless of the matched activity\'s recovery_hours value', () => {
+    // The recovery window is capped to the single calendar day immediately
+    // following a high-intensity session — recovery_hours no longer widens
+    // or narrows that window, it only gates which sessions count as high.
     const ref24 = { ...RUN_REF, recovery_hours: 24 };
     const sessions = [
       session('a', 'Wed', '2026-08-05', 'Football', HIGH, { ...FOOTBALL_REF, recovery_hours: 24 }),

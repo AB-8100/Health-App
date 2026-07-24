@@ -301,6 +301,18 @@ export function describeLoadCopy(resolved, sessionName) {
 const CONFIDENCE_RANK = { high: 3, medium: 2, low: 1, none: 0 };
 const DAY_MS = 86400000;
 
+// Recovery window is capped to exactly the one calendar day immediately
+// following a high-intensity session (product decision — rest window tops
+// out at 48h in ref_activities, and two calendar days apart can already be
+// a full 48h of rest, e.g. Monday -> Wednesday). Previously this scaled with
+// each ref row's own `recovery_hours` via Math.ceil(recovery_hours / 24),
+// which let a 48h-recovery activity (e.g. a Football match) flag two
+// calendar days out — a false positive, since that gap can be the full 48h
+// the activity actually needs. Only a same-day-adjacent pair (< 24h apart,
+// the one gap the day-key model can't tell apart from a shorter one) should
+// ever flag, regardless of the matched activity's recovery_hours value.
+const RECOVERY_WINDOW_DAYS = 1;
+
 function dateToUTCms(dateKey) {
   const [y, m, d] = String(dateKey).split('-').map(Number);
   return Date.UTC(y, (m || 1) - 1, d || 1);
@@ -368,15 +380,13 @@ function isSafeMoveTarget(candidateDate, session, allSessions) {
     const otherRef = other.matchedRef;
     const movedRef = session.matchedRef;
     const diffDaysFromOther = Math.round((dateToUTCms(candidateDate) - dateToUTCms(other.date)) / DAY_MS);
-    const recoveryDaysFromOther = Math.max(1, Math.ceil((otherRef?.recovery_hours ?? 24) / 24));
-    if (diffDaysFromOther >= 1 && diffDaysFromOther <= recoveryDaysFromOther &&
+    if (diffDaysFromOther === RECOVERY_WINDOW_DAYS &&
         isHighIntensity(other.resolved) && sharesDominantCategory(otherRef, movedRef)) {
       return false;
     }
 
     const diffDaysToOther = Math.round((dateToUTCms(other.date) - dateToUTCms(candidateDate)) / DAY_MS);
-    const recoveryDaysFromMoved = Math.max(1, Math.ceil((movedRef?.recovery_hours ?? 24) / 24));
-    if (diffDaysToOther >= 1 && diffDaysToOther <= recoveryDaysFromMoved &&
+    if (diffDaysToOther === RECOVERY_WINDOW_DAYS &&
         isHighIntensity(session.resolved) && sharesDominantCategory(movedRef, otherRef)) {
       return false;
     }
@@ -484,11 +494,10 @@ export function buildSequencingDecisions(resolvedSessions, allWeekDates = null) 
     for (let j = i + 1; j < weekDates.length; j++) {
       const laterDate = weekDates[j];
       const diffDays = Math.round((dateToUTCms(laterDate) - dateToUTCms(earlierDate)) / DAY_MS);
+      if (diffDays !== RECOVERY_WINDOW_DAYS) continue;
 
       let pairTriggered = null;
       for (const earlier of earlierSessions) {
-        const recoveryDays = Math.max(1, Math.ceil((earlier.matchedRef?.recovery_hours ?? 24) / 24));
-        if (diffDays < 1 || diffDays > recoveryDays) continue;
         const later = byDate[laterDate].find(s => sharesDominantCategory(earlier.matchedRef, s.matchedRef));
         if (later) { pairTriggered = { earlier, later }; break; }
       }
