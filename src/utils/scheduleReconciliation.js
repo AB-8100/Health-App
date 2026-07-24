@@ -5,8 +5,11 @@
 // drift out of sync on how a schedule is read or reconciled.
 //
 // The two concepts these keep separate:
-//  - WHICH weekdays are training days (a slot being non-'—') — owned by
-//    AboutScreen's day toggle.
+//  - WHICH weekdays are gym training days (a slot being non-'—') — owned by
+//    AboutScreen's day toggle. Note that AboutScreen's toggle also reflects
+//    and clears non-gym `activities` entries for "all activities" days —
+//    that union lives in AboutScreen.jsx itself, not in these helpers, which
+//    only ever see the gym-schedule half of a day.
 //  - WHAT split-day-id's content runs on those days — owned by
 //    SplitPickerScreen, and reconciled here whenever the active split
 //    template changes so the day *selection* survives instead of being
@@ -47,6 +50,25 @@ export function toggleTrainingDay(schedule, splitDayIds, dayIdx) {
   const onCount = next.filter(s => s !== REST).length;
   next[dayIdx] = splitDayIds[onCount % splitDayIds.length];
   return next;
+}
+
+// Which weekday indices (0=Mon..6=Sun) have at least one non-gym activity
+// logged against them (see `activities` state, keyed by weekday index —
+// GymPlanScreens.jsx's DayActivitiesScreen), independent of the gym
+// schedule above.
+export function getActivityDayIndices(activities = {}) {
+  return Object.entries(activities || {})
+    .filter(([, items]) => (items || []).length > 0)
+    .map(([idx]) => Number(idx))
+    .sort((a, b) => a - b);
+}
+
+// Union of gym-schedule training days and non-gym activity days — "all
+// activities" training days, as shown by AboutScreen's Training days
+// toggle (a day counts as a training day whether it's a gym day, an
+// activity day, or both).
+export function getAllTrainingDayIndices(scheduleDayIndices = [], activityDayIndices = []) {
+  return Array.from(new Set([...scheduleDayIndices, ...activityDayIndices])).sort((a, b) => a - b);
 }
 
 // Reassigns split-day-ids across whichever slots are already training

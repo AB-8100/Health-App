@@ -4,6 +4,8 @@ import {
   isScheduleValidForSplit,
   toggleTrainingDay,
   reconcileScheduleWithSplitIds,
+  getActivityDayIndices,
+  getAllTrainingDayIndices,
   REST,
 } from './scheduleReconciliation';
 
@@ -104,5 +106,34 @@ describe('reconcileScheduleWithSplitIds', () => {
   it('returns an all-rest schedule when the new split has no day ids', () => {
     const schedule = ['a', REST, 'b', REST, REST, REST, REST];
     expect(reconcileScheduleWithSplitIds(schedule, [])).toEqual(Array(7).fill(REST));
+  });
+});
+
+describe('getActivityDayIndices', () => {
+  it('returns indices with at least one non-gym activity, ignoring empty/rest days', () => {
+    const activities = { 0: [{ id: 'a' }], 1: [], 3: [{ id: 'b' }, { id: 'c' }] };
+    expect(getActivityDayIndices(activities)).toEqual([0, 3]);
+  });
+
+  it('defaults to an empty array when activities is omitted', () => {
+    expect(getActivityDayIndices()).toEqual([]);
+  });
+
+  it('returns an empty array when every day is empty', () => {
+    expect(getActivityDayIndices({ 0: [], 2: [] })).toEqual([]);
+  });
+});
+
+describe('getAllTrainingDayIndices', () => {
+  it('unions gym-schedule days and activity days used by AboutScreen\'s Training days toggle', () => {
+    expect(getAllTrainingDayIndices([0, 2, 4], [1, 4])).toEqual([0, 1, 2, 4]);
+  });
+
+  it('defaults to an empty array when both inputs are omitted', () => {
+    expect(getAllTrainingDayIndices()).toEqual([]);
+  });
+
+  it('returns just the schedule days when there are no activity days', () => {
+    expect(getAllTrainingDayIndices([1, 3], [])).toEqual([1, 3]);
   });
 });

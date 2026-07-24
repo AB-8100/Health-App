@@ -10,7 +10,8 @@ import { SPLITS } from './GymPlanScreens';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
 import {
   getTrainingDayIndices, toggleTrainingDay,
-  isScheduleValidForSplit, reconcileScheduleWithSplitIds,
+  isScheduleValidForSplit, reconcileScheduleWithSplitIds, REST,
+  getActivityDayIndices, getAllTrainingDayIndices,
 } from '../utils/scheduleReconciliation';
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -121,6 +122,7 @@ function AboutScreen({
   onRedoGoals,
   onResetOnboardingSchedule,
   onUpdateSchedule,
+  onUpdateActivities,
 }) {
   const t = themes[theme];
 
@@ -148,7 +150,7 @@ function AboutScreen({
   const hasGym          = localProfile.hasGym !== false;
   const hasEventTraining = !!localProfile.hasEventTraining;
 
-  // Training days now come from the actual schedule (which weekdays are
+  // Gym training days come from the actual schedule (which weekdays are
   // non-'—'), not from plan.splitDays — splitDays is just "how many
   // distinct sessions rotate through those days" (see Customize split /
   // SplitPickerScreen). A stored scheduleOverride is reconciled onto the
@@ -160,10 +162,40 @@ function AboutScreen({
         ? plan.scheduleOverride
         : reconcileScheduleWithSplitIds(plan.scheduleOverride, activeSplitIds))
     : (activeSplit?.schedule || Array(7).fill('—'));
-  const trainingDayIndices = hasGym ? getTrainingDayIndices(effectiveSchedule) : [];
-  const gymDays = trainingDayIndices.length;
+  const scheduleDayIndices = hasGym ? getTrainingDayIndices(effectiveSchedule) : [];
+  const gymDays = scheduleDayIndices.length;
+
+  // Non-gym training days — any weekday with a manually-added activity
+  // (run, swim, sport, etc. — see DayActivitiesScreen), independent of
+  // gym access. "Training days" below is the union of these two sources,
+  // so the picker reflects everything a user trains, not just the gym.
+  const activityDayIndices = getActivityDayIndices(activities);
+  const otherActivityDays = activityDayIndices.length;
+  const trainingDayIndices = getAllTrainingDayIndices(scheduleDayIndices, activityDayIndices);
 
   const handleToggleTrainingDay = (dayIdx) => {
+    const hasGymSlot = hasGym && effectiveSchedule[dayIdx] !== undefined && effectiveSchedule[dayIdx] !== REST;
+    const hasActivity = (activities[dayIdx] || []).length > 0;
+
+    if (hasGymSlot || hasActivity) {
+      // Turning this day off — a "training day" toggle should mean a full
+      // rest day, so clear every activity type on it, not just the gym slot.
+      if (hasGymSlot) {
+        const next = [...effectiveSchedule];
+        next[dayIdx] = REST;
+        onUpdateSchedule?.(next);
+      }
+      if (hasActivity) {
+        onUpdateActivities?.({ ...activities, [dayIdx]: [] });
+      }
+      return;
+    }
+
+    // Turning this day on — only the gym has a sensible default assignment
+    // (next split-day-id in rotation). Non-gym activities are day-specific
+    // (run/swim/sport/etc.) and get added per-day via Weekly Overview /
+    // DayActivitiesScreen, not from this generic toggle.
+    if (!hasGym) return;
     const effectiveSplitDays = plan.splitDays || 3; // sensible default so a first toggle has content to assign
     const ids = SPLITS[effectiveSplitDays].days.map(d => d.id);
     const nextSchedule = toggleTrainingDay(effectiveSchedule, ids, dayIdx);
@@ -193,7 +225,7 @@ function AboutScreen({
     return count;
   }, [hasEventTraining, currentWeek, eventPlan.meta?.startDate, eventPlan.sessions, eventOverrides]);
 
-  const totalWeeklySessions = gymDays + eventDays;
+  const totalWeeklySessions = gymDays + otherActivityDays + eventDays;
 
   // Real goals from Stage 2 onboarding (see GoalsSetupScreen.jsx) — the
   // source of truth for what a user is training for. Read-only here; use
@@ -859,6 +891,13 @@ function AboutScreen({
                   background: '#4F46E508', border: '1px solid #4F46E520',
                   borderRadius: 5, padding: '2px 7px',
                 }}>🏋️ {gymDays} gym</span>
+              )}
+              {otherActivityDays > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600, color: '#15803D',
+                  background: '#15803D08', border: '1px solid #15803D20',
+                  borderRadius: 5, padding: '2px 7px',
+                }}>🏃 {otherActivityDays} other</span>
               )}
               {eventDays > 0 && (
                 <span style={{
