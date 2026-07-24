@@ -3,6 +3,7 @@
 // this pure logic is testable directly, per the project's convention of
 // keeping generated-data logic in utils/ (see sessionCompletion.js, etc.).
 import { legDistanceKm, formatPaceForDiscipline } from './raceTargets';
+import { REST, reconcileScheduleWithSplitIds } from './scheduleReconciliation';
 
 export const DAY_KEY_TO_IDX = { monday:0, tuesday:1, wednesday:2, thursday:3, friday:4, saturday:5, sunday:6 };
 
@@ -39,17 +40,21 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
     selectedIds = ['gym', ...selectedIds];
   }
 
-  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
+  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0, gymDayIdxs: [] };
 
   // Only gym (or nothing selected) → all training days count as gym sessions
   const nonGymActivities = selectedIds.filter(id => id !== 'gym');
   if (!nonGymActivities.length) {
-    return { schedule: {}, gymDayCount: gymAccess ? trainingDays.length : 0 };
+    const gymDayIdxs = gymAccess
+      ? trainingDays.map(day => DAY_KEY_TO_IDX[day]).filter(idx => idx !== undefined)
+      : [];
+    return { schedule: {}, gymDayCount: gymDayIdxs.length, gymDayIdxs };
   }
 
   // Cycle through activity list (gym + others) across training days
   const schedule = {};
   let gymDayCount = 0;
+  const gymDayIdxs = [];
 
   trainingDays.forEach((day, i) => {
     const dayIdx = DAY_KEY_TO_IDX[day];
@@ -58,7 +63,11 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
 
     if (actId === 'gym') {
       gymDayCount++;
-      // Gym days are represented by plan.splitDays — no entry needed in activities
+      // Gym days are represented by plan.splitDays — no entry needed in
+      // activities, but the weekday is tracked in gymDayIdxs so the caller
+      // can place the split's days on the days actually chosen, instead of
+      // falling back to the split template's own default schedule.
+      gymDayIdxs.push(dayIdx);
     } else {
       const def = ACTIVITY_DEFS[actId];
       if (def) {
@@ -67,7 +76,7 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
     }
   });
 
-  return { schedule, gymDayCount };
+  return { schedule, gymDayCount, gymDayIdxs };
 }
 
 // Discipline key (from an event_race goal's disciplineFrequency, set in
@@ -139,7 +148,7 @@ export function interleaveBySource(sources) {
 // the day count allows rather than being silently dropped.
 export function goalAwareGenerateActivitySchedule(goalsPayload) {
   const { goals = [], trainingDays = [], gymAccess = false, regularSports = [] } = goalsPayload;
-  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0 };
+  if (!trainingDays.length) return { schedule: {}, gymDayCount: 0, gymDayIdxs: [] };
 
   const schedule = {};
   const claimedDayIdxs = new Set();
@@ -181,17 +190,19 @@ export function goalAwareGenerateActivitySchedule(goalsPayload) {
 
   const filled = interleaveBySource(sources).slice(0, remainingDayIdxs.length);
   let gymDayCount = 0;
+  const gymDayIdxs = [];
   remainingDayIdxs.forEach((dayIdx, i) => {
     const def = filled[i];
     if (!def) return;
     if (def.__gym) {
       gymDayCount++;
+      gymDayIdxs.push(dayIdx);
     } else {
       schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
     }
   });
 
-  return { schedule, gymDayCount };
+  return { schedule, gymDayCount, gymDayIdxs };
 }
 
 export function generateActivitySchedule(goalsPayload) {
@@ -249,4 +260,22 @@ export function getAutoSplitDays(gymDayCount) {
   if (gymDayCount === 3) return 3;
   if (gymDayCount === 4) return 4;
   return 5;
+}
+
+// Turns the gym weekday indices produced by generateActivitySchedule into a
+// plan.scheduleOverride (7-slot, index 0=Mon..6=Sun) that places the auto
+// split's days on the weekdays the user actually selected during onboarding,
+// instead of leaving plan.scheduleOverride unset — which made every screen
+// that reads the schedule (WeeklyOverviewScreen, GymPlanScreens) fall back to
+// the split template's own hardcoded default schedule, ignoring the user's
+// chosen training days entirely. Uses the same round-robin assignment as
+// reconcileScheduleWithSplitIds/toggleTrainingDay so a freshly generated
+// schedule behaves identically to one built by manually toggling days.
+export function buildGymScheduleOverride(gymDayIdxs, splitDayIds) {
+  if (!gymDayIdxs?.length || !splitDayIds?.length) return null;
+  const template = Array(7).fill(REST);
+  gymDayIdxs.forEach(idx => {
+    if (idx >= 0 && idx < 7) template[idx] = splitDayIds[0];
+  });
+  return reconcileScheduleWithSplitIds(template, splitDayIds);
 }

@@ -4,7 +4,7 @@ import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
 import { generateTrainingPlanWithAI } from './utils/planGeneration';
 import { isDuplicateSignupResponse } from './utils/authErrors';
-import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
 import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from './utils/scheduleReconciliation';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
@@ -539,8 +539,14 @@ function App() {
       (gp.regularSports || []).length > 0;
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
-    const { schedule: initialActivities, gymDayCount } = generateActivitySchedule({ ...gp, gymAccess });
+    const { schedule: initialActivities, gymDayCount, gymDayIdxs } = generateActivitySchedule({ ...gp, gymAccess });
     const autoSplitDays = getAutoSplitDays(gymDayCount);
+    // Places the auto split's days on the weekdays the user actually chose
+    // (gymDayIdxs) instead of leaving scheduleOverride unset, which made the
+    // Weekly Overview and gym screens fall back to the split template's own
+    // hardcoded default schedule regardless of the selected training days.
+    const autoSplitDayIds = autoSplitDays ? (SPLITS[autoSplitDays]?.days || []).map(d => d.id) : [];
+    const autoScheduleOverride = buildGymScheduleOverride(gymDayIdxs, autoSplitDayIds);
 
     const updatedProfile = {
       ...profile,
@@ -590,7 +596,7 @@ function App() {
     if (screenBeforeIntakeRef.current !== null) {
       const returnTo = screenBeforeIntakeRef.current;
       screenBeforeIntakeRef.current = null;
-      const nextPlan = blockScheduleApply ? plan : { ...plan, splitDays: autoSplitDays };
+      const nextPlan = blockScheduleApply ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride };
       const nextActivities = blockScheduleApply ? activities : { ...activities, ...initialActivities };
       setProfileRaw(updatedProfile);
       setPlanRaw(nextPlan);
@@ -607,7 +613,7 @@ function App() {
       setTimeout(() => scheduleSave(overrides), 0);
       setScreen(returnTo);
     } else {
-      completeOnboarding(updatedProfile, blockScheduleApply ? {} : initialActivities);
+      completeOnboarding(updatedProfile, blockScheduleApply ? {} : initialActivities, blockScheduleApply ? null : autoScheduleOverride);
     }
   };
 
@@ -927,8 +933,11 @@ function App() {
   // whatever's actually in state for everything that isn't onboarding output
   // (profile/plan/activities) — a no-op for new users, and no longer
   // destructive for anyone else who ends up here.
-  const completeOnboarding = (newProfile, initialActivities = {}) => {
-    const newPlan = { splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {} };
+  const completeOnboarding = (newProfile, initialActivities = {}, scheduleOverride = null) => {
+    const newPlan = {
+      splitDays: newProfile.splitDays ?? null, todayIdx: 0, overrides: {},
+      ...(scheduleOverride ? { scheduleOverride } : {}),
+    };
     setProfileRaw(newProfile);
     setPlanRaw(newPlan);
     setActivities(initialActivities);
