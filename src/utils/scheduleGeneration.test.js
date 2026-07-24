@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateActivitySchedule, getAutoSplitDays, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './scheduleGeneration';
 
 describe('generateActivitySchedule — backward compatibility (no event_race/sport_activity/regularSports)', () => {
   // These fix today's exact behavior in place — every non-race onboarding
@@ -25,13 +25,27 @@ describe('generateActivitySchedule — backward compatibility (no event_race/spo
       trainingDays: ['monday', 'tuesday', 'wednesday'],
       gymAccess: true,
     };
-    const { schedule, gymDayCount } = generateActivitySchedule(payload);
+    const { schedule, gymDayCount, gymDayIdxs } = generateActivitySchedule(payload);
     expect(gymDayCount).toBe(3);
     expect(schedule).toEqual({});
+    expect(gymDayIdxs.sort()).toEqual([0, 1, 2]);
+  });
+
+  it('gym access on non-consecutive days: gymDayIdxs reflects the actual selected weekdays, not the first N days', () => {
+    // The onboarding bug: user picks Mon/Wed/Fri, plan used to always land
+    // on the split template's own hardcoded default schedule instead.
+    const payload = {
+      goals: [{ type: 'general_fitness', config: { activities: [] } }],
+      trainingDays: ['monday', 'wednesday', 'friday'],
+      gymAccess: true,
+    };
+    const { gymDayCount, gymDayIdxs } = generateActivitySchedule(payload);
+    expect(gymDayCount).toBe(3);
+    expect(gymDayIdxs.sort()).toEqual([0, 2, 4]); // Mon, Wed, Fri
   });
 
   it('no goals, no gym, no training days: empty schedule, zero gym days', () => {
-    expect(generateActivitySchedule({})).toEqual({ schedule: {}, gymDayCount: 0 });
+    expect(generateActivitySchedule({})).toEqual({ schedule: {}, gymDayCount: 0, gymDayIdxs: [] });
   });
 
   it('gym + general_fitness activities: gym is one entry in the same even rotation as before', () => {
@@ -213,6 +227,28 @@ describe('getAutoSplitDays', () => {
     expect(getAutoSplitDays(1)).toBe(1);
     expect(getAutoSplitDays(4)).toBe(4);
     expect(getAutoSplitDays(7)).toBe(5);
+  });
+});
+
+describe('buildGymScheduleOverride', () => {
+  it('places split days on the exact weekdays selected (Mon/Wed/Fri), not a default consecutive run', () => {
+    const gymDayIdxs = [0, 2, 4]; // monday, wednesday, friday
+    const splitDayIds = ['push', 'pull', 'legs'];
+    const override = buildGymScheduleOverride(gymDayIdxs, splitDayIds);
+    expect(override).toEqual(['push', '—', 'pull', '—', 'legs', '—', '—']);
+  });
+
+  it('returns null when there are no gym days', () => {
+    expect(buildGymScheduleOverride([], ['full'])).toBeNull();
+    expect(buildGymScheduleOverride(undefined, ['full'])).toBeNull();
+  });
+
+  it('returns null when there is no split (no split day ids)', () => {
+    expect(buildGymScheduleOverride([0, 2, 4], [])).toBeNull();
+  });
+
+  it('a single gym day lands on the selected weekday, not always Monday', () => {
+    expect(buildGymScheduleOverride([3], ['full'])).toEqual(['—', '—', '—', 'full', '—', '—', '—']);
   });
 });
 
