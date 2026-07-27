@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from './sessionCompletion';
+import {
+  getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions,
+  buildOrphanedCompletionSessions, dropPhantomPastEventPlanSessions,
+} from './sessionCompletion';
 
 const iso = (offsetDays = 0) => {
   const d = new Date();
@@ -68,5 +71,66 @@ describe('getUnmatchedCompletions', () => {
   it('surfaces unmatched sessions even when there are no scheduled activities at all', () => {
     const todaysCompleted = [{ id: '1', workout: 'Session' }];
     expect(getUnmatchedCompletions([], todaysCompleted)).toEqual(todaysCompleted);
+  });
+});
+
+// Regression coverage for "uploading a new training plan removed prior
+// weeks' completions from the Weekly Overview" — the data was never
+// destroyed (still in completedSessions), but a day with no scheduled
+// session left it with no bubble to attach to. These two helpers reconcile
+// buildWeekData's output so logged sessions resurface and phantom
+// duplicates left over from the pre-fix behavior get cleaned up.
+describe('buildOrphanedCompletionSessions', () => {
+  it('synthesizes a completed bubble for a logged session with no scheduled match', () => {
+    const completedForDay = [{ id: 'c1', workout: 'Old tempo run', type: 'run' }];
+    const orphans = buildOrphanedCompletionSessions('2026-07-13', 2, [], completedForDay);
+    expect(orphans).toEqual([{
+      id: 'completed-2026-07-13-c1', type: 'run', label: 'Old tempo run',
+      detail: '', source: 'completed_only', dayIdx: 2, completed: true,
+    }]);
+  });
+
+  it('infers a gym type from a logged session that has an exercise queue but no type', () => {
+    const completedForDay = [{ id: 'c1', workout: 'Push day', queue: [{ id: 'bench' }] }];
+    const orphans = buildOrphanedCompletionSessions('2026-07-13', 0, [], completedForDay);
+    expect(orphans[0].type).toBe('gym');
+  });
+
+  it('does not duplicate a completion already matched by an existing session', () => {
+    const sessions = [{ id: 'gym-2026-07-13', source: 'gym', label: 'Push', completed: true }];
+    const completedForDay = [{ id: 'c1', workout: 'Push day', queue: [{ id: 'bench' }] }];
+    expect(buildOrphanedCompletionSessions('2026-07-13', 0, sessions, completedForDay)).toEqual([]);
+  });
+});
+
+describe('dropPhantomPastEventPlanSessions', () => {
+  const pastEventSession = { id: 'event-1', source: 'event_plan', label: 'New swim', completed: false };
+  const completedGymSession = { id: 'gym-1', source: 'gym', label: 'Push', completed: true };
+
+  it('leaves sessions alone on a day that is not in the past', () => {
+    const sessions = [pastEventSession, completedGymSession];
+    expect(dropPhantomPastEventPlanSessions(sessions, false)).toEqual(sessions);
+  });
+
+  it('leaves a past day alone when nothing on it is completed (cannot distinguish a real miss)', () => {
+    const sessions = [pastEventSession];
+    expect(dropPhantomPastEventPlanSessions(sessions, true)).toEqual(sessions);
+  });
+
+  it('drops a never-completed event-plan session on a past day that already has a completed session', () => {
+    const sessions = [pastEventSession, completedGymSession];
+    expect(dropPhantomPastEventPlanSessions(sessions, true)).toEqual([completedGymSession]);
+  });
+
+  it('keeps a completed event-plan session on a past day', () => {
+    const completedEvent = { ...pastEventSession, completed: true };
+    const sessions = [completedEvent, completedGymSession];
+    expect(dropPhantomPastEventPlanSessions(sessions, true)).toEqual(sessions);
+  });
+
+  it('keeps non-event-plan, non-completed sessions on a past day (e.g. a missed activity)', () => {
+    const missedActivity = { id: 'act-1', source: 'activity', label: 'Yoga', completed: false };
+    const sessions = [missedActivity, completedGymSession];
+    expect(dropPhantomPastEventPlanSessions(sessions, true)).toEqual(sessions);
   });
 });

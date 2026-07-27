@@ -46,3 +46,41 @@ export function isSessionCompleted(sess, completedForDay = []) {
   }
   return completedForDay.some(s => s.workout === sess.label);
 }
+
+// A completed session that doesn't correspond to any of a day's scheduled
+// sessions (by the same matching rules as isSessionCompleted) gets a
+// synthetic bubble of its own, so it isn't silently missing from the Weekly
+// Overview just because nothing is "scheduled" for that day any more. This
+// covers e.g. a plan re-upload that (before a fix — see
+// data/eventPlan.js's mergeEventPlanFromCutoff) discarded a past day's own
+// schedule while its logged completion stayed in `completedSessions`, as
+// well as a freeform "log a different activity" completion that never had a
+// scheduled slot to begin with.
+export function buildOrphanedCompletionSessions(dk, dayIdx, sessions, completedForDay = []) {
+  return completedForDay
+    .filter(cs => !sessions.some(s => isSessionCompleted(s, [cs])))
+    .map(cs => ({
+      id: `completed-${dk}-${cs.id}`,
+      type: cs.type || (Array.isArray(cs.queue) && cs.queue.length > 0 ? 'gym' : 'other'),
+      label: cs.workout || 'Session',
+      detail: '',
+      source: 'completed_only',
+      dayIdx,
+      completed: true,
+    }));
+}
+
+// A past day's event-plan-sourced session that was never completed, on a day
+// that already has at least one completed session, is a phantom left over
+// from a plan upload that (before mergeEventPlanFromCutoff existed) applied
+// its sessions onto dates before it was ever uploaded rather than a real
+// missed session — drop it so it doesn't sit as a duplicate, never-done
+// bubble next to the day's real logged session. Days with no completed
+// session at all are left untouched, since there's no way to tell a
+// leftover phantom apart from a genuinely missed session in that case.
+export function dropPhantomPastEventPlanSessions(sessions, isPastDay) {
+  if (!isPastDay) return sessions;
+  const hasCompleted = sessions.some(s => s.completed);
+  if (!hasCompleted) return sessions;
+  return sessions.filter(s => s.source !== 'event_plan' || s.completed);
+}

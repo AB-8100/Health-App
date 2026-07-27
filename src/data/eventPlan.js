@@ -62,6 +62,42 @@ export function getWeekNumberForDate(dk, startDate) {
   return Math.floor(diffDays / 7) + 1;
 }
 
+// Monday (UTC-anchored) of the current local calendar week — the boundary
+// used when a new/replacement event plan is applied so it only takes effect
+// from "this week" onward, never retroactively over weeks that have already
+// happened (and may have completed sessions logged against what was
+// scheduled then). Mirrors getPlanWeekStart's no-startDate fallback so the
+// two agree on what "this week" means.
+export function getCurrentWeekStartDateKey() {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const day = d.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + mondayOffset);
+  return d.toISOString().slice(0, 10);
+}
+
+// Keeps only the date-keyed entries strictly before `cutoffKey`. Date keys
+// are plain YYYY-MM-DD strings, which sort lexicographically the same as
+// chronologically, so a string comparison is enough.
+export function pickBeforeCutoff(dateKeyedMap = {}, cutoffKey) {
+  return Object.fromEntries(Object.entries(dateKeyedMap || {}).filter(([dk]) => dk < cutoffKey));
+}
+
+// Applies a freshly uploaded/generated event plan starting only from
+// `cutoffKey` onward, keeping the plan being replaced's own sessions for any
+// date before that. Without this, swapping in a new plan blanks out every
+// past week in the Weekly Overview too — the underlying completed sessions
+// are still recorded (visible in historic data), but nothing scheduled is
+// left for them to attach to, so they silently disappear from the planner.
+export function mergeEventPlanFromCutoff(oldPlan, newPlan, cutoffKey) {
+  const oldSessions = pickBeforeCutoff(oldPlan?.sessions, cutoffKey);
+  const newSessions = Object.fromEntries(
+    Object.entries(newPlan?.sessions || {}).filter(([dk]) => dk >= cutoffKey)
+  );
+  return { ...newPlan, sessions: { ...oldSessions, ...newSessions } };
+}
+
 // Derives training phase ranges from total weeks to event. Used only as a
 // fallback when no phases were parsed from an uploaded plan.
 // Proportions: Foundation 33% · Build 44% · Peak 17% · Taper remainder (min 1wk)

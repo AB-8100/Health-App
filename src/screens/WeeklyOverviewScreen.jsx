@@ -7,7 +7,10 @@ import { getCurrentPlanWeek, getPlanWeekStart, getTodayDateKey } from '../data/e
 import { SPLITS } from './GymPlanScreens';
 import { SESSION_DISPLAY, getSessionDisplay } from '../data/sessionDisplay';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
-import { completedDateKey, isSessionCompleted } from '../utils/sessionCompletion';
+import {
+  completedDateKey, isSessionCompleted,
+  buildOrphanedCompletionSessions, dropPhantomPastEventPlanSessions,
+} from '../utils/sessionCompletion';
 import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from '../utils/scheduleReconciliation';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -93,7 +96,14 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
     });
 
     const completedForDay = completedSessions.filter(s => completedDateKey(s) === dk);
-    const sessionsWithCompletion = sessions.map(s => ({ ...s, completed: isSessionCompleted(s, completedForDay) }));
+    let sessionsWithCompletion = sessions.map(s => ({ ...s, completed: isSessionCompleted(s, completedForDay) }));
+    // Resurface logged sessions that no longer match anything scheduled (see
+    // utils/sessionCompletion.js), then drop any never-completed event-plan
+    // session left duplicating one of them on a day that's already past.
+    sessionsWithCompletion = sessionsWithCompletion.concat(
+      buildOrphanedCompletionSessions(dk, i, sessionsWithCompletion, completedForDay)
+    );
+    sessionsWithCompletion = dropPhantomPastEventPlanSessions(sessionsWithCompletion, dk < todayKey);
 
     return { d, dk, sessions: sessionsWithCompletion, isToday: dk === todayKey, dayIdx: i };
   });

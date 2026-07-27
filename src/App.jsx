@@ -18,7 +18,7 @@ import { SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivi
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen, buildWeekData } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
-import { computeEventPhases, getTodayDateKey, getWeekNumberForDate } from './data/eventPlan';
+import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getCurrentWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -1046,18 +1046,27 @@ function App() {
     }
   }, [screen, viewingDay, currentUser?.id]);
 
-  // Replaces the whole event training plan from an uploaded spreadsheet, and
-  // wipes every other source that feeds sessions into the Weekly Overview
-  // (gym split, manually-added activities, per-day overrides/completion
-  // state) so the planner shows nothing but the freshly uploaded plan.
+  // Replaces the event training plan from an uploaded spreadsheet (or an
+  // AI-generated one, via generateAndApplyPlan below), applying it only from
+  // the current calendar week onward. Weeks that have already happened keep
+  // exactly what they showed before — their own event-plan sessions/
+  // overrides/completion state — so a new import can't retroactively blank
+  // out a week whose sessions were already logged (see
+  // docs/PROJECT_CONTEXT.md §7.4 and the "prior weeks' completions
+  // disappeared" bug this fixes). Gym split and recurring activities aren't
+  // date-scoped at all (they're the same recurring template for every week,
+  // past or future), so they're left untouched rather than reset — there's
+  // no way to "only reset them going forward" without erasing past weeks too.
   const handleUploadTrainingPlan = (parsed) => {
-    setEventPlan(parsed);
-    setEventOverrides({});
-    setPreselectedQueues({});
-    setPlanSessionsDone({});
-    setActivities({});
-    setSequencingDecisions({});
-    setPlanRaw(DEFAULT_PLAN);
+    const cutoffKey = getCurrentWeekStartDateKey();
+    const mergedEventPlan = mergeEventPlanFromCutoff(eventPlan, parsed, cutoffKey);
+    const nextEventOverrides = pickBeforeCutoff(eventOverrides, cutoffKey);
+    const nextPreselectedQueues = pickBeforeCutoff(preselectedQueues, cutoffKey);
+    const nextPlanSessionsDone = pickBeforeCutoff(planSessionsDone, cutoffKey);
+    setEventPlan(mergedEventPlan);
+    setEventOverrides(nextEventOverrides);
+    setPreselectedQueues(nextPreselectedQueues);
+    setPlanSessionsDone(nextPlanSessionsDone);
     const nextProfile = {
       ...profile,
       hasEventTraining: true,
@@ -1065,9 +1074,9 @@ function App() {
     };
     setProfileRaw(nextProfile);
     const overrides = {
-      eventPlan: parsed, eventOverrides: {}, preselectedQueues: {}, planSessionsDone: {}, activities: {},
-      sequencingDecisions: {},
-      plan: DEFAULT_PLAN, profile: nextProfile,
+      eventPlan: mergedEventPlan, eventOverrides: nextEventOverrides,
+      preselectedQueues: nextPreselectedQueues, planSessionsDone: nextPlanSessionsDone,
+      profile: nextProfile,
     };
     setTimeout(() => scheduleSave(overrides), 0);
 
