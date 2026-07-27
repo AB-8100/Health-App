@@ -86,8 +86,16 @@ function normalizePlan(rawPlan) {
 export async function generateTrainingPlanWithAI({ goalsPayload, intake }) {
   const prompt = buildPlanPrompt({ goalsPayload, intake });
 
+  // supabase.functions.invoke() is documented to auto-attach the signed-in
+  // user's JWT, but that relies on internal wiring that isn't guaranteed
+  // across environments — attach it explicitly so the edge function's own
+  // "Missing Authorization header" check can't fire for a signed-in user.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('You need to be signed in to generate a plan.');
+
   const { data, error } = await supabase.functions.invoke('generate-training-plan', {
     body: { prompt },
+    headers: { Authorization: `Bearer ${session.access_token}` },
   });
 
   if (error) {
