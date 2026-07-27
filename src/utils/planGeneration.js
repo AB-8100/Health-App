@@ -91,7 +91,19 @@ export async function generateTrainingPlanWithAI({ goalsPayload, intake }) {
   });
 
   if (error) {
-    throw new Error(error.message || 'Could not reach the plan generator — check your connection and try again.');
+    // supabase-js's FunctionsHttpError always carries the generic message
+    // "Edge Function returned a non-2xx status code" — the edge function's
+    // actual { error: '...' } body (auth failure, missing key, Claude API
+    // error, etc.) sits unread on error.context (the raw Response) unless we
+    // read it ourselves.
+    let message = error.message;
+    if (error.context && typeof error.context.json === 'function') {
+      try {
+        const body = await error.context.json();
+        if (body?.error) message = body.error;
+      } catch {}
+    }
+    throw new Error(message || 'Could not reach the plan generator — check your connection and try again.');
   }
   if (data?.error) {
     throw new Error(data.error);
