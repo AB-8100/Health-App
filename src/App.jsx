@@ -1313,7 +1313,11 @@ function App() {
                  ...p,
                  scheduleOverride: newSched,
                  ...(splitDaysDefault && !p.splitDays ? { splitDays: splitDaysDefault } : {}),
-               }))} />;
+               }))}
+               onUpdateActivities={(next) => {
+                 setActivities(next);
+                 setTimeout(() => scheduleSave({ activities: next }), 0);
+               }} />;
     if (s === 'weekly')
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
