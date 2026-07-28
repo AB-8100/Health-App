@@ -331,6 +331,17 @@
       "notes": "Higher core demand than pool due to sighting + conditions"
     },
     {
+      "name": "Synchronised Swimming",
+      "category": "endurance",
+      "leg_load": "medium",
+      "upper_load": "high",
+      "cardio_load": "medium",
+      "core_load": "high",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": "Eggbeater kick sustains leg load; breath-held routines drive high core demand"
+    },
+    {
       "name": "Rowing (on water)",
       "category": "endurance",
       "leg_load": "high",
