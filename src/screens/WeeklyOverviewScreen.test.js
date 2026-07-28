@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWeekData } from './WeeklyOverviewScreen';
+import { buildWeekData, sessionOrderKey } from './WeeklyOverviewScreen';
 
 // A Monday-anchored plan start so week 1 lines up with DAY_SHORT's Mon..Sun.
 const START_DATE = '2026-01-05'; // a Monday
@@ -105,5 +105,158 @@ describe('buildWeekData', () => {
     const withCompletion = buildWeekData(1, plan, {}, {}, true, true, START_DATE, eventSessions, completedSessions);
     const gymSession = withCompletion[gymDayIdx].sessions.find(s => s.source === 'gym');
     expect(gymSession.completed).toBe(true);
+  });
+
+  // Regression test for the bug where dragging a session to reorder it
+  // relative to a session from a *different* source (gym/event_plan/
+  // activity) on the same day would visually move, then pop back to the
+  // default gym → event_plan → activity order the next time the screen
+  // rebuilt (navigating away and back, switching weeks and back, or the
+  // app reloading after being backgrounded) — because that default push
+  // order was the only thing buildWeekData ever produced, with nothing
+  // remembering the user's manual arrangement.
+  it('re-interleaves a day\'s sessions per a saved manual dayOrder instead of the default gym → event_plan → activity order', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null };
+    // SPLITS[3] (Push/Pull/Legs) puts a gym day on Tuesday (index 1), not
+    // Monday — key the activity there so the day actually has both a gym
+    // and an activity session to interleave.
+    const activities = { 1: [{ id: 'walk-1', type: 'walk', label: 'Walk' }] };
+    const week = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions);
+    const gymDayIdx = week.findIndex(day => day.sessions.some(s => s.source === 'gym') && day.sessions.some(s => s.source === 'activity'));
+    expect(gymDayIdx).toBe(1); // sanity-check the fixture actually has a mixed-source day, so the assertions below aren't vacuous
+
+    const dk = week[gymDayIdx].dk;
+    // Default order is gym first, activity second.
+    expect(week[gymDayIdx].sessions.map(s => s.source)).toEqual(['gym', 'activity']);
+
+    // Saved order puts the activity ahead of the gym session.
+    const dayOrder = { [dk]: ['activity:Walk', 'gym:' + week[gymDayIdx].sessions.find(s => s.source === 'gym').label] };
+    const reordered = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions, [], dayOrder);
+    expect(reordered[gymDayIdx].sessions.map(s => s.source)).toEqual(['activity', 'gym']);
+  });
+
+  // End-to-end persistence check: mirrors exactly what WeeklyOverviewScreen's
+  // handleDragEnd does on a drop (splice the moved session out of its old
+  // slot, splice it into the new one, then derive the day's saved order via
+  // sessionOrderKey — the same function the component calls), then throws
+  // that saved order at a *brand-new* buildWeekData call with none of the
+  // original in-memory weekData involved, simulating the component fully
+  // unmounting and remounting (navigating away and back, switching weeks and
+  // back, or the app reloading after being backgrounded). If the drag result
+  // doesn't survive that round trip, this test fails.
+  it('a simulated drag-and-drop reorder survives a full buildWeekData remount, not just the in-memory state', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null };
+    // Tuesday (index 1) is a gym day for SPLITS[3] — key the activity there.
+    const activities = { 1: [{ id: 'walk-1', type: 'walk', label: 'Walk' }] };
+    const before = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions);
+    const dayIdx = before.findIndex(day => day.sessions.some(s => s.source === 'gym') && day.sessions.some(s => s.source === 'activity'));
+    expect(dayIdx).toBe(1); // sanity-check the fixture actually has a mixed-source day, so this test can't pass vacuously
+
+    const dk = before[dayIdx].dk;
+    expect(before[dayIdx].sessions.map(s => s.source)).toEqual(['gym', 'activity']); // pre-drag order
+
+    // Simulate the user dragging the activity chip (index 1) above the gym
+    // chip (index 0) within the same day — the exact splice handleDragEnd
+    // performs on drop.
+    const draggedSessions = before[dayIdx].sessions.slice();
+    const [moved] = draggedSessions.splice(1, 1);
+    draggedSessions.splice(0, 0, moved);
+    expect(draggedSessions.map(s => s.source)).toEqual(['activity', 'gym']); // drag applied locally
+
+    // Simulate handleDragEnd's persistence step.
+    const persistedDayOrder = { [dk]: draggedSessions.map(sessionOrderKey) };
+
+    // Simulate a full remount with only the persisted order available —
+    // nothing from `before` or `draggedSessions` is reused below.
+    const after = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions, [], persistedDayOrder);
+    expect(after[dayIdx].sessions.map(s => s.source)).toEqual(['activity', 'gym']); // survives the remount
+  });
+
+  it('appends sessions missing from a saved dayOrder after the ones it does know about', () => {
+    const overrides = {
+      '2026-01-05': [
+        { type: 'run', label: 'Morning run', source: 'manual' },
+        { type: 'swim', label: 'Evening swim', source: 'manual' },
+      ],
+    };
+    const dayOrder = { '2026-01-05': ['event_plan:Evening swim'] };
+    const week = buildWeekData(1, noPlan, {}, overrides, false, true, START_DATE, eventSessions, [], dayOrder);
+    expect(week[0].sessions.map(s => s.label)).toEqual(['Evening swim', 'Morning run']);
+  });
+
+  // ── Cross-day move persistence ──────────────────────────────────────────────
+  // These replay handleDragEnd's exact per-source persistence branches (the
+  // code that runs when a session is dropped on a *different* day, not just
+  // reordered within the same day), then feed the result into a completely
+  // fresh buildWeekData call — simulating the screen fully unmounting and
+  // remounting. If a cross-day move doesn't survive that round trip, the
+  // session would appear to "snap back" to its original day.
+
+  it('moving an event-plan/manual session to a different day persists there and clears the original day', () => {
+    const overrides = { '2026-01-05': [{ type: 'swim', label: 'Swim', source: 'manual' }] }; // Monday
+    const before = buildWeekData(1, noPlan, {}, overrides, false, true, START_DATE, eventSessions);
+    expect(before[0].sessions.map(s => s.label)).toEqual(['Swim']); // Monday has it
+    expect(before[2].sessions.some(s => s.label === 'Swim')).toBe(false); // Wednesday doesn't yet
+
+    const srcRow = { dk: before[0].dk, sessions: [] }; // moved out of Monday
+    const movedRaw = before[0].sessions[0].raw;
+    const dstRow = { dk: before[2].dk, sessions: [...before[2].sessions, { source: 'event_plan', raw: movedRaw }] }; // dropped on Wednesday
+
+    // handleDragEnd's exact event_plan persistence branch.
+    const newOverrides = { ...overrides };
+    [srcRow, dstRow].forEach(row => {
+      newOverrides[row.dk] = row.sessions.filter(s => s.source === 'event_plan').map(s => s.raw);
+    });
+
+    // Fresh rebuild — nothing from `before` reused.
+    const after = buildWeekData(1, noPlan, {}, newOverrides, false, true, START_DATE, eventSessions);
+    expect(after[0].sessions.some(s => s.label === 'Swim')).toBe(false); // gone from Monday
+    expect(after[2].sessions.some(s => s.label === 'Swim')).toBe(true);  // now on Wednesday
+  });
+
+  it('moving an activity to a different day persists there and clears the original day', () => {
+    const activities = { 0: [{ id: 'walk-1', type: 'walk', label: 'Walk' }] }; // Monday
+    // hasEventTraining=false / no eventSessions so the shared fixture's Monday
+    // "Swim" event-plan session doesn't share the day with the activity.
+    const before = buildWeekData(1, noPlan, activities, {}, false, false, START_DATE, {});
+    expect(before[0].sessions.map(s => s.label)).toEqual(['Walk']);
+    expect(before[3].sessions.some(s => s.label === 'Walk')).toBe(false); // Thursday doesn't yet
+
+    const srcRow = { dayIdx: before[0].dayIdx, sessions: [] };
+    const movedAct = before[0].sessions[0].actData;
+    const dstRow = { dayIdx: before[3].dayIdx, sessions: [...before[3].sessions, { source: 'activity', actData: movedAct }] };
+
+    // handleDragEnd's exact activity persistence branch.
+    const newActivities = { ...activities };
+    [srcRow, dstRow].forEach(row => {
+      newActivities[row.dayIdx] = row.sessions.filter(s => s.source === 'activity').map(s => s.actData);
+    });
+
+    const after = buildWeekData(1, noPlan, newActivities, {}, false, false, START_DATE, {});
+    expect(after[0].sessions.some(s => s.label === 'Walk')).toBe(false); // gone from Monday
+    expect(after[3].sessions.some(s => s.label === 'Walk')).toBe(true);  // now on Thursday
+  });
+
+  it('moving a gym session to a different day swaps the schedule and persists on rebuild', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null }; // Push/Pull/Legs: Tue/Thu/Sat
+    const before = buildWeekData(1, plan, {}, {}, true, false, START_DATE, {});
+    expect(before[1].sessions.some(s => s.source === 'gym')).toBe(true);  // Tuesday has gym
+    expect(before[0].sessions.some(s => s.source === 'gym')).toBe(false); // Monday (rest) doesn't
+
+    // Drag Tuesday's gym session onto Monday (rest day) — handleDragEnd's
+    // exact gym persistence branch: swap the two weekday slots.
+    const srcRow = { dayIdx: 1 }; // Tuesday
+    const dstRow = { dayIdx: 0 }; // Monday
+    const split = { schedule: ['—', 'push', '—', 'pull', '—', 'legs', '—'], days: [{ id: 'push' }, { id: 'pull' }, { id: 'legs' }] };
+    const base = plan.scheduleOverride || split.schedule;
+    const sched = [...base];
+    const tmp = sched[srcRow.dayIdx];
+    sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
+    sched[dstRow.dayIdx] = tmp;
+
+    const newPlan = { ...plan, scheduleOverride: sched };
+    const after = buildWeekData(1, newPlan, {}, {}, true, false, START_DATE, {});
+    expect(after[1].sessions.some(s => s.source === 'gym')).toBe(false); // gone from Tuesday
+    expect(after[0].sessions.some(s => s.source === 'gym')).toBe(true);  // now on Monday
   });
 });
