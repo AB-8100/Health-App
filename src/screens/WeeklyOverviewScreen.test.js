@@ -183,4 +183,80 @@ describe('buildWeekData', () => {
     const week = buildWeekData(1, noPlan, {}, overrides, false, true, START_DATE, eventSessions, [], dayOrder);
     expect(week[0].sessions.map(s => s.label)).toEqual(['Evening swim', 'Morning run']);
   });
+
+  // ── Cross-day move persistence ──────────────────────────────────────────────
+  // These replay handleDragEnd's exact per-source persistence branches (the
+  // code that runs when a session is dropped on a *different* day, not just
+  // reordered within the same day), then feed the result into a completely
+  // fresh buildWeekData call — simulating the screen fully unmounting and
+  // remounting. If a cross-day move doesn't survive that round trip, the
+  // session would appear to "snap back" to its original day.
+
+  it('moving an event-plan/manual session to a different day persists there and clears the original day', () => {
+    const overrides = { '2026-01-05': [{ type: 'swim', label: 'Swim', source: 'manual' }] }; // Monday
+    const before = buildWeekData(1, noPlan, {}, overrides, false, true, START_DATE, eventSessions);
+    expect(before[0].sessions.map(s => s.label)).toEqual(['Swim']); // Monday has it
+    expect(before[2].sessions.some(s => s.label === 'Swim')).toBe(false); // Wednesday doesn't yet
+
+    const srcRow = { dk: before[0].dk, sessions: [] }; // moved out of Monday
+    const movedRaw = before[0].sessions[0].raw;
+    const dstRow = { dk: before[2].dk, sessions: [...before[2].sessions, { source: 'event_plan', raw: movedRaw }] }; // dropped on Wednesday
+
+    // handleDragEnd's exact event_plan persistence branch.
+    const newOverrides = { ...overrides };
+    [srcRow, dstRow].forEach(row => {
+      newOverrides[row.dk] = row.sessions.filter(s => s.source === 'event_plan').map(s => s.raw);
+    });
+
+    // Fresh rebuild — nothing from `before` reused.
+    const after = buildWeekData(1, noPlan, {}, newOverrides, false, true, START_DATE, eventSessions);
+    expect(after[0].sessions.some(s => s.label === 'Swim')).toBe(false); // gone from Monday
+    expect(after[2].sessions.some(s => s.label === 'Swim')).toBe(true);  // now on Wednesday
+  });
+
+  it('moving an activity to a different day persists there and clears the original day', () => {
+    const activities = { 0: [{ id: 'walk-1', type: 'walk', label: 'Walk' }] }; // Monday
+    // hasEventTraining=false / no eventSessions so the shared fixture's Monday
+    // "Swim" event-plan session doesn't share the day with the activity.
+    const before = buildWeekData(1, noPlan, activities, {}, false, false, START_DATE, {});
+    expect(before[0].sessions.map(s => s.label)).toEqual(['Walk']);
+    expect(before[3].sessions.some(s => s.label === 'Walk')).toBe(false); // Thursday doesn't yet
+
+    const srcRow = { dayIdx: before[0].dayIdx, sessions: [] };
+    const movedAct = before[0].sessions[0].actData;
+    const dstRow = { dayIdx: before[3].dayIdx, sessions: [...before[3].sessions, { source: 'activity', actData: movedAct }] };
+
+    // handleDragEnd's exact activity persistence branch.
+    const newActivities = { ...activities };
+    [srcRow, dstRow].forEach(row => {
+      newActivities[row.dayIdx] = row.sessions.filter(s => s.source === 'activity').map(s => s.actData);
+    });
+
+    const after = buildWeekData(1, noPlan, newActivities, {}, false, false, START_DATE, {});
+    expect(after[0].sessions.some(s => s.label === 'Walk')).toBe(false); // gone from Monday
+    expect(after[3].sessions.some(s => s.label === 'Walk')).toBe(true);  // now on Thursday
+  });
+
+  it('moving a gym session to a different day swaps the schedule and persists on rebuild', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null }; // Push/Pull/Legs: Tue/Thu/Sat
+    const before = buildWeekData(1, plan, {}, {}, true, false, START_DATE, {});
+    expect(before[1].sessions.some(s => s.source === 'gym')).toBe(true);  // Tuesday has gym
+    expect(before[0].sessions.some(s => s.source === 'gym')).toBe(false); // Monday (rest) doesn't
+
+    // Drag Tuesday's gym session onto Monday (rest day) — handleDragEnd's
+    // exact gym persistence branch: swap the two weekday slots.
+    const srcRow = { dayIdx: 1 }; // Tuesday
+    const dstRow = { dayIdx: 0 }; // Monday
+    const split = { schedule: ['—', 'push', '—', 'pull', '—', 'legs', '—'], days: [{ id: 'push' }, { id: 'pull' }, { id: 'legs' }] };
+    const base = plan.scheduleOverride || split.schedule;
+    const sched = [...base];
+    const tmp = sched[srcRow.dayIdx];
+    sched[srcRow.dayIdx] = sched[dstRow.dayIdx];
+    sched[dstRow.dayIdx] = tmp;
+
+    const newPlan = { ...plan, scheduleOverride: sched };
+    const after = buildWeekData(1, newPlan, {}, {}, true, false, START_DATE, {});
+    expect(after[1].sessions.some(s => s.source === 'gym')).toBe(false); // gone from Tuesday
+    expect(after[0].sessions.some(s => s.source === 'gym')).toBe(true);  // now on Monday
+  });
 });
