@@ -105,7 +105,7 @@ export function disciplineActivityDef(discipline, raceType, targetPaces) {
 const SPORT_NAME_TO_TYPE = {
   Football: 'team_sport', Basketball: 'team_sport', Rugby: 'team_sport', Hockey: 'team_sport', Volleyball: 'team_sport',
   Tennis: 'racket_sport',
-  Swimming: 'swim', Cycling: 'cycle', Running: 'run',
+  Swimming: 'swim', 'Synchronised Swimming': 'swim', Cycling: 'cycle', Running: 'run',
   'Martial Arts': 'combat',
 };
 

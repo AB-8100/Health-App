@@ -61,7 +61,7 @@ const STRENGTH_FOCUSES = [
 ];
 
 const SPORT_TYPES = [
-  'Football', 'Basketball', 'Tennis', 'Swimming', 'Cycling', 'Running',
+  'Football', 'Basketball', 'Tennis', 'Swimming', 'Synchronised Swimming', 'Cycling', 'Running',
   'Rugby', 'CrossFit', 'Martial Arts', 'Golf', 'Hockey', 'Volleyball', 'Other',
 ];
 
