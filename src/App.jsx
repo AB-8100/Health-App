@@ -155,6 +155,16 @@ function App() {
   // bootstrap (see the nav-position restore effect below); null lets
   // WeeklyOverviewScreen fall back to its normal "current week" default.
   const [savedViewWeek, setSavedViewWeek] = React.useState(null);
+  // [STATE] Manual per-day session order for Weekly Overview's drag-to-reorder
+  // — { [dateKey]: [sessionOrderKey, ...] } — kept in localStorage only
+  // (like savedViewWeek above) rather than round-tripped through Supabase,
+  // since it's purely a display-order preference for this device. Without
+  // it, buildWeekData always re-interleaves a day's gym/event/activity
+  // sessions back into a fixed order on every rebuild, so a manual reorder
+  // between sessions of different sources would silently revert as soon as
+  // the screen remounts (navigate away and back, switch weeks and back, or
+  // the page reloading after the app is backgrounded).
+  const [dayOrder, setDayOrder] = React.useState({});
   const [activities, setActivities]             = React.useState({});
   const [eventOverrides, setEventOverrides] = React.useState({});
   const [preselectedQueues, setPreselectedQueues] = React.useState({});
@@ -1019,12 +1029,18 @@ function App() {
       const savedScreen = localStorage.getItem(`forma_nav_screen_${currentUser.id}`);
       const savedWeekRaw = localStorage.getItem(`forma_nav_week_${currentUser.id}`);
       const savedDay = localStorage.getItem(`forma_nav_day_${currentUser.id}`);
+      const savedDayOrderRaw = localStorage.getItem(`forma_day_order_${currentUser.id}`);
       if (savedWeekRaw) setSavedViewWeek(Number(savedWeekRaw));
+      let restoredDayOrder = {};
+      if (savedDayOrderRaw) {
+        try { restoredDayOrder = JSON.parse(savedDayOrderRaw) || {}; } catch { restoredDayOrder = {}; }
+        setDayOrder(restoredDayOrder);
+      }
       if (savedScreen === 'session-detail' && savedDay) {
         const weekNum = getWeekNumberForDate(savedDay, eventPhasePlan.startDate);
         const week = buildWeekData(
           weekNum, plan, activities, eventOverrides, hasGym, hasEventTraining,
-          eventPhasePlan.startDate, eventPhasePlan.sessions, completedSessions
+          eventPhasePlan.startDate, eventPhasePlan.sessions, completedSessions, restoredDayOrder
         );
         const day = week.find(d => d.dk === savedDay);
         if (day) { setViewingDay(day); setScreen('session-detail'); }
@@ -1364,6 +1380,11 @@ function App() {
                initialViewWeek={savedViewWeek}
                onViewWeekChange={(w) => {
                  if (currentUser?.id) localStorage.setItem(`forma_nav_week_${currentUser.id}`, String(w));
+               }}
+               dayOrder={dayOrder}
+               onUpdateDayOrder={(next) => {
+                 setDayOrder(next);
+                 if (currentUser?.id) localStorage.setItem(`forma_day_order_${currentUser.id}`, JSON.stringify(next));
                }} />;
     if (s === 'session-detail')
       return <SessionDetailScreen width={contentW} height={contentH} theme={tweaks.theme}

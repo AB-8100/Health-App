@@ -106,4 +106,41 @@ describe('buildWeekData', () => {
     const gymSession = withCompletion[gymDayIdx].sessions.find(s => s.source === 'gym');
     expect(gymSession.completed).toBe(true);
   });
+
+  // Regression test for the bug where dragging a session to reorder it
+  // relative to a session from a *different* source (gym/event_plan/
+  // activity) on the same day would visually move, then pop back to the
+  // default gym → event_plan → activity order the next time the screen
+  // rebuilt (navigating away and back, switching weeks and back, or the
+  // app reloading after being backgrounded) — because that default push
+  // order was the only thing buildWeekData ever produced, with nothing
+  // remembering the user's manual arrangement.
+  it('re-interleaves a day\'s sessions per a saved manual dayOrder instead of the default gym → event_plan → activity order', () => {
+    const plan = { splitDays: 3, overrides: {}, scheduleOverride: null };
+    const activities = { 0: [{ id: 'walk-1', type: 'walk', label: 'Walk' }] };
+    const week = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions);
+    const gymDayIdx = week.findIndex(day => day.sessions.some(s => s.source === 'gym') && day.sessions.some(s => s.source === 'activity'));
+    if (gymDayIdx === -1) return; // this split has no gym session on Monday — nothing to interleave
+
+    const dk = week[gymDayIdx].dk;
+    // Default order is gym first, activity second.
+    expect(week[gymDayIdx].sessions.map(s => s.source)).toEqual(['gym', 'activity']);
+
+    // Saved order puts the activity ahead of the gym session.
+    const dayOrder = { [dk]: ['activity:Walk', 'gym:' + week[gymDayIdx].sessions.find(s => s.source === 'gym').label] };
+    const reordered = buildWeekData(1, plan, activities, {}, true, true, START_DATE, eventSessions, [], dayOrder);
+    expect(reordered[gymDayIdx].sessions.map(s => s.source)).toEqual(['activity', 'gym']);
+  });
+
+  it('appends sessions missing from a saved dayOrder after the ones it does know about', () => {
+    const overrides = {
+      '2026-01-05': [
+        { type: 'run', label: 'Morning run', source: 'manual' },
+        { type: 'swim', label: 'Evening swim', source: 'manual' },
+      ],
+    };
+    const dayOrder = { '2026-01-05': ['event_plan:Evening swim'] };
+    const week = buildWeekData(1, noPlan, {}, overrides, false, true, START_DATE, eventSessions, [], dayOrder);
+    expect(week[0].sessions.map(s => s.label)).toEqual(['Evening swim', 'Morning run']);
+  });
 });

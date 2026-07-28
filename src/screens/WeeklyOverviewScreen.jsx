@@ -24,7 +24,35 @@ function toDateKey(d) {
   return d.toISOString().slice(0, 10);
 }
 
-export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions = []) {
+// [LOGIC] A session's identity for manual-reorder purposes — stable across a
+// buildWeekData rebuild even though the array index each session lands at
+// (used for its display `id`) can shift as other sessions on the same day
+// are added/removed. Used to persist where a user dragged a session to
+// relative to sessions from *other* sources (gym/event_plan/activity),
+// which buildWeekData would otherwise always re-interleave in a fixed
+// gym → event_plan → activity order on every rebuild — see
+// applyDayOrder below and the "exercise bubbles reset on reorder" bug.
+function sessionOrderKey(sess) {
+  return `${sess.source}:${sess.label}`;
+}
+
+// [LOGIC] Re-sorts a day's sessions per a previously-saved manual order
+// (a list of sessionOrderKey values), falling back to each session's
+// natural (unordered) position for anything not in that list — e.g. a
+// session added after the last reorder. Called after all of a day's
+// sessions (gym/event/activity/orphaned-completion) have been assembled in
+// their default order, so a day that's never been manually reordered is
+// completely unaffected.
+function applyDayOrder(sessions, order) {
+  if (!order || !order.length) return sessions;
+  const rank = new Map(order.map((key, i) => [key, i]));
+  return sessions
+    .map((s, i) => ({ s, rank: rank.has(sessionOrderKey(s)) ? rank.get(sessionOrderKey(s)) : order.length + i }))
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ s }) => s);
+}
+
+export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions = [], dayOrder = {}) {
   const weekStart = getPlanWeekStart(viewWeek, eventStartDate);
   const todayKey  = getTodayDateKey();
 
@@ -104,6 +132,7 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
       buildOrphanedCompletionSessions(dk, i, sessionsWithCompletion, completedForDay)
     );
     sessionsWithCompletion = dropPhantomPastEventPlanSessions(sessionsWithCompletion, dk < todayKey);
+    sessionsWithCompletion = applyDayOrder(sessionsWithCompletion, dayOrder[dk]);
 
     return { d, dk, sessions: sessionsWithCompletion, isToday: dk === todayKey, dayIdx: i };
   });
@@ -571,6 +600,8 @@ export function WeeklyOverviewScreen({
   onUpdateSequencingDecisions,
   initialViewWeek,
   onViewWeekChange,
+  dayOrder = {},
+  onUpdateDayOrder,
 }) {
   const t = themes[theme];
 
@@ -579,7 +610,7 @@ export function WeeklyOverviewScreen({
   const initWeek = getCurrentPlanWeek(eventStartDate, totalWeeks);
   const [viewWeek,      setViewWeek]      = React.useState(initialViewWeek ?? initWeek);
   const [weekData,      setWeekData]      = React.useState(() =>
-    buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions)
+    buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions, dayOrder)
   );
   const [decisions,     setDecisions]     = React.useState({});
   const [addOpen,       setAddOpen]       = React.useState(false);
@@ -593,8 +624,8 @@ export function WeeklyOverviewScreen({
   }, [viewWeek]);
 
   React.useEffect(() => {
-    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions));
-  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions]);
+    setWeekData(buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions, dayOrder));
+  }, [viewWeek, plan, activities, eventOverrides, hasGym, hasEventTraining, eventStartDate, eventSessions, completedSessions, dayOrder]);
 
   // Sequencing Advisor (spec P0.7): must run on page load / week render, not
   // just after a drag — this effect covers both, plus any other cause of a
@@ -679,6 +710,22 @@ export function WeeklyOverviewScreen({
     // The sequencing-check effect (depends on weekData) re-runs from this
     // setWeekData call — no separate checkWeek call needed here.
 
+    // [ACTION] Persist the affected day(s)' resulting session order so a
+    // rebuild (navigating away and back, switching weeks and back, or the
+    // app reloading after being backgrounded) doesn't silently re-interleave
+    // sessions from different sources back into buildWeekData's fixed
+    // gym → event_plan → activity order. Each source's own reorder logic
+    // below only ever persists order *within* that source's list, which
+    // isn't enough to keep e.g. an activity dragged above a gym session on
+    // the same day from popping back once the sources are all rebuilt.
+    if (onUpdateDayOrder) {
+      const orderUpdates = {};
+      [srcRow, dstRow].forEach(row => {
+        orderUpdates[row.dk] = row.sessions.map(sessionOrderKey);
+      });
+      onUpdateDayOrder({ ...dayOrder, ...orderUpdates });
+    }
+
     // Persist event plan session moves
     if (moved.source === 'event_plan' && onUpdateOverrides) {
       const newOverrides = { ...eventOverrides };
@@ -719,7 +766,7 @@ export function WeeklyOverviewScreen({
       });
       onUpdateActivities(newActivities);
     }
-  }, [weekData, eventOverrides, plan, onUpdatePlan, activities, onUpdateActivities]);
+  }, [weekData, eventOverrides, plan, onUpdatePlan, activities, onUpdateActivities, onUpdateOverrides, dayOrder, onUpdateDayOrder]);
 
   const isDraft = !profile?.goal;
 
