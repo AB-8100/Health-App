@@ -32,7 +32,7 @@ function toDateKey(d) {
 // which buildWeekData would otherwise always re-interleave in a fixed
 // gym → event_plan → activity order on every rebuild — see
 // applyDayOrder below and the "exercise bubbles reset on reorder" bug.
-function sessionOrderKey(sess) {
+export function sessionOrderKey(sess) {
   return `${sess.source}:${sess.label}`;
 }
 
