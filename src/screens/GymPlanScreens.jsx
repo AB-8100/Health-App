@@ -178,6 +178,31 @@ const SECTION_META = {
 const SECTION_ORDER = ['compound','accessory','core','mobility'];
 const WEEK_DAYS = ['M','T','W','T','F','S','S'];
 
+// A one-off gym-typed session (e.g. "Push day (gym)" added from Weekly
+// Overview, or a "Full body (gym)" row parsed out of an uploaded event
+// plan) has no split day of its own to pull an exercise list from, unlike
+// the recurring split-day gym flow. So a user starting one who doesn't know
+// what to pick — or just confirms without changing anything — gets a
+// sensible compound+accessory starting set instead of an empty queue,
+// matched off the session's own label against the familiar split day
+// names (Push/Pull/Legs/Full body/Upper/Lower) already defined above.
+// Checked in order, first match wins.
+const DEFAULT_GYM_TEMPLATE_MATCHERS = [
+  { keywords: ['full body', 'full-body', 'fullbody'], split: 1, dayId: 'full' },
+  { keywords: ['push'],  split: 3, dayId: 'push' },
+  { keywords: ['pull'],  split: 3, dayId: 'pull' },
+  { keywords: ['legs', 'leg day', 'lower'], split: 3, dayId: 'legs' },
+  { keywords: ['upper'], split: 2, dayId: 'upper' },
+];
+
+function getDefaultGymTemplate(label = '') {
+  const lower = label.toLowerCase();
+  const match = DEFAULT_GYM_TEMPLATE_MATCHERS.find(m => m.keywords.some(kw => lower.includes(kw)));
+  const day = match && SPLITS[match.split]?.days.find(d => d.id === match.dayId);
+  if (!day) return [];
+  return [...(day.compound || []), ...(day.accessory || [])];
+}
+
 // ────────────────────────────────────────────────────────────
 // Top app bar (shared)
 function ScreenHeader({ theme, title, sub, onBack, right }) {
@@ -1753,12 +1778,17 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
       onStartActivity && onStartActivity(act);
       return;
     }
-    const preKind = (act?.type || '').toLowerCase() === 'gym' ? 'gym' : 'conditioning';
+    const isGymType = (act?.type || '').toLowerCase() === 'gym';
+    const preKind = isGymType ? 'gym' : 'conditioning';
     const pre = preselectedQueues[getTodayDateKey()];
     if (pre?.kind === preKind && pre.exercises?.length) {
       onStartConditioning && onStartConditioning(act, pre.exercises);
     } else {
-      setConditioningPicker({ act });
+      // No pre-selection made ahead of time — for a gym-typed session, seed
+      // the picker with a default compound+accessory set matched off the
+      // session's name (see getDefaultGymTemplate) so a user unsure what to
+      // pick, or who just confirms as-is, still starts a real workout.
+      setConditioningPicker({ act, initialIds: isGymType ? getDefaultGymTemplate(act?.label) : [] });
     }
   };
 
@@ -2705,11 +2735,7 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           theme={theme}
           title={`Pick activities — ${conditioningPicker.act?.label || 'Conditioning'}`}
           confirmLabel="Start session"
-          initialSelectedIds={
-            preselectedQueues[todayKey]?.kind === ((conditioningPicker.act?.type || '').toLowerCase() === 'gym' ? 'gym' : 'conditioning')
-              ? (preselectedQueues[todayKey].exercises || [])
-              : []
-          }
+          initialSelectedIds={conditioningPicker.initialIds || []}
           onConfirm={(ids) => {
             onStartConditioning && onStartConditioning(conditioningPicker.act, ids);
             setConditioningPicker(null);
@@ -3627,7 +3653,7 @@ function DayActivitiesScreen({ width = 390, height = 820, theme = 'light',
 export {
   EX_LIB, SPLITS, SECTION_META, SECTION_ORDER, WEEK_DAYS, ACTIVITY_TYPES,
   ScreenHeader, GymHubScreen, SplitPickerScreen, SessionEditorScreen,
-  DayActivitiesScreen, getGymRecommendation,
+  DayActivitiesScreen, getGymRecommendation, getDefaultGymTemplate,
   MarkCompleteSheet, EditSessionSheet,
   ExercisePickerSheet, buildQueueFromExerciseIds,
 };

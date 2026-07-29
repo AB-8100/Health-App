@@ -2,7 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { getSessionDisplay, usesExerciseQueue } from '../data/sessionDisplay';
-import { MarkCompleteSheet, EditSessionSheet, ExercisePickerSheet } from './GymPlanScreens';
+import { MarkCompleteSheet, EditSessionSheet, ExercisePickerSheet, getDefaultGymTemplate } from './GymPlanScreens';
 import { findCompletedForActivity, completedDateKey } from '../utils/sessionCompletion';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -450,7 +450,17 @@ export function SessionDetailScreen({
           theme={theme}
           title={`Pick exercises — ${pickerState.sess.label}`}
           confirmLabel={pickerState.mode === 'start' ? 'Start session' : 'Save plan'}
-          initialSelectedIds={preselected?.exercises || []}
+          initialSelectedIds={
+            preselected?.exercises?.length
+              ? preselected.exercises
+              // No pre-selection made ahead of time — for a gym-typed
+              // session, seed with a default compound+accessory set matched
+              // off the session's name, so a user unsure what to pick still
+              // starts with a real workout instead of an empty queue.
+              : (pickerState.sess.source === 'gym' || (pickerState.sess.type || '').toLowerCase() === 'gym')
+                ? getDefaultGymTemplate(pickerState.sess.label)
+                : []
+          }
           previousIds={previousWeekPreselected?.exercises || null}
           onConfirm={(ids) => {
             if (pickerState.mode === 'start') {
