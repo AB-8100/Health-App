@@ -3,7 +3,7 @@ import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
 import { getTodayDateKey } from '../data/eventPlan';
-import { getSessionDisplay } from '../data/sessionDisplay';
+import { getSessionDisplay, usesExerciseQueue } from '../data/sessionDisplay';
 import { getTodaysCompletedSessions, findCompletedForActivity, getUnmatchedCompletions } from '../utils/sessionCompletion';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { SwimDistanceFields, RpeField } from './GymSessionScreen';
@@ -1740,18 +1740,22 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   const t = themes[theme];
   const split = plan?.splitDays ? SPLITS[plan.splitDays] : null;
 
-  // Conditioning-type activities log like a gym session (pick activities,
-  // then log sets/reps) rather than the plain elapsed-time timer everything
-  // else uses — so starting one opens the exercise picker first (pre-filled
-  // from any pre-selection made ahead of time from the Weekly Overview)
-  // instead of jumping straight into a timer.
+  // Conditioning-type activities, and one-off event-plan/manually-added
+  // sessions typed "gym" (e.g. "Full Body (Gym)"), log like a gym session
+  // (pick activities, then log sets/reps) rather than the plain
+  // elapsed-time timer everything else uses — so starting one opens the
+  // exercise picker first (pre-filled from any pre-selection made ahead of
+  // time from the Weekly Overview) instead of jumping straight into a timer.
+  // [LOGIC] Mirrors SessionDetailScreen's isGym/isGymType handling — see
+  // that file for the same distinction.
   const handleStartActivity = (act) => {
-    if ((act?.type || '').toLowerCase() !== 'conditioning') {
+    if (!usesExerciseQueue(act?.type)) {
       onStartActivity && onStartActivity(act);
       return;
     }
+    const preKind = (act?.type || '').toLowerCase() === 'gym' ? 'gym' : 'conditioning';
     const pre = preselectedQueues[getTodayDateKey()];
-    if (pre?.kind === 'conditioning' && pre.exercises?.length) {
+    if (pre?.kind === preKind && pre.exercises?.length) {
       onStartConditioning && onStartConditioning(act, pre.exercises);
     } else {
       setConditioningPicker({ act });
@@ -2701,7 +2705,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
           theme={theme}
           title={`Pick activities — ${conditioningPicker.act?.label || 'Conditioning'}`}
           confirmLabel="Start session"
-          initialSelectedIds={preselectedQueues[todayKey]?.kind === 'conditioning' ? (preselectedQueues[todayKey].exercises || []) : []}
+          initialSelectedIds={
+            preselectedQueues[todayKey]?.kind === ((conditioningPicker.act?.type || '').toLowerCase() === 'gym' ? 'gym' : 'conditioning')
+              ? (preselectedQueues[todayKey].exercises || [])
+              : []
+          }
           onConfirm={(ids) => {
             onStartConditioning && onStartConditioning(conditioningPicker.act, ids);
             setConditioningPicker(null);

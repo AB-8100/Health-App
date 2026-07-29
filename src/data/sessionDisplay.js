@@ -43,6 +43,19 @@ export function getSessionDisplay(actData, type) {
   return SESSION_DISPLAY[type] || SESSION_DISPLAY.other;
 }
 
+// [LOGIC] A session's `type` decides which recorder flow it opens into:
+// 'gym' and 'conditioning' both pick activities first, then log sets/reps
+// against each one (the exercise-queue flow), while every other type opens
+// the plain elapsed-time timer. Shared here so GymHubScreen (Session tab)
+// and SessionDetailScreen (Weekly Overview day detail) can't drift on which
+// types get which flow — a one-off session typed "gym" (e.g. a manually-added
+// "Full Body (Gym)" activity) previously fell through to the plain timer on
+// the Session tab because that check only recognised 'conditioning'.
+export function usesExerciseQueue(type) {
+  const t = (type || '').toLowerCase();
+  return t === 'gym' || t === 'conditioning';
+}
+
 // [DATA] Keyword → intensity-tier classification for uploaded event-plan
 // sessions (Sequencing Advisor P0.2). Runs against the session name/description
 // string parsed out of an uploaded .xlsx plan (trainingPlanImport.js). Kept

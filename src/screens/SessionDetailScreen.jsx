@@ -1,7 +1,7 @@
 import React from 'react';
 import themes from '../data/themes';
 import { BottomNav } from '../components/SharedUI';
-import { getSessionDisplay } from '../data/sessionDisplay';
+import { getSessionDisplay, usesExerciseQueue } from '../data/sessionDisplay';
 import { MarkCompleteSheet, EditSessionSheet, ExercisePickerSheet } from './GymPlanScreens';
 import { findCompletedForActivity, completedDateKey } from '../utils/sessionCompletion';
 
@@ -272,7 +272,7 @@ export function SessionDetailScreen({
               // added via the Weekly Overview or an uploaded event plan.
               const isGymType = !isGym && (sess.type || '').toLowerCase() === 'gym';
               const isConditioning = (sess.type || '').toLowerCase() === 'conditioning';
-              const usesExercisePicker = isConditioning || isGymType;
+              const usesExercisePicker = usesExerciseQueue(sess.type);
               const completed = isGym ? gymCompleted : findCompletedForActivity(sess, completedForDay);
               const { color, emoji, label: displayLabel } = getSessionDisplay(sess.actData, sess.type);
               const label = sess.label || displayLabel;

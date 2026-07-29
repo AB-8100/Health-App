@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySessionTier, SESSION_TYPE_INTENSITY } from './sessionDisplay';
+import { classifySessionTier, SESSION_TYPE_INTENSITY, usesExerciseQueue } from './sessionDisplay';
 
 describe('classifySessionTier', () => {
   it('maps every configured keyword to its own tier', () => {
@@ -37,5 +37,28 @@ describe('classifySessionTier', () => {
     // Contains both a low keyword ("easy"/"recovery") and a high keyword
     // ("interval") — highest tier should win (under-flagging is worse).
     expect(classifySessionTier('Easy interval recovery')).toBe('high');
+  });
+});
+
+describe('usesExerciseQueue', () => {
+  it('routes "gym" and "conditioning" typed sessions to the exercise-queue flow', () => {
+    expect(usesExerciseQueue('gym')).toBe(true);
+    expect(usesExerciseQueue('conditioning')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(usesExerciseQueue('Gym')).toBe(true);
+    expect(usesExerciseQueue('CONDITIONING')).toBe(true);
+  });
+
+  it('routes every other session type to the plain elapsed-time timer', () => {
+    ['run', 'cycle', 'swim', 'other', ''].forEach(type => {
+      expect(usesExerciseQueue(type)).toBe(false);
+    });
+  });
+
+  it('handles missing/empty input without crashing', () => {
+    expect(usesExerciseQueue(undefined)).toBe(false);
+    expect(usesExerciseQueue(null)).toBe(false);
   });
 });
