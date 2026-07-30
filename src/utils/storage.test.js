@@ -40,4 +40,14 @@ describe('flushPendingLocalSave', () => {
     flushPendingLocalSave();
     expect(loadFromCache(userId)).toEqual({ profile: { name: 'A' } });
   });
+
+  it('retains the saved weekly day order for a user after cache hydration', () => {
+    const dayOrder = {
+      '2026-01-05': ['activity:Walk', 'gym:Push'],
+      '2026-01-06': ['event_plan:Swim', 'activity:Mobility'],
+    };
+
+    scheduleSaveLocal({ dayOrder }, userId);
+    expect(loadFromCache(userId)).toEqual({ dayOrder });
+  });
 });

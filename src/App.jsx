@@ -237,6 +237,7 @@ function App() {
         setPreselectedQueues({});
         setPlanSessionsDone({});
         setSequencingDecisions({});
+        setDayOrder({});
         setEventPlan(DEFAULT_EVENT_PLAN);
         setCustomFoods([]);
         // Stage 1: collect profile basics before anything else
@@ -387,6 +388,7 @@ function App() {
     if (data.eventPlan)        setEventPlan(data.eventPlan);
     if (data.customFoods)          setCustomFoods(data.customFoods);
     if (data.sequencingDecisions) setSequencingDecisions(data.sequencingDecisions);
+    if (data.dayOrder !== undefined) setDayOrder(data.dayOrder);
     // NOTE: this used to also call setOnboarding(!data.profile || !data.profile.name)
     // here, forcing the legacy single-screen OnboardingScreen over whatever
     // was actually loaded. That ran on *every* hydrate — including a
@@ -407,6 +409,7 @@ function App() {
     completedSessions, foodLog, activities, customFoods,
     eventOverrides, preselectedQueues, planSessionsDone, eventPlan,
     sequencingDecisions,
+    dayOrder,
     savedAt: new Date().toISOString(),
     ...overrides,
   });
@@ -428,7 +431,7 @@ function App() {
   const scheduleSave = React.useCallback((overrides = {}) => {
     const snapshot = buildSnapshot(overrides);
     scheduleSaveAll(snapshot, sheetsConnectedRef.current, currentUserIdRef.current);
-  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, preselectedQueues, planSessionsDone, eventPlan, sequencingDecisions]);
+  }, [profile, plan, userSettings, completedSessions, foodLog, activities, customFoods, eventOverrides, preselectedQueues, planSessionsDone, eventPlan, sequencingDecisions, dayOrder]);
 
   const setProfile = (updater) => {
     setProfileRaw(prev => {
