@@ -1302,7 +1302,9 @@ function App() {
                completedSessions={completedSessions}
                onNav={navigate}
                tracksCycle={profile.tracksCycle}
-               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
+               goalsPayload={goalsPayload}
+               manualGoalPaces={profile.manualGoalPaces || {}} />;
     if (s === 'food')
       return <FoodScreen width={contentW} height={contentH} theme={tweaks.theme}
                foodLog={foodLog}

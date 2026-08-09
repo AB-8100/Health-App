@@ -8,6 +8,7 @@ import { isSupportedAIRaceType } from '../utils/planPrompt';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
 import { SPLITS } from './GymPlanScreens';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
+import { getGoalPaceValue, parseGoalPaceInput, formatPaceValue, paceUnitForType } from '../utils/analytics';
 import {
   getTrainingDayIndices, toggleTrainingDay,
   isScheduleValidForSplit, reconcileScheduleWithSplitIds, REST,
@@ -99,6 +100,96 @@ function Section({ title, children, theme }) {
         {title}
       </div>
       {children}
+    </div>
+  );
+}
+
+// Rows for the "Goal paces" section below — one per discipline
+// getGoalPaceValue can derive a pace for (see utils/analytics.js). `type` is
+// the analytics activity type passed to getGoalPaceValue/paceUnitForType;
+// `discipline` is the key targetPaces/manualGoalPaces are stored under.
+const GOAL_PACE_ROWS = [
+  { type: 'run', discipline: 'run', label: 'Run' },
+  { type: 'swim', discipline: 'swim', label: 'Swim' },
+  { type: 'cycle', discipline: 'bike', label: 'Bike' },
+];
+
+// A single discipline's goal pace: a read-only value once one exists (from
+// either source — see the confirmedValue/manualValue split below), or an
+// inline mm:ss / km-h entry field when neither has one yet.
+function GoalPaceRow({ theme, label, unit, confirmedValue, manualValue, onSave }) {
+  const t = themes[theme];
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const [error, setError] = React.useState(false);
+
+  const placeholder = unit === 'kmh' ? 'km/h' : 'mm:ss';
+
+  const commit = () => {
+    const parsed = parseGoalPaceInput(draft, unit);
+    if (parsed == null) { setError(true); return; }
+    onSave(parsed);
+    setEditing(false);
+    setDraft('');
+    setError(false);
+  };
+
+  const rowStyle = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '11px 0', borderBottom: `1px solid ${t.border}`,
+  };
+
+  if (confirmedValue != null) {
+    return (
+      <div style={rowStyle}>
+        <span style={{ fontSize: 13, color: t.text }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: t.mono, fontSize: 13, color: t.text2 }}>{formatPaceValue(confirmedValue, unit)}</span>
+          <span style={{ fontSize: 9, color: t.text3 }}>from questionnaire</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (manualValue != null && !editing) {
+    return (
+      <div style={rowStyle}>
+        <span style={{ fontSize: 13, color: t.text }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: t.mono, fontSize: 13, color: t.text2 }}>{formatPaceValue(manualValue, unit)}</span>
+          <button onClick={() => { setDraft(''); setError(false); setEditing(true); }} style={{
+            padding: '3px 8px', borderRadius: 6, background: 'transparent',
+            border: `1px solid ${t.border}`, color: t.accent,
+            fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+          }}>Edit</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={rowStyle}>
+      <span style={{ fontSize: 13, color: t.text }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          autoFocus={editing}
+          value={draft}
+          placeholder={placeholder}
+          onChange={(e) => { setDraft(e.target.value); setError(false); }}
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
+          style={{
+            width: 70, padding: '4px 8px', borderRadius: 7,
+            border: `1px solid ${error ? t.rose : t.accent}`, background: t.surface2,
+            fontFamily: t.mono, fontSize: 13, color: t.text, outline: 'none',
+            textAlign: 'right',
+          }}
+        />
+        <button onClick={commit} style={{
+          padding: '3px 8px', borderRadius: 6, background: 'transparent',
+          border: `1px solid ${t.border}`, color: t.accent,
+          fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: t.sans,
+        }}>Save</button>
+      </div>
     </div>
   );
 }
@@ -234,6 +325,16 @@ function AboutScreen({
   const primaryGoalLabel = realGoals.length
     ? (GOAL_TYPES.find(g => g.id === realGoals[0].type)?.label || realGoals[0].type)
     : null;
+
+  // Goal paces — feeds the Analytics screen's "Goal pace" bubble via the
+  // same getGoalPaceValue used there (utils/analytics.js). Primary source is
+  // the event_race goal's confirmed target split (Stage 3 questionnaire);
+  // manualGoalPaces is the fallback set here for users who only upload their
+  // own training plan and never go through the questionnaire.
+  const eventRaceConfig = realGoals.find(g => g.type === 'event_race')?.config || null;
+  const manualGoalPaces = localProfile.manualGoalPaces || {};
+  const setManualGoalPace = (discipline, value) =>
+    updateProfile('manualGoalPaces', { ...manualGoalPaces, [discipline]: value });
 
   // Suggested calorie targets — computed from body stats + weekly session
   // count, never auto-applied over the editable fields below (see
@@ -1147,6 +1248,24 @@ function AboutScreen({
               No goals set yet — complete your profile to unlock a personalised plan.
             </div>
           )}
+        </Section>
+
+        {/* Goal paces — feeds the Analytics screen's "Goal pace" bubble.
+            Read-only once a discipline's target pace is confirmed via the
+            questionnaire; otherwise editable here so users who only upload
+            their own training plan (and never do Stage 3) can still set one. */}
+        <Section title="Goal paces" theme={theme}>
+          <div>
+            {GOAL_PACE_ROWS.map(({ type, discipline, label }) => (
+              <GoalPaceRow key={type} theme={theme} label={label} unit={paceUnitForType(type)}
+                confirmedValue={getGoalPaceValue(type, { eventRaceConfig })}
+                manualValue={getGoalPaceValue(type, { manualGoalPaces })}
+                onSave={(value) => setManualGoalPace(discipline, value)} />
+            ))}
+          </div>
+          <div style={{ fontSize: 10.5, color: t.text3, marginTop: 8, lineHeight: 1.5 }}>
+            Set automatically once you confirm pace targets in the questionnaire — add your own here if you're only uploading a training plan.
+          </div>
         </Section>
 
         {/* App info + sign out */}

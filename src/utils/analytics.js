@@ -2,6 +2,7 @@
 // per-activity pace/reps time series the Analytics screen charts. No React,
 // no Supabase — safe to unit test in isolation.
 import { getSessionDisplay } from '../data/sessionDisplay';
+import { legDistanceKm } from './raceTargets';
 
 // Activity types whose pace reads more naturally as a speed (km/h) than a
 // mm:ss/km pace.
@@ -109,6 +110,76 @@ export function formatPaceValue(value, unit) {
   const sec = totalSeconds % 60;
   const suffix = unit === 'per100m' ? '/100m' : '/km';
   return `${m}:${String(sec).padStart(2, '0')}${suffix}`;
+}
+
+// [LOGIC] Mean of a pace/reps series' values, or null when there's nothing
+// to average (matches getPaceSeries/getRepsSeries's raw-number `value`).
+export function getAverageValue(series = []) {
+  if (!series.length) return null;
+  return series.reduce((sum, p) => sum + p.value, 0) / series.length;
+}
+
+// [LOGIC] Whether an average pace/speed is meeting a goal. For time-based
+// units (seconds-per-km / seconds-per-100m) lower is better; for km/h speed,
+// higher is better. Returns null when there's no average or no goal
+// confirmed yet (see getGoalPaceValue).
+export function getPaceTrackStatus(averageValue, goalValue, unit) {
+  if (averageValue == null || goalValue == null || !isFinite(averageValue) || !isFinite(goalValue)) return null;
+  return unit === 'kmh' ? averageValue >= goalValue : averageValue <= goalValue;
+}
+
+// Maps an analytics pace-activity `type` to the discipline keys
+// utils/raceTargets.js works in ('swim'/'bike'/'run') — the only disciplines
+// a goal pace can be derived for, since those are the only ones with a
+// distance table and a Stage-3 "confirm pace targets" step behind them.
+const DISCIPLINE_FOR_TYPE = { run: 'run', swim: 'swim', cycle: 'bike', bike: 'bike' };
+
+// [LOGIC] Goal pace for a pace-eligible activity. Two sources, checked in
+// order:
+//  1. `eventRaceConfig` — the target time → pace/split the user confirmed on
+//     their event_race goal during Stage 3 onboarding (utils/raceTargets.js's
+//     pace_confirm step, spec-stage3-time-goals.md). `{ raceType,
+//     targetPaces: { swim, bike, run, transition } (seconds) }`.
+//  2. `manualGoalPaces` — a per-discipline fallback entered on the About Me
+//     screen, for users who only upload their own training plan and never
+//     go through the questionnaire. Already in the same raw unit this
+//     function returns (seconds-per-km/100m, or km/h), keyed by discipline
+//     just like `targetPaces`, so no distance conversion is needed.
+// Returns null when the activity has no discipline mapping or neither
+// source has a value for it yet.
+export function getGoalPaceValue(activityType, { eventRaceConfig, manualGoalPaces } = {}) {
+  const discipline = DISCIPLINE_FOR_TYPE[activityType];
+  if (!discipline) return null;
+
+  const legSeconds = eventRaceConfig?.targetPaces?.[discipline];
+  const distanceKm = legDistanceKm(discipline, eventRaceConfig?.raceType);
+  if (Number.isFinite(legSeconds) && legSeconds > 0 && Number.isFinite(distanceKm) && distanceKm > 0) {
+    const unit = paceUnitForType(activityType);
+    if (unit === 'kmh') return distanceKm / (legSeconds / 3600);
+    if (unit === 'per100m') return legSeconds / (distanceKm * 1000 / 100);
+    return legSeconds / distanceKm;
+  }
+
+  const manual = manualGoalPaces?.[discipline];
+  return (Number.isFinite(manual) && manual > 0) ? manual : null;
+}
+
+// [LOGIC] Parses a manually-entered goal pace/speed (About Me's Goal paces
+// section) into the same raw numeric form getGoalPaceValue/getPaceSeries
+// use: "mm:ss" → seconds for perKm/per100m, a plain decimal → km/h for kmh.
+// Returns null for anything unparseable or non-positive so callers can
+// reject bad input instead of saving garbage.
+export function parseGoalPaceInput(input, unit) {
+  if (typeof input !== 'string' || !input.trim()) return null;
+  const trimmed = input.trim();
+  if (unit === 'kmh') {
+    const n = Number(trimmed);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  const match = trimmed.match(/^(\d{1,3}):([0-5]\d)$/);
+  if (!match) return null;
+  const total = Number(match[1]) * 60 + Number(match[2]);
+  return total > 0 ? total : null;
 }
 
 // [LOGIC] Distinct exercises logged under a "reps" activity id (as produced
