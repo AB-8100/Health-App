@@ -291,6 +291,13 @@ A Postgres RPC `get_user_local_date(p_user_id)` returns "today" as a
 
 Migrations are plain numbered `.sql` files under `supabase/migrations/`, run
 manually via the Supabase SQL editor (no CLI/migration-runner wired into CI).
+Every migration that adds/renames a column must end with
+`select pg_notify('pgrst', 'reload schema');` — otherwise PostgREST's schema
+cache can stay stale after a manual run and the API 400s on the new column
+("Could not find the '<column>' column ... in the schema cache") until its
+own reload timer fires. If you hit that error on a column that's already in
+a merged migration, the migration itself was likely never run against the
+live project — open the Supabase SQL editor and run it.
 
 ---
 
