@@ -134,28 +134,52 @@ export function getPaceTrackStatus(averageValue, goalValue, unit) {
 // distance table and a Stage-3 "confirm pace targets" step behind them.
 const DISCIPLINE_FOR_TYPE = { run: 'run', swim: 'swim', cycle: 'bike', bike: 'bike' };
 
-// [LOGIC] Goal pace for a pace-eligible activity, sourced from the target
-// time → pace/split the user confirmed on their event_race goal during
-// Stage 3 onboarding (utils/raceTargets.js's pace_confirm step,
-// spec-stage3-time-goals.md) — never re-entered on the Analytics screen
-// itself. `eventRaceConfig` is the `event_race` goal's `config` object
-// (`{ raceType, targetPaces: { swim, bike, run, transition } (seconds) }`).
-// Returns null (not yet available) when the activity has no discipline
-// mapping, there's no event_race goal, or that discipline's target pace
-// hasn't been confirmed yet — callers show a "set it in the questionnaire"
-// prompt in that case rather than accepting free-text input.
-export function getGoalPaceValue(activityType, eventRaceConfig) {
+// [LOGIC] Goal pace for a pace-eligible activity. Two sources, checked in
+// order:
+//  1. `eventRaceConfig` — the target time → pace/split the user confirmed on
+//     their event_race goal during Stage 3 onboarding (utils/raceTargets.js's
+//     pace_confirm step, spec-stage3-time-goals.md). `{ raceType,
+//     targetPaces: { swim, bike, run, transition } (seconds) }`.
+//  2. `manualGoalPaces` — a per-discipline fallback entered on the About Me
+//     screen, for users who only upload their own training plan and never
+//     go through the questionnaire. Already in the same raw unit this
+//     function returns (seconds-per-km/100m, or km/h), keyed by discipline
+//     just like `targetPaces`, so no distance conversion is needed.
+// Returns null when the activity has no discipline mapping or neither
+// source has a value for it yet.
+export function getGoalPaceValue(activityType, { eventRaceConfig, manualGoalPaces } = {}) {
   const discipline = DISCIPLINE_FOR_TYPE[activityType];
-  if (!discipline || !eventRaceConfig) return null;
+  if (!discipline) return null;
 
-  const legSeconds = eventRaceConfig.targetPaces?.[discipline];
-  const distanceKm = legDistanceKm(discipline, eventRaceConfig.raceType);
-  if (!Number.isFinite(legSeconds) || legSeconds <= 0 || !Number.isFinite(distanceKm) || distanceKm <= 0) return null;
+  const legSeconds = eventRaceConfig?.targetPaces?.[discipline];
+  const distanceKm = legDistanceKm(discipline, eventRaceConfig?.raceType);
+  if (Number.isFinite(legSeconds) && legSeconds > 0 && Number.isFinite(distanceKm) && distanceKm > 0) {
+    const unit = paceUnitForType(activityType);
+    if (unit === 'kmh') return distanceKm / (legSeconds / 3600);
+    if (unit === 'per100m') return legSeconds / (distanceKm * 1000 / 100);
+    return legSeconds / distanceKm;
+  }
 
-  const unit = paceUnitForType(activityType);
-  if (unit === 'kmh') return distanceKm / (legSeconds / 3600);
-  if (unit === 'per100m') return legSeconds / (distanceKm * 1000 / 100);
-  return legSeconds / distanceKm;
+  const manual = manualGoalPaces?.[discipline];
+  return (Number.isFinite(manual) && manual > 0) ? manual : null;
+}
+
+// [LOGIC] Parses a manually-entered goal pace/speed (About Me's Goal paces
+// section) into the same raw numeric form getGoalPaceValue/getPaceSeries
+// use: "mm:ss" → seconds for perKm/per100m, a plain decimal → km/h for kmh.
+// Returns null for anything unparseable or non-positive so callers can
+// reject bad input instead of saving garbage.
+export function parseGoalPaceInput(input, unit) {
+  if (typeof input !== 'string' || !input.trim()) return null;
+  const trimmed = input.trim();
+  if (unit === 'kmh') {
+    const n = Number(trimmed);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  const match = trimmed.match(/^(\d{1,3}):([0-5]\d)$/);
+  if (!match) return null;
+  const total = Number(match[1]) * 60 + Number(match[2]);
+  return total > 0 ? total : null;
 }
 
 // [LOGIC] Distinct exercises logged under a "reps" activity id (as produced

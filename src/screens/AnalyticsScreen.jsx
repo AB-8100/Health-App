@@ -80,12 +80,14 @@ function StatBubble({ theme, label, value, sub, accent, onClick }) {
   );
 }
 
-// [COMPONENT] Goal pace bubble — shows the pace/split the user confirmed for
-// this discipline on their race goal in Stage 3 onboarding (getGoalPaceValue,
-// backed by utils/raceTargets.js). Goal pace is never entered here: if the
-// discipline has no confirmed target yet, this links out to the
-// questionnaire's "confirm pace targets" step instead of taking free text.
-function GoalPaceBubble({ theme, goalValue, paceUnit, hasDiscipline, onStartQuestionnaire }) {
+// [COMPONENT] Goal pace bubble — shows the pace/split the user confirmed on
+// their race goal in Stage 3 onboarding, or manually entered on About Me's
+// "Goal paces" section (getGoalPaceValue, backed by utils/raceTargets.js).
+// Goal pace is never entered on this screen: if the discipline has no value
+// from either source yet, this links out to About Me instead of taking free
+// text — that's where both the questionnaire re-entry and the manual
+// fallback for plan-only users live.
+function GoalPaceBubble({ theme, goalValue, paceUnit, hasDiscipline, onNav }) {
   const t = themes[theme];
 
   if (goalValue != null) {
@@ -105,11 +107,11 @@ function GoalPaceBubble({ theme, goalValue, paceUnit, hasDiscipline, onStartQues
         Goal pace
       </div>
       <div style={{ fontSize: 13, color: t.text2, marginBottom: 6, lineHeight: 1.3 }}>Not set</div>
-      <button data-testid="goal-pace-questionnaire-cta" onClick={onStartQuestionnaire} style={{
+      <button data-testid="goal-pace-about-cta" onClick={() => onNav('about-me')} style={{
         border: 'none', background: 'none', padding: 0, cursor: 'pointer',
         color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
       }}>
-        Set in questionnaire →
+        Add in About Me →
       </button>
     </div>
   );
@@ -119,7 +121,7 @@ function AnalyticsScreen({
   width = 390, height = 820, theme = 'light',
   completedSessions = [], onNav,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
-  goalsPayload = null, onStartQuestionnaire = () => {},
+  goalsPayload = null, manualGoalPaces = {},
 }) {
   const t = themes[theme];
 
@@ -166,7 +168,9 @@ function AnalyticsScreen({
   // [DATA] Average/goal/on-track bubbles are pace-only (the request scopes
   // them to "the paces" graph, not the reps chart). Goal pace is sourced
   // from the target time/split the user confirmed on their event_race goal
-  // in Stage 3 onboarding — never re-entered here (see GoalPaceBubble).
+  // in Stage 3 onboarding, falling back to a manual entry on About Me's
+  // "Goal paces" section for users who only upload a plan — never re-entered
+  // on this screen (see GoalPaceBubble).
   const eventRaceConfig = React.useMemo(
     () => goalsPayload?.goals?.find(g => g.type === 'event_race')?.config || null,
     [goalsPayload]
@@ -174,7 +178,9 @@ function AnalyticsScreen({
   const hasDiscipline = selectedActivity?.metric === 'pace'
     && ['run', 'swim', 'cycle', 'bike'].includes(selectedActivity.type);
   const averagePace = selectedActivity?.metric === 'pace' ? getAverageValue(series) : null;
-  const goalPace = hasDiscipline ? getGoalPaceValue(selectedActivity.type, eventRaceConfig) : null;
+  const goalPace = hasDiscipline
+    ? getGoalPaceValue(selectedActivity.type, { eventRaceConfig, manualGoalPaces })
+    : null;
   const onTrack = getPaceTrackStatus(averagePace, goalPace, paceUnit);
 
   const chipStyle = (active) => ({
@@ -249,7 +255,7 @@ function AnalyticsScreen({
                   <div data-testid="pace-stat-bubbles" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                     <StatBubble theme={theme} label="Average pace" value={formatPaceValue(averagePace, paceUnit)} />
                     <GoalPaceBubble theme={theme} goalValue={goalPace} paceUnit={paceUnit}
-                      hasDiscipline={hasDiscipline} onStartQuestionnaire={onStartQuestionnaire} />
+                      hasDiscipline={hasDiscipline} onNav={onNav} />
                     <StatBubble theme={theme} label="On track"
                       value={onTrack == null ? '—' : (onTrack ? 'On track' : 'Off pace')}
                       accent={onTrack == null ? t.text3 : (onTrack ? t.green : t.rose)}

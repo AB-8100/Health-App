@@ -1304,7 +1304,7 @@ function App() {
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
                goalsPayload={goalsPayload}
-               onStartQuestionnaire={() => handleStartQuestionnaire('analytics')} />;
+               manualGoalPaces={profile.manualGoalPaces || {}} />;
     if (s === 'food')
       return <FoodScreen width={contentW} height={contentH} theme={tweaks.theme}
                foodLog={foodLog}

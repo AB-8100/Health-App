@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getActivityOptions, getPaceSeries, paceUnitForType, formatPaceValue,
   getExerciseOptionsForActivity, getRepsSeries,
-  getAverageValue, getPaceTrackStatus, getGoalPaceValue,
+  getAverageValue, getPaceTrackStatus, getGoalPaceValue, parseGoalPaceInput,
 } from './analytics';
 
 const iso = (offsetDays = 0) => {
@@ -156,42 +156,73 @@ describe('getPaceTrackStatus', () => {
 describe('getGoalPaceValue', () => {
   it('derives a run goal pace (seconds/km) from the confirmed target split', () => {
     // Half Marathon = 21.0975km; a 21097.5s run leg is exactly 1000s/km.
-    const cfg = { raceType: 'Half Marathon', targetPaces: { run: 21097.5 } };
-    expect(getGoalPaceValue('run', cfg)).toBeCloseTo(1000);
+    const eventRaceConfig = { raceType: 'Half Marathon', targetPaces: { run: 21097.5 } };
+    expect(getGoalPaceValue('run', { eventRaceConfig })).toBeCloseTo(1000);
   });
 
   it('derives a swim goal pace (seconds/100m) from the confirmed target split', () => {
     // Olympic tri swim leg = 1.5km; 1950s over 15x100m is 130s/100m.
-    const cfg = { raceType: 'Triathlon (Olympic)', targetPaces: { swim: 1950 } };
-    expect(getGoalPaceValue('swim', cfg)).toBeCloseTo(130);
+    const eventRaceConfig = { raceType: 'Triathlon (Olympic)', targetPaces: { swim: 1950 } };
+    expect(getGoalPaceValue('swim', { eventRaceConfig })).toBeCloseTo(130);
   });
 
   it('derives a cycle/bike goal speed (km/h) from the confirmed target split, mapping "cycle" to the "bike" discipline', () => {
     // Olympic tri bike leg = 40km in 7200s (2h) is 20 km/h.
-    const cfg = { raceType: 'Triathlon (Olympic)', targetPaces: { bike: 7200 } };
-    expect(getGoalPaceValue('cycle', cfg)).toBeCloseTo(20);
-    expect(getGoalPaceValue('bike', cfg)).toBeCloseTo(20);
+    const eventRaceConfig = { raceType: 'Triathlon (Olympic)', targetPaces: { bike: 7200 } };
+    expect(getGoalPaceValue('cycle', { eventRaceConfig })).toBeCloseTo(20);
+    expect(getGoalPaceValue('bike', { eventRaceConfig })).toBeCloseTo(20);
   });
 
   it('returns null for activity types with no discipline mapping (no distance table to derive a pace from)', () => {
-    const cfg = { raceType: 'Marathon', targetPaces: { run: 15000 } };
-    expect(getGoalPaceValue('walk', cfg)).toBeNull();
-    expect(getGoalPaceValue('row', cfg)).toBeNull();
+    const eventRaceConfig = { raceType: 'Marathon', targetPaces: { run: 15000 } };
+    expect(getGoalPaceValue('walk', { eventRaceConfig })).toBeNull();
+    expect(getGoalPaceValue('row', { eventRaceConfig })).toBeNull();
   });
 
-  it('returns null when there is no event_race goal at all', () => {
-    expect(getGoalPaceValue('run', null)).toBeNull();
-    expect(getGoalPaceValue('run', undefined)).toBeNull();
+  it('returns null when there is no event_race goal and no manual entry', () => {
+    expect(getGoalPaceValue('run', {})).toBeNull();
+    expect(getGoalPaceValue('run', { eventRaceConfig: null })).toBeNull();
   });
 
-  it('returns null when this discipline\'s target pace has not been confirmed yet', () => {
-    const cfg = { raceType: 'Marathon', targetPaces: {} };
-    expect(getGoalPaceValue('run', cfg)).toBeNull();
+  it('falls back to a manually-entered pace when the discipline has not been confirmed via the questionnaire', () => {
+    // e.g. a user who only uploaded their own plan and never did Stage 3.
+    expect(getGoalPaceValue('run', { manualGoalPaces: { run: 330 } })).toBe(330);
+    expect(getGoalPaceValue('cycle', { manualGoalPaces: { bike: 22 } })).toBe(22);
   });
 
-  it('returns null for race types with no fixed distance table (nothing to convert against)', () => {
-    const cfg = { raceType: 'Cycling Sportive', targetPaces: { bike: 7200 } };
-    expect(getGoalPaceValue('cycle', cfg)).toBeNull();
+  it('prefers the questionnaire-confirmed value over a manual entry when both exist', () => {
+    const eventRaceConfig = { raceType: 'Marathon', targetPaces: { run: 15000 } }; // 15000/42.195 ≈ 355.5s/km
+    const manualGoalPaces = { run: 999 };
+    expect(getGoalPaceValue('run', { eventRaceConfig, manualGoalPaces })).toBeCloseTo(15000 / 42.195);
+  });
+
+  it('returns null when this discipline\'s target pace has not been confirmed yet and no manual entry exists', () => {
+    const eventRaceConfig = { raceType: 'Marathon', targetPaces: {} };
+    expect(getGoalPaceValue('run', { eventRaceConfig })).toBeNull();
+  });
+
+  it('returns null for race types with no fixed distance table (nothing to convert against), falling back to manual', () => {
+    const eventRaceConfig = { raceType: 'Cycling Sportive', targetPaces: { bike: 7200 } };
+    expect(getGoalPaceValue('cycle', { eventRaceConfig })).toBeNull();
+    expect(getGoalPaceValue('cycle', { eventRaceConfig, manualGoalPaces: { bike: 25 } })).toBe(25);
+  });
+});
+
+describe('parseGoalPaceInput', () => {
+  it('parses "mm:ss" into total seconds for time-based units', () => {
+    expect(parseGoalPaceInput('5:30', 'perKm')).toBe(330);
+    expect(parseGoalPaceInput('1:45', 'per100m')).toBe(105);
+  });
+  it('parses a plain decimal as km/h for speed units', () => {
+    expect(parseGoalPaceInput('22.5', 'kmh')).toBe(22.5);
+  });
+  it('rejects malformed or non-positive input', () => {
+    expect(parseGoalPaceInput('not-a-time', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('5:99', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('0:00', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('-5', 'kmh')).toBeNull();
+    expect(parseGoalPaceInput('', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput(undefined, 'kmh')).toBeNull();
   });
 });
 
