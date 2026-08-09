@@ -9,3 +9,10 @@
 
 alter table public.training_plans
   add column if not exists sequencing_decisions jsonb not null default '{}'::jsonb;
+
+-- Force PostgREST to pick up the new column immediately. Without this,
+-- a manual run via the SQL editor can leave the schema cache stale until
+-- its own reload timer fires, so writes through the API 400 with
+-- "Could not find the 'sequencing_decisions' column ... in the schema
+-- cache" even though the column now exists.
+select pg_notify('pgrst', 'reload schema');
