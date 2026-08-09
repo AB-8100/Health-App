@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getActivityOptions, getPaceSeries, paceUnitForType, formatPaceValue,
   getExerciseOptionsForActivity, getRepsSeries,
-  getAverageValue, getPaceTrackStatus, parseGoalPaceInput,
+  getAverageValue, getPaceTrackStatus, getGoalPaceValue,
 } from './analytics';
 
 const iso = (offsetDays = 0) => {
@@ -153,21 +153,45 @@ describe('getPaceTrackStatus', () => {
   });
 });
 
-describe('parseGoalPaceInput', () => {
-  it('parses "mm:ss" into total seconds for time-based units', () => {
-    expect(parseGoalPaceInput('5:30', 'perKm')).toBe(330);
-    expect(parseGoalPaceInput('1:45', 'per100m')).toBe(105);
+describe('getGoalPaceValue', () => {
+  it('derives a run goal pace (seconds/km) from the confirmed target split', () => {
+    // Half Marathon = 21.0975km; a 21097.5s run leg is exactly 1000s/km.
+    const cfg = { raceType: 'Half Marathon', targetPaces: { run: 21097.5 } };
+    expect(getGoalPaceValue('run', cfg)).toBeCloseTo(1000);
   });
-  it('parses a plain decimal as km/h for speed units', () => {
-    expect(parseGoalPaceInput('22.5', 'kmh')).toBe(22.5);
+
+  it('derives a swim goal pace (seconds/100m) from the confirmed target split', () => {
+    // Olympic tri swim leg = 1.5km; 1950s over 15x100m is 130s/100m.
+    const cfg = { raceType: 'Triathlon (Olympic)', targetPaces: { swim: 1950 } };
+    expect(getGoalPaceValue('swim', cfg)).toBeCloseTo(130);
   });
-  it('rejects malformed or non-positive input', () => {
-    expect(parseGoalPaceInput('not-a-time', 'perKm')).toBeNull();
-    expect(parseGoalPaceInput('5:99', 'perKm')).toBeNull();
-    expect(parseGoalPaceInput('0:00', 'perKm')).toBeNull();
-    expect(parseGoalPaceInput('-5', 'kmh')).toBeNull();
-    expect(parseGoalPaceInput('', 'perKm')).toBeNull();
-    expect(parseGoalPaceInput(undefined, 'kmh')).toBeNull();
+
+  it('derives a cycle/bike goal speed (km/h) from the confirmed target split, mapping "cycle" to the "bike" discipline', () => {
+    // Olympic tri bike leg = 40km in 7200s (2h) is 20 km/h.
+    const cfg = { raceType: 'Triathlon (Olympic)', targetPaces: { bike: 7200 } };
+    expect(getGoalPaceValue('cycle', cfg)).toBeCloseTo(20);
+    expect(getGoalPaceValue('bike', cfg)).toBeCloseTo(20);
+  });
+
+  it('returns null for activity types with no discipline mapping (no distance table to derive a pace from)', () => {
+    const cfg = { raceType: 'Marathon', targetPaces: { run: 15000 } };
+    expect(getGoalPaceValue('walk', cfg)).toBeNull();
+    expect(getGoalPaceValue('row', cfg)).toBeNull();
+  });
+
+  it('returns null when there is no event_race goal at all', () => {
+    expect(getGoalPaceValue('run', null)).toBeNull();
+    expect(getGoalPaceValue('run', undefined)).toBeNull();
+  });
+
+  it('returns null when this discipline\'s target pace has not been confirmed yet', () => {
+    const cfg = { raceType: 'Marathon', targetPaces: {} };
+    expect(getGoalPaceValue('run', cfg)).toBeNull();
+  });
+
+  it('returns null for race types with no fixed distance table (nothing to convert against)', () => {
+    const cfg = { raceType: 'Cycling Sportive', targetPaces: { bike: 7200 } };
+    expect(getGoalPaceValue('cycle', cfg)).toBeNull();
   });
 });
 

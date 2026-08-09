@@ -4,7 +4,7 @@ import { BottomNav } from '../components/SharedUI';
 import {
   getActivityOptions, getPaceSeries, paceUnitForType, formatPaceValue,
   getExerciseOptionsForActivity, getRepsSeries,
-  getAverageValue, getPaceTrackStatus, parseGoalPaceInput,
+  getAverageValue, getPaceTrackStatus, getGoalPaceValue,
 } from '../utils/analytics';
 
 // [COMPONENT] Hand-rolled inline-SVG line chart — matches the existing
@@ -80,54 +80,38 @@ function StatBubble({ theme, label, value, sub, accent, onClick }) {
   );
 }
 
-// [COMPONENT] Goal pace bubble — shows the saved goal for the selected
-// activity type, or (per the "goal pace hasn't been completed anywhere yet"
-// case in the request) an inline mm:ss / km-h input so the user can set one
-// themselves the first time.
-function GoalPaceBubble({ theme, goalValue, paceUnit, onSave }) {
+// [COMPONENT] Goal pace bubble — shows the pace/split the user confirmed for
+// this discipline on their race goal in Stage 3 onboarding (getGoalPaceValue,
+// backed by utils/raceTargets.js). Goal pace is never entered here: if the
+// discipline has no confirmed target yet, this links out to the
+// questionnaire's "confirm pace targets" step instead of taking free text.
+function GoalPaceBubble({ theme, goalValue, paceUnit, hasDiscipline, onStartQuestionnaire }) {
   const t = themes[theme];
-  const [draft, setDraft] = React.useState('');
-  const [error, setError] = React.useState(false);
 
-  const placeholder = paceUnit === 'kmh' ? 'km/h' : 'mm:ss';
+  if (goalValue != null) {
+    return <StatBubble theme={theme} label="Goal pace" value={formatPaceValue(goalValue, paceUnit)} />;
+  }
 
-  const submit = () => {
-    const parsed = parseGoalPaceInput(draft, paceUnit);
-    if (parsed == null) { setError(true); return; }
-    setError(false);
-    setDraft('');
-    onSave(parsed);
-  };
-
-  if (goalValue == null) {
-    return (
-      <div style={{
-        flex: 1, minWidth: 0, padding: '12px 12px', borderRadius: 14,
-        border: `1px solid ${error ? t.rose : t.border}`, background: t.surface,
-      }}>
-        <div style={{ fontSize: 10, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }}>
-          Goal pace
-        </div>
-        <input data-testid="goal-pace-input" value={draft} placeholder={placeholder}
-          onChange={(e) => { setDraft(e.target.value); setError(false); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-          style={{
-            width: '100%', border: 'none', borderBottom: `1px solid ${t.border2}`, background: 'transparent',
-            color: t.text, fontFamily: t.sans, fontSize: 14, fontWeight: 700, padding: '2px 0', outline: 'none',
-          }} />
-        <button data-testid="goal-pace-save" onClick={submit} style={{
-          marginTop: 6, border: 'none', background: 'none', padding: 0, cursor: 'pointer',
-          color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
-        }}>
-          Set goal
-        </button>
-      </div>
-    );
+  if (!hasDiscipline) {
+    return <StatBubble theme={theme} label="Goal pace" value="—" sub="not tracked for this activity" />;
   }
 
   return (
-    <StatBubble theme={theme} label="Goal pace" value={formatPaceValue(goalValue, paceUnit)}
-      sub="tap to change" onClick={() => onSave(null)} />
+    <div style={{
+      flex: 1, minWidth: 0, padding: '12px 12px', borderRadius: 14,
+      border: `1px solid ${t.border}`, background: t.surface,
+    }}>
+      <div style={{ fontSize: 10, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }}>
+        Goal pace
+      </div>
+      <div style={{ fontSize: 13, color: t.text2, marginBottom: 6, lineHeight: 1.3 }}>Not set</div>
+      <button data-testid="goal-pace-questionnaire-cta" onClick={onStartQuestionnaire} style={{
+        border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+        color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
+      }}>
+        Set in questionnaire →
+      </button>
+    </div>
   );
 }
 
@@ -135,7 +119,7 @@ function AnalyticsScreen({
   width = 390, height = 820, theme = 'light',
   completedSessions = [], onNav,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
-  goalPaces = {}, onSetGoalPace = () => {},
+  goalsPayload = null, onStartQuestionnaire = () => {},
 }) {
   const t = themes[theme];
 
@@ -180,11 +164,17 @@ function AnalyticsScreen({
     : (v) => `${Math.round(v)} reps`;
 
   // [DATA] Average/goal/on-track bubbles are pace-only (the request scopes
-  // them to "the paces" graph, not the reps chart). Goal pace is keyed by
-  // activity type on profile.goalPaces, round-tripped like any other
-  // profile.extra field — see App.jsx's onSetGoalPace.
+  // them to "the paces" graph, not the reps chart). Goal pace is sourced
+  // from the target time/split the user confirmed on their event_race goal
+  // in Stage 3 onboarding — never re-entered here (see GoalPaceBubble).
+  const eventRaceConfig = React.useMemo(
+    () => goalsPayload?.goals?.find(g => g.type === 'event_race')?.config || null,
+    [goalsPayload]
+  );
+  const hasDiscipline = selectedActivity?.metric === 'pace'
+    && ['run', 'swim', 'cycle', 'bike'].includes(selectedActivity.type);
   const averagePace = selectedActivity?.metric === 'pace' ? getAverageValue(series) : null;
-  const goalPace = selectedActivity?.metric === 'pace' ? (goalPaces[selectedActivity.type] ?? null) : null;
+  const goalPace = hasDiscipline ? getGoalPaceValue(selectedActivity.type, eventRaceConfig) : null;
   const onTrack = getPaceTrackStatus(averagePace, goalPace, paceUnit);
 
   const chipStyle = (active) => ({
@@ -259,11 +249,11 @@ function AnalyticsScreen({
                   <div data-testid="pace-stat-bubbles" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                     <StatBubble theme={theme} label="Average pace" value={formatPaceValue(averagePace, paceUnit)} />
                     <GoalPaceBubble theme={theme} goalValue={goalPace} paceUnit={paceUnit}
-                      onSave={(value) => onSetGoalPace(selectedActivity.type, value)} />
+                      hasDiscipline={hasDiscipline} onStartQuestionnaire={onStartQuestionnaire} />
                     <StatBubble theme={theme} label="On track"
                       value={onTrack == null ? '—' : (onTrack ? 'On track' : 'Off pace')}
                       accent={onTrack == null ? t.text3 : (onTrack ? t.green : t.rose)}
-                      sub={goalPace == null ? 'set a goal pace' : undefined} />
+                      sub={goalPace == null ? (hasDiscipline ? 'no goal pace confirmed yet' : 'no goal tracked') : undefined} />
                   </div>
                 )}
                 <div data-testid="analytics-chart" style={{

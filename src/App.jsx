@@ -1303,11 +1303,8 @@ function App() {
                onNav={navigate}
                tracksCycle={profile.tracksCycle}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}
-               goalPaces={profile.goalPaces || {}}
-               onSetGoalPace={(activityType, value) => setProfile(prev => ({
-                 ...prev,
-                 goalPaces: { ...(prev.goalPaces || {}), [activityType]: value },
-               }))} />;
+               goalsPayload={goalsPayload}
+               onStartQuestionnaire={() => handleStartQuestionnaire('analytics')} />;
     if (s === 'food')
       return <FoodScreen width={contentW} height={contentH} theme={tweaks.theme}
                foodLog={foodLog}

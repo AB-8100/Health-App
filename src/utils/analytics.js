@@ -2,6 +2,7 @@
 // per-activity pace/reps time series the Analytics screen charts. No React,
 // no Supabase — safe to unit test in isolation.
 import { getSessionDisplay } from '../data/sessionDisplay';
+import { legDistanceKm } from './raceTargets';
 
 // Activity types whose pace reads more naturally as a speed (km/h) than a
 // mm:ss/km pace.
@@ -120,29 +121,41 @@ export function getAverageValue(series = []) {
 
 // [LOGIC] Whether an average pace/speed is meeting a goal. For time-based
 // units (seconds-per-km / seconds-per-100m) lower is better; for km/h speed,
-// higher is better. Returns null when there's no average or no goal set yet
-// (the analytics-goal-bubbles feature: goal pace has no data source until a
-// user logs it, per the manual-entry fallback in AnalyticsScreen).
+// higher is better. Returns null when there's no average or no goal
+// confirmed yet (see getGoalPaceValue).
 export function getPaceTrackStatus(averageValue, goalValue, unit) {
   if (averageValue == null || goalValue == null || !isFinite(averageValue) || !isFinite(goalValue)) return null;
   return unit === 'kmh' ? averageValue >= goalValue : averageValue <= goalValue;
 }
 
-// [LOGIC] Parses a manually-entered goal pace/speed into the same raw
-// numeric form getPaceSeries produces: "mm:ss" → seconds for perKm/per100m,
-// a plain decimal → km/h for kmh. Returns null for anything unparseable or
-// non-positive so callers can reject bad input instead of saving garbage.
-export function parseGoalPaceInput(input, unit) {
-  if (typeof input !== 'string' || !input.trim()) return null;
-  const trimmed = input.trim();
-  if (unit === 'kmh') {
-    const n = Number(trimmed);
-    return isFinite(n) && n > 0 ? n : null;
-  }
-  const match = trimmed.match(/^(\d{1,3}):([0-5]\d)$/);
-  if (!match) return null;
-  const total = Number(match[1]) * 60 + Number(match[2]);
-  return total > 0 ? total : null;
+// Maps an analytics pace-activity `type` to the discipline keys
+// utils/raceTargets.js works in ('swim'/'bike'/'run') — the only disciplines
+// a goal pace can be derived for, since those are the only ones with a
+// distance table and a Stage-3 "confirm pace targets" step behind them.
+const DISCIPLINE_FOR_TYPE = { run: 'run', swim: 'swim', cycle: 'bike', bike: 'bike' };
+
+// [LOGIC] Goal pace for a pace-eligible activity, sourced from the target
+// time → pace/split the user confirmed on their event_race goal during
+// Stage 3 onboarding (utils/raceTargets.js's pace_confirm step,
+// spec-stage3-time-goals.md) — never re-entered on the Analytics screen
+// itself. `eventRaceConfig` is the `event_race` goal's `config` object
+// (`{ raceType, targetPaces: { swim, bike, run, transition } (seconds) }`).
+// Returns null (not yet available) when the activity has no discipline
+// mapping, there's no event_race goal, or that discipline's target pace
+// hasn't been confirmed yet — callers show a "set it in the questionnaire"
+// prompt in that case rather than accepting free-text input.
+export function getGoalPaceValue(activityType, eventRaceConfig) {
+  const discipline = DISCIPLINE_FOR_TYPE[activityType];
+  if (!discipline || !eventRaceConfig) return null;
+
+  const legSeconds = eventRaceConfig.targetPaces?.[discipline];
+  const distanceKm = legDistanceKm(discipline, eventRaceConfig.raceType);
+  if (!Number.isFinite(legSeconds) || legSeconds <= 0 || !Number.isFinite(distanceKm) || distanceKm <= 0) return null;
+
+  const unit = paceUnitForType(activityType);
+  if (unit === 'kmh') return distanceKm / (legSeconds / 3600);
+  if (unit === 'per100m') return legSeconds / (distanceKm * 1000 / 100);
+  return legSeconds / distanceKm;
 }
 
 // [LOGIC] Distinct exercises logged under a "reps" activity id (as produced
