@@ -1243,6 +1243,17 @@ function AboutScreen({
                 To change your goals, use "Redo my goals & questionnaire" above.
               </div>
             </div>
+          ) : hasEventTraining ? (
+            // Uploading a training plan sets hasEventTraining directly and
+            // never touches goalsPayload.goals (that's Stage 2's own,
+            // separate flow) — so a plan-only user genuinely has no
+            // `realGoals` entry. Say so explicitly instead of showing the
+            // generic "no goals" copy, and point at Goal paces below, which
+            // works the same way for these users as it does for anyone who
+            // completed the questionnaire.
+            <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+              No goal type set — you're training from an uploaded plan instead. Add your goal paces below, or use "Redo my goals & questionnaire" above to set one.
+            </div>
           ) : (
             <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
               No goals set yet — complete your profile to unlock a personalised plan.
