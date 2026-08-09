@@ -19,6 +19,7 @@ import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen, buildWeekData } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
 import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
+import { shiftActivityWeekday, shiftEventPlanWeekday } from './utils/sessionPositionShift';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -903,6 +904,36 @@ function App() {
     setScreen('weekly');
   };
 
+  // "Shift position in future weeks" — moves a recurring session's
+  // exercise-level weekday slot (e.g. "Run") to a new day, independent of
+  // whatever type/detail that exercise carries this particular week. Gym
+  // sessions aren't offered this (see SessionDetailScreen, which only shows
+  // the button for activity/event_plan sources). Activities have no
+  // per-week storage, so the shift applies to every week including this
+  // one; event-plan sessions are date-keyed, so this week's occurrence is
+  // left as scheduled and only future weeks move — see
+  // utils/sessionPositionShift.js.
+  const shiftScheduledSessionPosition = (sess, newDayIdx) => {
+    if (sess.source === 'activity') {
+      const next = shiftActivityWeekday(activities, sess.dayIdx, sess.actData, newDayIdx);
+      setActivities(next);
+      setTimeout(() => scheduleSave({ activities: next }), 0);
+    } else if (sess.source === 'event_plan') {
+      const fromDateKey = viewingDay?.dk;
+      if (!fromDateKey) return;
+      const horizonWeeks = hasEventTraining
+        ? Math.max(1, eventPhasePlan.totalWeeks - getWeekNumberForDate(fromDateKey, eventPhasePlan.startDate) + 1)
+        : 52;
+      const next = shiftEventPlanWeekday({
+        eventOverrides, eventSessions: eventPhasePlan.sessions, hasEventTraining,
+        fromDateKey, oldDayIdx: sess.dayIdx, newDayIdx, label: sess.label, horizonWeeks,
+      });
+      setEventOverrides(next);
+      setTimeout(() => scheduleSave({ eventOverrides: next }), 0);
+    }
+    setScreen('weekly');
+  };
+
   const viewSummary = (sessionData) => { setLastSession(sessionData); setScreen('gym-summary'); };
 
   const updateFood = (dateKey, entries) => setFoodLog(prev => {
@@ -1414,6 +1445,7 @@ function App() {
                onEditSession={editSession}
                onDeleteSession={deleteSession}
                onRemoveSession={removeScheduledSession}
+               onShiftSessionPosition={shiftScheduledSessionPosition}
                preselectedQueues={preselectedQueues}
                onSavePreselectedQueue={savePreselectedQueue}
                tracksCycle={profile.tracksCycle}

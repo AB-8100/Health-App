@@ -34,6 +34,70 @@ function workoutLabelFor(sess) {
   return sess.source === 'gym' ? `${sess.label} day` : sess.label;
 }
 
+// [COMPONENT] Lets the user pick a new weekday for a recurring session's
+// exercise-level slot (e.g. moving "Run" off Tuesday), independent of
+// whatever type/detail that exercise carries this particular week (Interval
+// vs Tempo). Confirming is disabled until a different day is chosen.
+function ShiftPositionSheet({ theme, sess, currentDayIdx, onClose, onConfirm }) {
+  const t = themes[theme];
+  const [dayIdx, setDayIdx] = React.useState(currentDayIdx);
+  const isActivity = sess.source === 'activity';
+
+  return (
+    <div
+      style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}
+      onClick={onClose}
+    >
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', background: t.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        padding: '16px 20px 24px',
+      }}>
+        <div style={{ width: 38, height: 4, background: t.border, borderRadius: 99, margin: '0 auto 14px' }} />
+        <div style={{ fontFamily: t.serif, fontSize: 20, color: t.text, marginBottom: 6 }}>
+          Shift {sess.label} to a new day
+        </div>
+        <div style={{ fontSize: 12, color: t.text2, marginBottom: 16, lineHeight: 1.5 }}>
+          {isActivity
+            ? `This moves ${sess.label} every week going forward — recurring activities aren't scheduled per calendar week, so this includes the current week too.`
+            : `This moves ${sess.label} in future weeks, whatever type it is that week (interval, tempo, etc.). This week stays as scheduled.`}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 18 }}>
+          {DAY_NAMES.map((name, i) => (
+            <button
+              key={name}
+              onClick={() => setDayIdx(i)}
+              style={{
+                padding: '9px 0', borderRadius: 10,
+                background: dayIdx === i ? t.accent : 'transparent',
+                border: `1px solid ${dayIdx === i ? t.accent : t.border}`,
+                color: dayIdx === i ? '#fff' : t.text2,
+                fontFamily: t.sans, fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
+              }}
+            >{name.slice(0, 3)}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{
+            flex: 1, padding: '12px', borderRadius: 11, background: 'transparent',
+            border: `1px solid ${t.border2}`, color: t.text, fontFamily: t.sans, fontSize: 13, cursor: 'pointer',
+          }}>Cancel</button>
+          <button
+            disabled={dayIdx === currentDayIdx}
+            onClick={() => onConfirm(dayIdx)}
+            style={{
+              flex: 1, padding: '12px', borderRadius: 11,
+              background: dayIdx === currentDayIdx ? t.border : t.accent,
+              color: dayIdx === currentDayIdx ? t.text3 : '#fff',
+              border: 'none', fontFamily: t.sans, fontSize: 13, fontWeight: 600,
+              cursor: dayIdx === currentDayIdx ? 'default' : 'pointer',
+            }}
+          >Shift</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // All-time log of completed sessions for a single scheduled activity — lets
 // the user browse past exercise logs instead of only ever seeing today's.
 function HistoricSessionsSheet({ theme, sess, completedSessions = [], onClose, onViewSummary, onDeleteSession }) {
@@ -152,6 +216,7 @@ export function SessionDetailScreen({
   day, completedSessions = [],
   onBack, onStartActivity, onStartConditioning, onGoToGymTab, onNav,
   onMarkComplete, onViewSummary, onEditSession, onDeleteSession, onRemoveSession,
+  onShiftSessionPosition,
   preselectedQueues = {}, onSavePreselectedQueue,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
 }) {
@@ -162,6 +227,7 @@ export function SessionDetailScreen({
   const [deleteTarget, setDeleteTarget] = React.useState(null);
   const [removeTarget, setRemoveTarget] = React.useState(null); // scheduled (not-yet-logged) session to remove
   const [pickerState, setPickerState] = React.useState(null); // { sess, mode: 'start' | 'plan' }
+  const [shiftTarget, setShiftTarget] = React.useState(null); // scheduled session whose weekly day is being shifted
 
   if (!day) return null;
 
@@ -210,6 +276,10 @@ export function SessionDetailScreen({
   const removeBtnStyle = {
     width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
     border: `1px dashed #BE3B2E60`, color: '#BE3B2E', fontFamily: t.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
+  };
+  const shiftBtnStyle = {
+    width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12, background: 'transparent',
+    border: `1px solid ${t.border2}`, color: t.text2, fontFamily: t.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
   };
 
   return (
@@ -361,6 +431,11 @@ export function SessionDetailScreen({
                   <button onClick={() => setHistoricSess(sess)} style={historyBtnStyle}>
                     See historic sessions
                   </button>
+                  {!completed && onShiftSessionPosition && (sess.source === 'activity' || sess.source === 'event_plan') && (
+                    <button onClick={() => setShiftTarget(sess)} style={shiftBtnStyle}>
+                      ↕ Shift position in future weeks
+                    </button>
+                  )}
                   {!completed && onRemoveSession && (
                     <button onClick={() => setRemoveTarget(sess)} style={removeBtnStyle}>
                       Remove from plan
@@ -465,6 +540,19 @@ export function SessionDetailScreen({
             setPickerState(null);
           }}
           onClose={() => setPickerState(null)}
+        />
+      )}
+
+      {shiftTarget && (
+        <ShiftPositionSheet
+          theme={theme}
+          sess={shiftTarget}
+          currentDayIdx={day.dayIdx}
+          onClose={() => setShiftTarget(null)}
+          onConfirm={(newDayIdx) => {
+            onShiftSessionPosition(shiftTarget, newDayIdx);
+            setShiftTarget(null);
+          }}
         />
       )}
 
