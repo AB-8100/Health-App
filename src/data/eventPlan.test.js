@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   getPlanWeekStart, getWeekNumberForDate,
-  getCurrentWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff,
+  getCurrentWeekStartDateKey, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff,
 } from './eventPlan';
 
 const START_DATE = '2026-01-05'; // a Monday
@@ -43,6 +43,26 @@ describe('getCurrentWeekStartDateKey', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.UTC(2026, 6, 26, 9, 0, 0))); // Sunday 2026-07-26
     expect(getCurrentWeekStartDateKey()).toBe('2026-07-20');
+  });
+});
+
+// Regression coverage for "uploading mid-week reshuffled the rest of the
+// current week's plan": a replacement plan must only apply from the week
+// after the upload, never the upload's own (possibly still in-progress) week.
+describe('getNextWeekStartDateKey', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('returns the Monday of the week after the current UTC calendar week', () => {
+    // Wednesday 2026-07-22 -> Monday 2026-07-27 (the following week)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 22, 15, 0, 0)));
+    expect(getNextWeekStartDateKey()).toBe('2026-07-27');
+  });
+
+  it('rolls a Sunday forward to the Monday starting the following week', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 26, 9, 0, 0))); // Sunday 2026-07-26
+    expect(getNextWeekStartDateKey()).toBe('2026-07-27');
   });
 });
 

@@ -18,7 +18,7 @@ import { SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivi
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen, buildWeekData } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
-import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getCurrentWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
+import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
@@ -1068,17 +1068,19 @@ function App() {
 
   // Replaces the event training plan from an uploaded spreadsheet (or an
   // AI-generated one, via generateAndApplyPlan below), applying it only from
-  // the current calendar week onward. Weeks that have already happened keep
-  // exactly what they showed before — their own event-plan sessions/
-  // overrides/completion state — so a new import can't retroactively blank
-  // out a week whose sessions were already logged (see
-  // docs/PROJECT_CONTEXT.md §7.4 and the "prior weeks' completions
-  // disappeared" bug this fixes). Gym split and recurring activities aren't
-  // date-scoped at all (they're the same recurring template for every week,
-  // past or future), so they're left untouched rather than reset — there's
-  // no way to "only reset them going forward" without erasing past weeks too.
+  // the week *after* the one the upload happens in. Both the current week
+  // (including its remaining days) and every past week keep exactly what
+  // they showed before — their own event-plan sessions/overrides/completion
+  // state — so a new import can neither retroactively blank out a week
+  // whose sessions were already logged nor reshuffle the plan the user is
+  // mid-way through this week (see docs/PROJECT_CONTEXT.md §7.4 and the
+  // "prior weeks' completions disappeared" bug this fixes). Gym split and
+  // recurring activities aren't date-scoped at all (they're the same
+  // recurring template for every week, past or future), so they're left
+  // untouched rather than reset — there's no way to "only reset them going
+  // forward" without erasing past weeks too.
   const handleUploadTrainingPlan = (parsed) => {
-    const cutoffKey = getCurrentWeekStartDateKey();
+    const cutoffKey = getNextWeekStartDateKey();
     const mergedEventPlan = mergeEventPlanFromCutoff(eventPlan, parsed, cutoffKey);
     const nextEventOverrides = pickBeforeCutoff(eventOverrides, cutoffKey);
     const nextPreselectedQueues = pickBeforeCutoff(preselectedQueues, cutoffKey);

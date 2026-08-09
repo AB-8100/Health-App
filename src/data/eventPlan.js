@@ -77,6 +77,16 @@ export function getCurrentWeekStartDateKey() {
   return d.toISOString().slice(0, 10);
 }
 
+// Monday (UTC-anchored) of the week *after* the current one — the cutoff a
+// plan upload actually uses, so the week the upload happens in (including
+// its remaining/future days) keeps whatever was already scheduled, and only
+// weeks from next week onward take the new plan.
+export function getNextWeekStartDateKey() {
+  const d = parseUTCDate(getCurrentWeekStartDateKey());
+  d.setUTCDate(d.getUTCDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
 // Keeps only the date-keyed entries strictly before `cutoffKey`. Date keys
 // are plain YYYY-MM-DD strings, which sort lexicographically the same as
 // chronologically, so a string comparison is enough.
