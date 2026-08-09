@@ -24,6 +24,7 @@ import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
 import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { FoodScreen } from './screens/FoodScreen';
+import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { AboutScreen } from './screens/AboutScreen';
 import { LoginScreen } from './screens/LoginScreen';
 
@@ -1294,6 +1295,12 @@ function App() {
                }}
                onEditGym={(dayId) => { setEditingDayId(dayId); setScreen('gym-edit'); }}
                onNav={navigate} />;
+    if (s === 'analytics')
+      return <AnalyticsScreen width={contentW} height={contentH} theme={tweaks.theme}
+               completedSessions={completedSessions}
+               onNav={navigate}
+               tracksCycle={profile.tracksCycle}
+               hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'food')
       return <FoodScreen width={contentW} height={contentH} theme={tweaks.theme}
                foodLog={foodLog}
