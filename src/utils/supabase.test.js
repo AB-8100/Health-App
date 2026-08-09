@@ -200,6 +200,58 @@ describe('loadUserData — eventPlan reconstruction', () => {
   });
 });
 
+describe('loadUserData — savedAt reflects the stalest relevant table', () => {
+  // Regression test for the "moved session reverts after the app is
+  // backgrounded" bug: savedAt used to be `profiles.updated_at` alone, so an
+  // unrelated fresh profile save could make a remote snapshot look newer
+  // than the local cache even though training_plans (Weekly Overview moves)
+  // never got its own write through. bootstrapUser only overwrites the local
+  // cache when remote's savedAt is >= the cache's, so savedAt must reflect
+  // the oldest of the tables that matter, not the newest.
+  const baseResponses = {
+    user_settings: { data: null, error: null },
+    gym_sessions: { data: [], error: null },
+    food_log: { data: [], error: null },
+    custom_foods: { data: [], error: null },
+    day_activities: { data: [], error: null },
+  };
+
+  it('uses the oldest updated_at across profiles/user_settings/gym_plans/training_plans, not just profiles', async () => {
+    const responses = {
+      ...baseResponses,
+      profiles:      { data: { user_id: 'user-1', name: 'Alex', updated_at: '2026-07-05T12:00:00Z' }, error: null },
+      gym_plans:     { data: { user_id: 'user-1', updated_at: '2026-07-01T00:00:00Z' }, error: null },
+      training_plans: {
+        data: [{ training_type: 'event', overrides: {}, done: {}, updated_at: '2026-06-01T00:00:00Z' }],
+        error: null,
+      },
+    };
+    fromMock.mockImplementation((table) => makeBuilder(responses[table]));
+
+    const result = await loadUserData('user-1');
+    // The stalest table (training_plans, from a silently-failed prior write)
+    // should win, not the freshest (profiles).
+    expect(result.savedAt).toBe('2026-06-01T00:00:00.000Z');
+  });
+
+  it('falls back to now() when no relevant table has an updated_at yet', async () => {
+    const responses = {
+      ...baseResponses,
+      profiles:       { data: null, error: { code: 'PGRST116', message: 'no rows' } },
+      // Present so loadUserData doesn't short-circuit to null, but without
+      // updated_at so the timestamp list is genuinely empty.
+      user_settings:  { data: { user_id: 'user-1' }, error: null },
+      gym_plans:      { data: null, error: null },
+      training_plans: { data: [], error: null },
+    };
+    fromMock.mockImplementation((table) => makeBuilder(responses[table]));
+
+    const before = Date.now();
+    const result = await loadUserData('user-1');
+    expect(new Date(result.savedAt).getTime()).toBeGreaterThanOrEqual(before);
+  });
+});
+
 describe('saveUserData — gym_sessions insert payload', () => {
   // Regression test: a completed session's client-side `id` is
   // Date.now().toString() (e.g. "1751721441186"), never a real uuid. The
