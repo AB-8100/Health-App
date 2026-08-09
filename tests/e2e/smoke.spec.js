@@ -41,6 +41,16 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('Analytics screen loads and shows an activity picker or empty state', async ({ page }) => {
+    await page.getByRole('button', { name: /analytics/i }).first().click();
+    await expect(page.getByTestId('analytics-screen')).toBeVisible();
+    // Loosely scoped: the test account may or may not have logged sessions,
+    // so either the activity picker or the "no sessions yet" empty state is
+    // an acceptable render — this just proves the screen doesn't throw.
+    await expect(page.locator('body')).not.toContainText(/undefined|NaN/);
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('About screen loads and shows profile info', async ({ page }) => {
     await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
     await expect(page.locator('body')).toBeVisible();

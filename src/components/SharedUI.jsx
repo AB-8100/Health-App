@@ -173,6 +173,7 @@ function BottomNav({ theme = 'light', active = 'home', onNav, tracksCycle = fals
   const allItems = [
     { id:'weekly',  label:'Weekly',   d:'M3 9 h18 M3 15 h18 M8 3 v18 M16 3 v18' },
     { id:'gym',        label:'Session',  d:'M4 9 L4 15 M8 7 L8 17 M16 7 L16 17 M20 9 L20 15 M8 12 L16 12' },
+    { id:'analytics',  label:'Analytics',d:'M4 20 V10 M11 20 V4 M18 20 V13' },
     { id:'food',       label:'Food',     d:'M5 4 V20 M19 4 V12 H17 V4 M5 12 H9 V20' },
     { id:'about-me',   label:'Profile',  d:'M12 4 a4 4 0 1 0 0 8 a4 4 0 1 0 0-8 M4 20 v-1 a8 8 0 0 1 16 0 v1' },
     { id:'cycle',      label:'Cycle',    d:'M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 M12 8 V12 L15 15' },
