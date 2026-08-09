@@ -76,6 +76,36 @@ export async function loadUserData(userId) {
     activitiesMap[row.day_idx] = row.items;
   }
 
+  // bootstrapUser (App.jsx) trusts this snapshot's `savedAt` over the local
+  // cache's whenever it's >= the cache's own timestamp — so it has to reflect
+  // the freshness of *every* table below, not just one. saveUserData's writes
+  // are independent, unawaited-together requests (Promise.all over several
+  // separate upserts, no transaction), and a save always re-upserts every
+  // table regardless of what actually changed — so in the healthy case their
+  // `updated_at` values all land within the same instant. If one of those
+  // requests is dropped or fails (e.g. the tab backgrounds mid-save — see
+  // storage.js's flushPendingLocalSave comment on that exact window) while
+  // the others succeed, that table's `updated_at` falls behind the rest.
+  // Using only `profiles.updated_at` missed that: a completely unrelated
+  // profile save could bump it to "now" while `training_plans.overrides` (a
+  // moved Weekly Overview session) or `gym_plans.schedule_override` was still
+  // sitting on stale data, so a fresher-looking remote snapshot would win the
+  // reconciliation and stomp a local cache that actually had the correct,
+  // fully-saved state — surfacing as a moved session reverting to its
+  // original day after the app was backgrounded and reloaded. Taking the
+  // *oldest* timestamp among the tables that matter for scheduling makes the
+  // reported freshness a conservative lower bound instead: any one lagging
+  // table drags it down, so the local cache — written as a single atomic
+  // localStorage snapshot — correctly wins over an incompletely-saved remote.
+  const eventRow = trainingPlans?.find(p => p.training_type === 'event');
+  const tableTimestamps = [
+    profile?.updated_at,
+    settings?.updated_at,
+    plan?.updated_at,
+    eventRow?.updated_at,
+    ...(activities ?? []).map(r => r.updated_at),
+  ].filter(Boolean).map(t => new Date(t).getTime());
+
   return {
     profile:            profile   ? dbToProfile(profile)   : undefined,
     userSettings:       settings  ? dbToSettings(settings) : undefined,
@@ -84,16 +114,17 @@ export async function loadUserData(userId) {
     foodLog,
     customFoods:        (customFoods ?? []).map(dbToCustomFood),
     activities:         activitiesMap,
-    eventOverrides:    trainingPlans?.find(p => p.training_type === 'event')?.overrides ?? {},
-    planSessionsDone:  trainingPlans?.find(p => p.training_type === 'event')?.done      ?? {},
-    preselectedQueues: trainingPlans?.find(p => p.training_type === 'event')?.preselected_queues ?? {},
-    sequencingDecisions: trainingPlans?.find(p => p.training_type === 'event')?.sequencing_decisions ?? {},
-    eventPlan: (() => {
-      const row = trainingPlans?.find(p => p.training_type === 'event');
-      return row ? { meta: row.meta ?? {}, phases: row.phases ?? [], sessions: row.sessions ?? {} } : undefined;
-    })(),
+    eventOverrides:    eventRow?.overrides ?? {},
+    planSessionsDone:  eventRow?.done      ?? {},
+    preselectedQueues: eventRow?.preselected_queues ?? {},
+    sequencingDecisions: eventRow?.sequencing_decisions ?? {},
+    eventPlan: eventRow
+      ? { meta: eventRow.meta ?? {}, phases: eventRow.phases ?? [], sessions: eventRow.sessions ?? {} }
+      : undefined,
     trainingPlans:      trainingPlans ?? [],
-    savedAt:            profile?.updated_at ?? new Date().toISOString(),
+    savedAt: tableTimestamps.length
+      ? new Date(Math.min(...tableTimestamps)).toISOString()
+      : new Date().toISOString(),
   };
 }
 
