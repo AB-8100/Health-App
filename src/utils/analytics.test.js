@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getActivityOptions, getPaceSeries, paceUnitForType, formatPaceValue,
   getExerciseOptionsForActivity, getRepsSeries,
+  getAverageValue, getPaceTrackStatus, parseGoalPaceInput,
 } from './analytics';
 
 const iso = (offsetDays = 0) => {
@@ -122,6 +123,51 @@ describe('formatPaceValue', () => {
   it('returns an em dash for null/non-finite input instead of "NaN:NaN"', () => {
     expect(formatPaceValue(null, 'perKm')).toBe('—');
     expect(formatPaceValue(Infinity, 'kmh')).toBe('—');
+  });
+});
+
+describe('getAverageValue', () => {
+  it('averages a series\' values', () => {
+    expect(getAverageValue([{ value: 300 }, { value: 360 }])).toBeCloseTo(330);
+  });
+  it('returns null for an empty series', () => {
+    expect(getAverageValue([])).toBeNull();
+  });
+});
+
+describe('getPaceTrackStatus', () => {
+  it('is on-track when a time-based average is at or faster than goal', () => {
+    expect(getPaceTrackStatus(300, 310, 'perKm')).toBe(true);
+    expect(getPaceTrackStatus(300, 300, 'perKm')).toBe(true);
+  });
+  it('is off-track when a time-based average is slower than goal', () => {
+    expect(getPaceTrackStatus(320, 300, 'perKm')).toBe(false);
+  });
+  it('is on-track when a km/h average meets or beats goal speed', () => {
+    expect(getPaceTrackStatus(21, 20, 'kmh')).toBe(true);
+    expect(getPaceTrackStatus(18, 20, 'kmh')).toBe(false);
+  });
+  it('returns null when there is no average or no goal yet', () => {
+    expect(getPaceTrackStatus(null, 300, 'perKm')).toBeNull();
+    expect(getPaceTrackStatus(300, null, 'perKm')).toBeNull();
+  });
+});
+
+describe('parseGoalPaceInput', () => {
+  it('parses "mm:ss" into total seconds for time-based units', () => {
+    expect(parseGoalPaceInput('5:30', 'perKm')).toBe(330);
+    expect(parseGoalPaceInput('1:45', 'per100m')).toBe(105);
+  });
+  it('parses a plain decimal as km/h for speed units', () => {
+    expect(parseGoalPaceInput('22.5', 'kmh')).toBe(22.5);
+  });
+  it('rejects malformed or non-positive input', () => {
+    expect(parseGoalPaceInput('not-a-time', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('5:99', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('0:00', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput('-5', 'kmh')).toBeNull();
+    expect(parseGoalPaceInput('', 'perKm')).toBeNull();
+    expect(parseGoalPaceInput(undefined, 'kmh')).toBeNull();
   });
 });
 

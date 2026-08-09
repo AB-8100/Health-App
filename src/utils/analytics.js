@@ -111,6 +111,40 @@ export function formatPaceValue(value, unit) {
   return `${m}:${String(sec).padStart(2, '0')}${suffix}`;
 }
 
+// [LOGIC] Mean of a pace/reps series' values, or null when there's nothing
+// to average (matches getPaceSeries/getRepsSeries's raw-number `value`).
+export function getAverageValue(series = []) {
+  if (!series.length) return null;
+  return series.reduce((sum, p) => sum + p.value, 0) / series.length;
+}
+
+// [LOGIC] Whether an average pace/speed is meeting a goal. For time-based
+// units (seconds-per-km / seconds-per-100m) lower is better; for km/h speed,
+// higher is better. Returns null when there's no average or no goal set yet
+// (the analytics-goal-bubbles feature: goal pace has no data source until a
+// user logs it, per the manual-entry fallback in AnalyticsScreen).
+export function getPaceTrackStatus(averageValue, goalValue, unit) {
+  if (averageValue == null || goalValue == null || !isFinite(averageValue) || !isFinite(goalValue)) return null;
+  return unit === 'kmh' ? averageValue >= goalValue : averageValue <= goalValue;
+}
+
+// [LOGIC] Parses a manually-entered goal pace/speed into the same raw
+// numeric form getPaceSeries produces: "mm:ss" → seconds for perKm/per100m,
+// a plain decimal → km/h for kmh. Returns null for anything unparseable or
+// non-positive so callers can reject bad input instead of saving garbage.
+export function parseGoalPaceInput(input, unit) {
+  if (typeof input !== 'string' || !input.trim()) return null;
+  const trimmed = input.trim();
+  if (unit === 'kmh') {
+    const n = Number(trimmed);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  const match = trimmed.match(/^(\d{1,3}):([0-5]\d)$/);
+  if (!match) return null;
+  const total = Number(match[1]) * 60 + Number(match[2]);
+  return total > 0 ? total : null;
+}
+
 // [LOGIC] Distinct exercises logged under a "reps" activity id (as produced
 // by getActivityOptions), most-frequently-logged first.
 export function getExerciseOptionsForActivity(completedSessions = [], activityId) {

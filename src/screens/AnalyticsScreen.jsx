@@ -4,6 +4,7 @@ import { BottomNav } from '../components/SharedUI';
 import {
   getActivityOptions, getPaceSeries, paceUnitForType, formatPaceValue,
   getExerciseOptionsForActivity, getRepsSeries,
+  getAverageValue, getPaceTrackStatus, parseGoalPaceInput,
 } from '../utils/analytics';
 
 // [COMPONENT] Hand-rolled inline-SVG line chart — matches the existing
@@ -57,10 +58,84 @@ function EmptyState({ theme, title, body }) {
   );
 }
 
+// [COMPONENT] A single stat pill in the average/goal/on-track row above the
+// pace chart. `accent` overrides the value colour (used for the on-track
+// flag); `onClick` makes the whole bubble tappable (goal pace editing).
+function StatBubble({ theme, label, value, sub, accent, onClick }) {
+  const t = themes[theme];
+  return (
+    <div onClick={onClick} style={{
+      flex: 1, minWidth: 0, padding: '12px 12px', borderRadius: 14,
+      border: `1px solid ${t.border}`, background: t.surface,
+      cursor: onClick ? 'pointer' : 'default',
+    }}>
+      <div style={{ fontSize: 10, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: t.sans, color: accent || t.text, lineHeight: 1.2 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: t.text3, marginTop: 3 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// [COMPONENT] Goal pace bubble — shows the saved goal for the selected
+// activity type, or (per the "goal pace hasn't been completed anywhere yet"
+// case in the request) an inline mm:ss / km-h input so the user can set one
+// themselves the first time.
+function GoalPaceBubble({ theme, goalValue, paceUnit, onSave }) {
+  const t = themes[theme];
+  const [draft, setDraft] = React.useState('');
+  const [error, setError] = React.useState(false);
+
+  const placeholder = paceUnit === 'kmh' ? 'km/h' : 'mm:ss';
+
+  const submit = () => {
+    const parsed = parseGoalPaceInput(draft, paceUnit);
+    if (parsed == null) { setError(true); return; }
+    setError(false);
+    setDraft('');
+    onSave(parsed);
+  };
+
+  if (goalValue == null) {
+    return (
+      <div style={{
+        flex: 1, minWidth: 0, padding: '12px 12px', borderRadius: 14,
+        border: `1px solid ${error ? t.rose : t.border}`, background: t.surface,
+      }}>
+        <div style={{ fontSize: 10, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 6 }}>
+          Goal pace
+        </div>
+        <input data-testid="goal-pace-input" value={draft} placeholder={placeholder}
+          onChange={(e) => { setDraft(e.target.value); setError(false); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          style={{
+            width: '100%', border: 'none', borderBottom: `1px solid ${t.border2}`, background: 'transparent',
+            color: t.text, fontFamily: t.sans, fontSize: 14, fontWeight: 700, padding: '2px 0', outline: 'none',
+          }} />
+        <button data-testid="goal-pace-save" onClick={submit} style={{
+          marginTop: 6, border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+          color: t.accent, fontFamily: t.sans, fontSize: 11, fontWeight: 600,
+        }}>
+          Set goal
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <StatBubble theme={theme} label="Goal pace" value={formatPaceValue(goalValue, paceUnit)}
+      sub="tap to change" onClick={() => onSave(null)} />
+  );
+}
+
 function AnalyticsScreen({
   width = 390, height = 820, theme = 'light',
   completedSessions = [], onNav,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
+  goalPaces = {}, onSetGoalPace = () => {},
 }) {
   const t = themes[theme];
 
@@ -103,6 +178,14 @@ function AnalyticsScreen({
   const formatValue = selectedActivity?.metric === 'pace'
     ? (v) => formatPaceValue(v, paceUnit)
     : (v) => `${Math.round(v)} reps`;
+
+  // [DATA] Average/goal/on-track bubbles are pace-only (the request scopes
+  // them to "the paces" graph, not the reps chart). Goal pace is keyed by
+  // activity type on profile.goalPaces, round-tripped like any other
+  // profile.extra field — see App.jsx's onSetGoalPace.
+  const averagePace = selectedActivity?.metric === 'pace' ? getAverageValue(series) : null;
+  const goalPace = selectedActivity?.metric === 'pace' ? (goalPaces[selectedActivity.type] ?? null) : null;
+  const onTrack = getPaceTrackStatus(averagePace, goalPace, paceUnit);
 
   const chipStyle = (active) => ({
     padding: '8px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600,
@@ -171,26 +254,39 @@ function AnalyticsScreen({
                 title={`Not enough data for ${selectedActivity.label}`}
                 body="Log another session with a completed distance or exercise sets to build a trend." />
             ) : (
-              <div data-testid="analytics-chart" style={{
-                border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface,
-                padding: '16px 14px',
-              }}>
-                <div style={{ fontSize: 11, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 10 }}>
-                  {selectedActivity.metric === 'pace'
-                    ? `${selectedActivity.label} pace`
-                    : `${selectedExercise?.name || ''} reps`}
+              <>
+                {selectedActivity.metric === 'pace' && (
+                  <div data-testid="pace-stat-bubbles" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    <StatBubble theme={theme} label="Average pace" value={formatPaceValue(averagePace, paceUnit)} />
+                    <GoalPaceBubble theme={theme} goalValue={goalPace} paceUnit={paceUnit}
+                      onSave={(value) => onSetGoalPace(selectedActivity.type, value)} />
+                    <StatBubble theme={theme} label="On track"
+                      value={onTrack == null ? '—' : (onTrack ? 'On track' : 'Off pace')}
+                      accent={onTrack == null ? t.text3 : (onTrack ? t.green : t.rose)}
+                      sub={goalPace == null ? 'set a goal pace' : undefined} />
+                  </div>
+                )}
+                <div data-testid="analytics-chart" style={{
+                  border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface,
+                  padding: '16px 14px',
+                }}>
+                  <div style={{ fontSize: 11, color: t.text3, textTransform: 'uppercase', letterSpacing: .4, marginBottom: 10 }}>
+                    {selectedActivity.metric === 'pace'
+                      ? `${selectedActivity.label} pace`
+                      : `${selectedExercise?.name || ''} reps`}
+                  </div>
+                  <LineChart points={series} color={selectedActivity.color} theme={theme}
+                    formatValue={formatValue} width={chartWidth} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: t.text3 }}>
+                    <span>{new Date(series[0].date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}</span>
+                    <span>{new Date(series[series.length - 1].date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}</span>
+                  </div>
+                  <div style={{ marginTop: 14, fontSize: 22, fontFamily: t.serif, color: t.text }}>
+                    {formatValue(series[series.length - 1].value)}
+                    <span style={{ fontSize: 12, color: t.text3, fontFamily: t.sans, marginLeft: 8 }}>most recent</span>
+                  </div>
                 </div>
-                <LineChart points={series} color={selectedActivity.color} theme={theme}
-                  formatValue={formatValue} width={chartWidth} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: t.text3 }}>
-                  <span>{new Date(series[0].date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}</span>
-                  <span>{new Date(series[series.length - 1].date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}</span>
-                </div>
-                <div style={{ marginTop: 14, fontSize: 22, fontFamily: t.serif, color: t.text }}>
-                  {formatValue(series[series.length - 1].value)}
-                  <span style={{ fontSize: 12, color: t.text3, fontFamily: t.sans, marginLeft: 8 }}>most recent</span>
-                </div>
-              </div>
+              </>
             )}
           </>
         )}
