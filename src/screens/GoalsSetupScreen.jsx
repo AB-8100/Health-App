@@ -1,18 +1,20 @@
 // [COMPONENT] Single merged onboarding flow (Stage 2 + former Stage 3 —
 // see features/specs/deterministic-endurance-plan-generator.md §A). Absorbs
 // DeepQuestionnaireScreen.jsx's steps: goal select → rank → per-goal config
-// → pace-confirm (if a target/cutoff time was given) → per-discipline day
-// picker → baselines (mandatory) → discipline ranking (triathlon) →
-// [skip point] → availability → preferences → injury → done. No
-// "Goals & mindset" step — those were free-text fields the deterministic
-// engine has no way to act on (unlike the old AI path, which read them to
-// shape prose tone); baselines are the actual signal now. No AI-generation
-// step either — completion always runs the deterministic engine
-// (utils/planEngine.js) for an event_race goal with a supported race type.
+// (race details, including target pace and cutoff time entered directly
+// per discipline for a triathlon — see setTargetPaceLeg/setCutoffLeg, no
+// separate "confirm a derived split" step) → per-discipline day picker →
+// baselines (mandatory) → discipline ranking (triathlon) → [skip point] →
+// availability → preferences → injury → done. No "Goals & mindset" step —
+// those were free-text fields the deterministic engine has no way to act
+// on (unlike the old AI path, which read them to shape prose tone);
+// baselines are the actual signal now. No AI-generation step either —
+// completion always runs the deterministic engine (utils/planEngine.js)
+// for an event_race goal with a supported race type.
 import React from 'react';
 import themes from '../data/themes';
 import {
-  canComputePace, deriveSplitFromBaseline, formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
+  formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
 } from '../utils/raceTargets';
 import { isEngineSupportedRaceType } from '../utils/planEngine';
 import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
@@ -130,10 +132,6 @@ function isRaceGoal(selectedGoalTypes = []) {
 function isTriathlonGoal(selectedGoalTypes, eventRaceConfig) {
   return isRaceGoal(selectedGoalTypes) && isTriathlonRaceType(eventRaceConfig?.raceType);
 }
-function needsPaceConfirm(selectedGoalTypes, cfg) {
-  const total = cfg.hasTargetTime ? cfg.targetTimeSeconds : (cfg.hasCutoffTime ? cfg.cutoffTimeSeconds : null);
-  return isRaceGoal(selectedGoalTypes) && canComputePace(cfg.raceType) && Number.isFinite(total) && total > 0;
-}
 
 // ─── GoalsSetupScreen ─────────────────────────────────────────────────────────
 
@@ -213,12 +211,9 @@ export function GoalsSetupScreen({
     if (goals.length >= 2) steps.push('rank');
     goals.forEach(g => steps.push(`config_${g}`));
     const eventCfg = goalConfigsRef.current['event_race'] || {};
-    // Confirm the derived pace split right after the target/cutoff time it's
-    // derived from (config_event_race), not buried near the end — note this
-    // means the split is computed before baselines exist yet, so it starts
-    // from the race type's default proportions rather than being reweighted
-    // by the athlete's own run/swim times (see deriveSplitFromBaseline).
-    if (needsPaceConfirm(goals, eventCfg)) steps.push('pace_confirm');
+    // Target pace/cutoff times are entered directly per discipline inside
+    // config_event_race now (no separate "confirm a derived split" step —
+    // see setTargetPaceLeg above for why that step was removed).
     steps.push('day_picker');
     if (isRaceGoal(goals)) steps.push('run_baseline');
     if (isTriathlonGoal(goals, eventCfg)) steps.push('swim_baseline', 'bike_baseline', 'discipline_rank');
@@ -227,7 +222,7 @@ export function GoalsSetupScreen({
     steps.push('done');
     return steps;
   };
-  // buildSteps needs the *current* event_race config to decide on pace_confirm,
+  // buildSteps needs the *current* event_race config to decide on isTriathlonGoal,
   // but is itself called during render before goalConfigs updates settle —
   // a ref sidesteps a stale-closure step list without adding another effect.
   const goalConfigsRef = React.useRef(goalConfigs);
@@ -346,21 +341,33 @@ export function GoalsSetupScreen({
     setIntake(prev => ({ ...prev, disciplineRanking: arr }));
   };
 
-  // ── pace/split confirmation ──────────────────────────────────────────────
-  const targetTotalSeconds = eventCfg.hasTargetTime ? eventCfg.targetTimeSeconds : (eventCfg.hasCutoffTime ? eventCfg.cutoffTimeSeconds : null);
-  React.useEffect(() => {
-    if (current === 'pace_confirm' && !intake.targetPaces) {
-      const computed = deriveSplitFromBaseline(eventCfg.raceType, targetTotalSeconds, { run: intake.runBaseline, swim: intake.swimBaseline });
-      if (computed) setIntake(prev => ({ ...prev, targetPaces: computed }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current]);
-  const setPaceLeg = (discipline, hours, minutes) => {
+  // ── target pace, entered directly per discipline (no more "derive a
+  // default split, then let the athlete edit it" step) ───────────────────
+  // The old flow silently guessed a swim/bike/run/transition split from the
+  // race type's typical proportions and only recomputed it once per
+  // onboarding pass (guarded on `!intake.targetPaces`) — on a redo, that
+  // guard meant a *freshly entered* overall target time never actually
+  // recomputed the split, so the athlete kept seeing stale numbers from
+  // whatever total was entered on an earlier pass. Asking for each leg
+  // directly (same pattern as the per-discipline cutoff times below) avoids
+  // the guess entirely and can't go stale the same way, since there's
+  // nothing to derive.
+  const setTargetPaceLeg = (discipline, hours, minutes) => {
     const existing = intake.targetPaces?.[discipline] || 0;
     const h = hours !== undefined ? hours : Math.floor(existing / 3600);
     const m = minutes !== undefined ? minutes : Math.floor((existing % 3600) / 60);
     const seconds = (parseInt(h, 10) || 0) * 3600 + (parseInt(m, 10) || 0) * 60;
-    setIntake(prev => ({ ...prev, targetPaces: { ...prev.targetPaces, [discipline]: seconds } }));
+    const nextTargetPaces = { ...intake.targetPaces, [discipline]: seconds };
+    const total = ['swim', 'transition', 'bike', 'run'].reduce((sum, d) => sum + (nextTargetPaces[d] || 0), 0);
+    setIntake(prev => ({ ...prev, targetPaces: nextTargetPaces }));
+    updateConfig('event_race', { targetTimeSeconds: total > 0 ? total : null });
+  };
+  const setTargetTransitionMinutes = (minutes) => {
+    const seconds = (parseInt(minutes, 10) || 0) * 60;
+    const nextTargetPaces = { ...intake.targetPaces, transition: seconds };
+    const total = ['swim', 'transition', 'bike', 'run'].reduce((sum, d) => sum + (nextTargetPaces[d] || 0), 0);
+    setIntake(prev => ({ ...prev, targetPaces: nextTargetPaces }));
+    updateConfig('event_race', { targetTimeSeconds: total > 0 ? total : null });
   };
 
   // ── per-discipline cutoff times (§A.10) ─────────────────────────────────
@@ -422,8 +429,7 @@ export function GoalsSetupScreen({
     config_general_fitness: 'Activities', day_picker: 'Schedule & access',
     run_baseline: 'Run baseline', swim_baseline: 'Swim baseline', bike_baseline: 'Bike baseline',
     discipline_rank: 'Discipline ranking', availability: 'Availability',
-    preferences: 'Day preferences', injury: 'Health & injury',
-    pace_confirm: 'Confirm pace targets', done: '',
+    preferences: 'Day preferences', injury: 'Health & injury', done: '',
   }[s] || s);
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -579,13 +585,52 @@ export function GoalsSetupScreen({
             <GField label="Do you have a target finish time in mind?" t={t}>
               <YesNoRow value={eventCfg.hasTargetTime} onChange={v => updateConfig('event_race', { hasTargetTime: v })} t={t} />
               {eventCfg.hasTargetTime && (
-                <HoursMinutesInput hours={eventCfg.targetTimeHours} minutes={eventCfg.targetTimeMinutes} t={t}
-                  onChange={(h, m) => {
-                    const hh = h !== undefined ? h : eventCfg.targetTimeHours;
-                    const mm = m !== undefined ? m : eventCfg.targetTimeMinutes;
-                    const seconds = (parseInt(hh, 10) || 0) * 3600 + (parseInt(mm, 10) || 0) * 60;
-                    updateConfig('event_race', { targetTimeHours: hh, targetTimeMinutes: mm, targetTimeSeconds: seconds > 0 ? seconds : null });
-                  }} />
+                triathlon ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: t.text3, marginBottom: 8 }}>Enter your target for each leg — the total below adds them up automatically.</div>
+                    {['swim', 'bike', 'run'].map(disc => {
+                      const seconds = intake.targetPaces?.[disc] || 0;
+                      const distanceKm = legDistanceKm(disc, eventCfg.raceType);
+                      const pace = formatPaceForDiscipline(disc, seconds, distanceKm, false);
+                      return (
+                        <div key={disc} style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, color: t.text2, marginBottom: 4 }}>
+                            {DISCIPLINE_META[disc].icon} {DISCIPLINE_META[disc].label}{pace ? <span style={{ color: t.text3 }}> — ≈ {pace}</span> : null}
+                          </div>
+                          <HoursMinutesInput
+                            hours={Math.floor(seconds / 3600)} minutes={Math.floor((seconds % 3600) / 60)}
+                            onChange={(h, m) => setTargetPaceLeg(disc, h, m)} t={t} />
+                        </div>
+                      );
+                    })}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: t.text2, marginBottom: 4 }}>🔄 Transitions (T1+T2), optional</div>
+                      <select value={Math.round((intake.targetPaces?.transition || 0) / 60) || ''}
+                        onChange={e => setTargetTransitionMinutes(e.target.value)} style={{ ...inputSt(t), width: 120 }}>
+                        <option value="">–</option>
+                        {Array.from({ length: 21 }, (_, m) => <option key={m} value={m}>{m} min</option>)}
+                      </select>
+                    </div>
+                    {eventCfg.targetTimeSeconds > 0 && (
+                      <div style={{
+                        marginTop: 10, padding: '9px 12px', borderRadius: 10,
+                        background: t.surface2, border: `1px solid ${t.border}`,
+                        fontSize: 12, color: t.text, fontWeight: 600,
+                      }}>
+                        Total target time: {formatSecondsAsHMS(eventCfg.targetTimeSeconds)}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <HoursMinutesInput hours={eventCfg.targetTimeHours} minutes={eventCfg.targetTimeMinutes} t={t}
+                    onChange={(h, m) => {
+                      const hh = h !== undefined ? h : eventCfg.targetTimeHours;
+                      const mm = m !== undefined ? m : eventCfg.targetTimeMinutes;
+                      const seconds = (parseInt(hh, 10) || 0) * 3600 + (parseInt(mm, 10) || 0) * 60;
+                      updateConfig('event_race', { targetTimeHours: hh, targetTimeMinutes: mm, targetTimeSeconds: seconds > 0 ? seconds : null });
+                      setIntake(prev => ({ ...prev, targetPaces: seconds > 0 ? { run: seconds } : prev.targetPaces }));
+                    }} />
+                )
               )}
             </GField>
 
@@ -1032,36 +1077,6 @@ export function GoalsSetupScreen({
             <DQField label="Any movements or surfaces that consistently aggravate symptoms?" t={t}>
               <textarea value={intake.injury.aggravatingFactors} onChange={e => patchInjury({ aggravatingFactors: e.target.value })} placeholder="e.g. Downhill running flares up my knee" rows={2} style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }} />
             </DQField>
-          </div>
-        )}
-
-        {current === 'pace_confirm' && intake.targetPaces && (
-          <div>
-            <StepTitle t={t}>Confirm your pace targets.</StepTitle>
-            <StepSub t={t}>{eventCfg.hasTargetTime ? 'Based on your target finish time — edit anything that looks off.' : "Based on your race's cutoff time, since no personal target was given — edit anything that looks off."}</StepSub>
-            {['swim', 'bike', 'run'].filter(d => intake.targetPaces[d] !== undefined).map(discipline => {
-              const meta = DISCIPLINE_META[discipline];
-              const seconds = intake.targetPaces[discipline] || 0;
-              const distanceKm = legDistanceKm(discipline, eventCfg.raceType);
-              const pace = formatPaceForDiscipline(discipline, seconds, distanceKm, false);
-              return (
-                <DQField key={discipline} label={`${meta.icon} ${meta.label}`} hint={pace ? `≈ ${pace}` : undefined} t={t}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <select value={Math.floor(seconds / 3600)} onChange={e => setPaceLeg(discipline, e.target.value, undefined)} style={inputSt(t)}>
-                      {Array.from({ length: 13 }, (_, h) => <option key={h} value={h}>{h}h</option>)}
-                    </select>
-                    <select value={Math.floor((seconds % 3600) / 60)} onChange={e => setPaceLeg(discipline, undefined, e.target.value)} style={inputSt(t)}>
-                      {Array.from({ length: 60 }, (_, m) => <option key={m} value={m}>{m}m</option>)}
-                    </select>
-                  </div>
-                </DQField>
-              );
-            })}
-            {intake.targetPaces.transition !== undefined && (
-              <div style={{ fontSize: 11.5, color: t.text3, marginTop: -8, marginBottom: 8 }}>
-                Plus an allowance of ~{Math.round(intake.targetPaces.transition / 60)} min for transitions (T1+T2).
-              </div>
-            )}
           </div>
         )}
 
