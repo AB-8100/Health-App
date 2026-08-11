@@ -16,8 +16,9 @@ import themes from '../data/themes';
 import {
   formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
 } from '../utils/raceTargets';
-import { isEngineSupportedRaceType } from '../utils/planEngine';
+import { isEngineSupportedRaceType, buildTrainingPlan } from '../utils/planEngine';
 import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
+import { PlanOverviewSection } from './AboutScreen';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -247,6 +248,41 @@ export function GoalsSetupScreen({
   const eventCfg = goalConfigs['event_race'] || {};
   const triathlon = isTriathlonRaceType(eventCfg.raceType);
   const raceDisciplines = disciplinesForRaceType(eventCfg.raceType);
+
+  // Preview-only plan for the "done" step's Plan overview dropdown — built
+  // from the exact same inputs handleGoalsSetupComplete (App.jsx) passes to
+  // buildTrainingPlan, so it's a true preview of what completion will
+  // produce, not a separate estimate. buildTrainingPlan is a pure function,
+  // so recomputing it here and again on submit is redundant work but never
+  // a source of drift. Only computed once the athlete actually reaches
+  // 'done' — every other step would otherwise recompute this on each
+  // keystroke for no reason, since it's not needed until then.
+  const previewPlan = React.useMemo(() => {
+    if (current !== 'done') return null;
+    if (!isRaceGoal(selectedGoals) || !isEngineSupportedRaceType(eventCfg.raceType)) return null;
+    if (!eventCfg.raceDate || !eventCfg.startDate) return null;
+    try {
+      return buildTrainingPlan({
+        raceType: eventCfg.raceType,
+        startDate: eventCfg.startDate,
+        raceDate: eventCfg.raceDate,
+        fitnessLevel: eventCfg.fitnessLevel,
+        disciplineDays,
+        disciplineRanking: intake.disciplineRanking,
+        baselines: { run: intake.runBaseline, swim: intake.swimBaseline, bike: intake.bikeBaseline },
+        preferences: intake.preferences,
+        gymAccess,
+        holidays: intake.availability?.holidays,
+        oneOffEvents: intake.availability?.oneOffEvents,
+        cutoffTimes: eventCfg.cutoffTimes,
+        targetPaces: intake.targetPaces,
+        injury: intake.injury,
+      });
+    } catch (e) {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, selectedGoals, eventCfg, disciplineDays, intake, gymAccess]);
 
   const canAdvance = (() => {
     if (current === 'select') return selectedGoals.length >= 1;
@@ -1115,6 +1151,7 @@ export function GoalsSetupScreen({
                 );
               })}
             </div>
+            {previewPlan && <PlanOverviewSection eventPlan={previewPlan} theme={theme} />}
           </div>
         )}
       </div>
