@@ -210,13 +210,18 @@ export function GoalsSetupScreen({
     const steps = ['select'];
     if (goals.length >= 2) steps.push('rank');
     goals.forEach(g => steps.push(`config_${g}`));
-    steps.push('day_picker');
     const eventCfg = goalConfigsRef.current['event_race'] || {};
+    // Confirm the derived pace split right after the target/cutoff time it's
+    // derived from (config_event_race), not buried near the end — note this
+    // means the split is computed before baselines exist yet, so it starts
+    // from the race type's default proportions rather than being reweighted
+    // by the athlete's own run/swim times (see deriveSplitFromBaseline).
+    if (needsPaceConfirm(goals, eventCfg)) steps.push('pace_confirm');
+    steps.push('day_picker');
     if (isRaceGoal(goals)) steps.push('run_baseline');
     if (isTriathlonGoal(goals, eventCfg)) steps.push('swim_baseline', 'bike_baseline', 'discipline_rank');
     // ── skip point: everything from here on is refinement, not required to get a plan ──
     steps.push('availability', 'preferences', 'mindset', 'injury');
-    if (needsPaceConfirm(goals, eventCfg)) steps.push('pace_confirm');
     steps.push('done');
     return steps;
   };
@@ -357,12 +362,18 @@ export function GoalsSetupScreen({
   };
 
   // ── per-discipline cutoff times (§A.10) ─────────────────────────────────
+  // For a triathlon, the individual swim/bike/run cutoffs are the primary
+  // entry — the overall cutoffTimeSeconds (read by canAdvance's validation,
+  // the pace-confirm step, and passed straight through to planEngine.js) is
+  // derived as their sum rather than asked for separately.
   const setCutoffLeg = (discipline, hours, minutes) => {
     const existing = eventCfg.cutoffTimes?.[discipline] || 0;
     const h = hours !== undefined ? hours : Math.floor(existing / 3600);
     const m = minutes !== undefined ? minutes : Math.floor((existing % 3600) / 60);
     const seconds = (parseInt(h, 10) || 0) * 3600 + (parseInt(m, 10) || 0) * 60;
-    updateConfig('event_race', { cutoffTimes: { ...eventCfg.cutoffTimes, [discipline]: seconds } });
+    const nextCutoffTimes = { ...eventCfg.cutoffTimes, [discipline]: seconds };
+    const total = ['swim', 'bike', 'run'].reduce((sum, d) => sum + (nextCutoffTimes[d] || 0), 0);
+    updateConfig('event_race', { cutoffTimes: nextCutoffTimes, cutoffTimeSeconds: total > 0 ? total : null });
   };
 
   // ── completion ────────────────────────────────────────────────────────────
@@ -580,7 +591,29 @@ export function GoalsSetupScreen({
               <div style={{ fontSize: 11.5, color: t.text3, marginBottom: 8, lineHeight: 1.4 }}>Some races require finishing within a set time limit.</div>
               <YesNoRow value={eventCfg.hasCutoffTime} onChange={v => updateConfig('event_race', { hasCutoffTime: v })} t={t} />
               {eventCfg.hasCutoffTime && (
-                <>
+                triathlon ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: t.text3, marginBottom: 8 }}>Enter the cutoff for each leg (swim/bike/run only) — the total below adds them up automatically.</div>
+                    {['swim', 'bike', 'run'].map(disc => (
+                      <div key={disc} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, color: t.text2, marginBottom: 4 }}>{DISCIPLINE_META[disc].icon} {DISCIPLINE_META[disc].label}</div>
+                        <HoursMinutesInput
+                          hours={Math.floor((eventCfg.cutoffTimes?.[disc] || 0) / 3600)}
+                          minutes={Math.floor(((eventCfg.cutoffTimes?.[disc] || 0) % 3600) / 60)}
+                          onChange={(h, m) => setCutoffLeg(disc, h, m)} t={t} />
+                      </div>
+                    ))}
+                    {eventCfg.cutoffTimeSeconds > 0 && (
+                      <div style={{
+                        marginTop: 10, padding: '9px 12px', borderRadius: 10,
+                        background: t.surface2, border: `1px solid ${t.border}`,
+                        fontSize: 12, color: t.text, fontWeight: 600,
+                      }}>
+                        Total cutoff: {formatSecondsAsHMS(eventCfg.cutoffTimeSeconds)}
+                      </div>
+                    )}
+                  </div>
+                ) : (
                   <HoursMinutesInput hours={eventCfg.cutoffTimeHours} minutes={eventCfg.cutoffTimeMinutes} t={t}
                     onChange={(h, m) => {
                       const hh = h !== undefined ? h : eventCfg.cutoffTimeHours;
@@ -588,21 +621,7 @@ export function GoalsSetupScreen({
                       const seconds = (parseInt(hh, 10) || 0) * 3600 + (parseInt(mm, 10) || 0) * 60;
                       updateConfig('event_race', { cutoffTimeHours: hh, cutoffTimeMinutes: mm, cutoffTimeSeconds: seconds > 0 ? seconds : null });
                     }} />
-                  {isTriathlonRaceType(eventCfg.raceType) && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontSize: 11, color: t.text3, marginBottom: 8 }}>Optional — per-discipline cutoffs, if the race has them (swim/bike/run only):</div>
-                      {['swim', 'bike', 'run'].map(disc => (
-                        <div key={disc} style={{ marginBottom: 8 }}>
-                          <div style={{ fontSize: 11, color: t.text2, marginBottom: 4 }}>{DISCIPLINE_META[disc].icon} {DISCIPLINE_META[disc].label}</div>
-                          <HoursMinutesInput
-                            hours={Math.floor((eventCfg.cutoffTimes?.[disc] || 0) / 3600)}
-                            minutes={Math.floor(((eventCfg.cutoffTimes?.[disc] || 0) % 3600) / 60)}
-                            onChange={(h, m) => setCutoffLeg(disc, h, m)} t={t} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
+                )
               )}
             </GField>
           </div>
@@ -906,13 +925,21 @@ export function GoalsSetupScreen({
                 <EntryChip key={i} label={`${h.label} · ${h.from}${h.to ? ' → ' + h.to : ''}`}
                   onRemove={() => patchAvail('holidays', intake.availability.holidays.filter((_, j) => j !== i))} t={t} />
               ))}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
-                <input placeholder="Label (e.g. Tenerife)" value={holidayDraft.label} onChange={e => setHolidayDraft(d => ({ ...d, label: e.target.value }))} style={{ ...inputSt(t), fontSize: 12 }} />
-                <input type="date" value={holidayDraft.from} onChange={e => setHolidayDraft(d => ({ ...d, from: e.target.value }))} style={{ ...inputSt(t), fontSize: 12 }} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
-                <input type="date" placeholder="End date (optional)" value={holidayDraft.to} onChange={e => setHolidayDraft(d => ({ ...d, to: e.target.value }))} style={{ ...inputSt(t), fontSize: 12 }} />
-                <AddBtn onClick={addHoliday} disabled={!holidayDraft.label || !holidayDraft.from} t={t} />
+              <div style={{ padding: '12px', borderRadius: 12, background: t.surface2, border: `1px dashed ${t.border}` }}>
+                <input placeholder="Label (e.g. Tenerife)" value={holidayDraft.label}
+                  onChange={e => setHolidayDraft(d => ({ ...d, label: e.target.value }))}
+                  style={{ ...inputSt(t), fontSize: 12, marginBottom: 8, width: '100%' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <div style={miniLabelSt(t)}>Start date</div>
+                    <input type="date" value={holidayDraft.from} onChange={e => setHolidayDraft(d => ({ ...d, from: e.target.value }))} style={{ ...inputSt(t), fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <div style={miniLabelSt(t)}>End date</div>
+                    <input type="date" value={holidayDraft.to} onChange={e => setHolidayDraft(d => ({ ...d, to: e.target.value }))} style={{ ...inputSt(t), fontSize: 12 }} />
+                  </div>
+                </div>
+                <AddBtn onClick={addHoliday} disabled={!holidayDraft.label || !holidayDraft.from} t={t} full />
               </div>
             </DQField>
             <DQField label="One-off events (weddings, travel days, etc.)" t={t}>
@@ -1222,11 +1249,15 @@ function EntryChip({ label, onRemove, t }) {
     </div>
   );
 }
-function AddBtn({ onClick, disabled, t }) {
+function AddBtn({ onClick, disabled, t, full }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       padding: '9px 14px', borderRadius: 9, whiteSpace: 'nowrap', background: disabled ? t.border : t.accent,
-      color: disabled ? t.text3 : t.accentText, border: 'none', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
+      color: disabled ? t.text3 : t.accentText, border: 'none', fontFamily: t.sans, fontSize: 12, fontWeight: 600,
+      cursor: disabled ? 'default' : 'pointer', ...(full ? { width: '100%' } : {}),
     }}>+ Add</button>
   );
+}
+function miniLabelSt(t) {
+  return { fontSize: 9.5, color: t.text3, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 };
 }

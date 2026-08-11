@@ -53,6 +53,20 @@ const DEFAULT_EVENT_PLAN = { meta: {}, phases: [], sessions: {} };
 // utils/scheduleGeneration.js (imported above) so their pure logic is
 // directly testable.
 
+// Drops every generic-scheduler-authored entry (source: 'generated') from an
+// `activities` map, keeping manually-added ones (source: 'manual') intact —
+// used when a deterministic-engine plan just got (re-)generated, so a stale
+// generated activity from an earlier pass doesn't keep showing up duplicated
+// alongside the plan's own sessions on the same day.
+function stripGeneratedActivities(acts) {
+  const cleaned = {};
+  Object.entries(acts || {}).forEach(([dayIdx, items]) => {
+    const kept = (items || []).filter(item => item.source !== 'generated');
+    if (kept.length) cleaned[dayIdx] = kept;
+  });
+  return cleaned;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Error boundary — catches render crashes so the app never goes fully blank
 // ─────────────────────────────────────────────────────────────────────────────
@@ -596,7 +610,16 @@ function App() {
       const returnTo = screenBeforeIntakeRef.current;
       screenBeforeIntakeRef.current = null;
       const nextPlan = suppressGenericSchedule ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride };
-      const nextActivities = suppressGenericSchedule ? activities : { ...activities, ...initialActivities };
+      // Suppressing the generic scheduler only stops it adding *new* entries
+      // — a redo that generates a real plan also needs to clear out any
+      // stale `source: 'generated'` activities a previous pass already
+      // wrote (e.g. from before a plan generated successfully), or they
+      // linger forever showing alongside the plan's own sessions on the
+      // same days. Manually-added activities (`source: 'manual'`) are left
+      // untouched.
+      const nextActivities = suppressGenericSchedule
+        ? (generatedPlan ? stripGeneratedActivities(activities) : activities)
+        : { ...activities, ...initialActivities };
       setProfileRaw(updatedProfile);
       setPlanRaw(nextPlan);
       setActivities(nextActivities);
@@ -606,7 +629,10 @@ function App() {
       setTimeout(() => scheduleSave(overrides), 0);
       setScreen(returnTo);
     } else {
-      completeOnboarding(updatedProfile, suppressGenericSchedule ? {} : initialActivities, suppressGenericSchedule ? null : autoScheduleOverride);
+      const completeActivities = suppressGenericSchedule
+        ? (generatedPlan ? stripGeneratedActivities(activities) : {})
+        : initialActivities;
+      completeOnboarding(updatedProfile, completeActivities, suppressGenericSchedule ? null : autoScheduleOverride);
       const planOverrides = applyGeneratedPlan();
       if (Object.keys(planOverrides).length) {
         setTimeout(() => scheduleSave(planOverrides), 0);
