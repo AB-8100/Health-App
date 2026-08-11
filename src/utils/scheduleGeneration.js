@@ -79,8 +79,8 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
   return { schedule, gymDayCount, gymDayIdxs };
 }
 
-// Discipline key (from an event_race goal's disciplineFrequency, set in
-// GoalsSetupScreen) → display metadata for a generated session.
+// Discipline key (from an event_race goal's per-discipline day picker, set
+// in GoalsSetupScreen) → display metadata for a generated session.
 const DISCIPLINE_ACTIVITY_META = {
   swim:  { type: 'swim',  label: 'Swim',     duration: 45 },
   bike:  { type: 'cycle', label: 'Bike',     duration: 60 },
@@ -111,6 +111,20 @@ const SPORT_NAME_TO_TYPE = {
 
 export function sportActivityDef(sportName) {
   return { type: SPORT_NAME_TO_TYPE[sportName] || 'other', label: sportName || 'Sport', duration: 60 };
+}
+
+// The merged onboarding flow (features/specs/deterministic-endurance-plan-generator.md
+// §A.5/§A.6) replaced the separate regularSports ({sport,day,intensity}) and
+// availability.standingCommitments ({label,day,time}) lists with one merged
+// standingCommitments list ({label,day,time,countsTowardLoad}) on the goals
+// payload itself. Read either shape so an existing saved payload from before
+// the merge still schedules correctly instead of silently losing its regular
+// sports the next time this runs.
+function normalizedCommitments(goalsPayload) {
+  if (Array.isArray(goalsPayload.standingCommitments)) {
+    return goalsPayload.standingCommitments.map(c => ({ day: c.day, sport: c.label }));
+  }
+  return (goalsPayload.regularSports || []).map(s => ({ day: s.day, sport: s.sport }));
 }
 
 // Marker pushed into the demand pool when gymAccess is true — gym days have
@@ -147,13 +161,14 @@ export function interleaveBySource(sources) {
 // exceeds available days, sessions land as close to the stated frequency as
 // the day count allows rather than being silently dropped.
 export function goalAwareGenerateActivitySchedule(goalsPayload) {
-  const { goals = [], trainingDays = [], gymAccess = false, regularSports = [] } = goalsPayload;
+  const { goals = [], trainingDays = [], gymAccess = false, disciplineDays = {} } = goalsPayload;
   if (!trainingDays.length) return { schedule: {}, gymDayCount: 0, gymDayIdxs: [] };
 
   const schedule = {};
   const claimedDayIdxs = new Set();
+  const commitments = normalizedCommitments(goalsPayload);
 
-  regularSports.forEach((entry, i) => {
+  commitments.forEach((entry, i) => {
     const dayIdx = DAY_KEY_TO_IDX[entry?.day];
     if (dayIdx === undefined || !trainingDays.includes(entry.day) || claimedDayIdxs.has(dayIdx)) return;
     schedule[dayIdx] = [{ id: `sport-${dayIdx}-${i}`, ...sportActivityDef(entry.sport), isGym: false, source: 'generated' }];
@@ -167,7 +182,14 @@ export function goalAwareGenerateActivitySchedule(goalsPayload) {
   const sources = [];
   const eventGoal = goals.find(g => g.type === 'event_race');
   if (eventGoal) {
-    const freq = eventGoal.config?.disciplineFrequency || {};
+    // §A.7 replaced the old per-discipline frequency count with a
+    // per-discipline day picker on the goals payload itself — frequency is
+    // just how many days were picked. Fall back to the legacy
+    // disciplineFrequency shape for a goal saved before that merge, so an
+    // existing user's schedule doesn't silently go empty.
+    const freq = Object.keys(disciplineDays).length
+      ? Object.fromEntries(Object.entries(disciplineDays).map(([d, days]) => [d, (days || []).length]))
+      : (eventGoal.config?.disciplineFrequency || {});
     const targetPaces = eventGoal.config?.targetPaces || null;
     Object.entries(freq).forEach(([discipline, count]) => {
       const n = Number(count) || 0;
@@ -206,11 +228,13 @@ export function goalAwareGenerateActivitySchedule(goalsPayload) {
 }
 
 export function generateActivitySchedule(goalsPayload) {
-  const { goals = [], regularSports = [] } = goalsPayload;
+  const { goals = [], disciplineDays = {} } = goalsPayload;
   const eventGoal = goals.find(g => g.type === 'event_race');
-  const hasRaceFrequency = Object.values(eventGoal?.config?.disciplineFrequency || {}).some(n => Number(n) > 0);
+  const hasRaceFrequency = Object.keys(disciplineDays).length
+    ? Object.values(disciplineDays).some(days => (days || []).length > 0)
+    : Object.values(eventGoal?.config?.disciplineFrequency || {}).some(n => Number(n) > 0);
   const hasSportActivity = !!goals.find(g => g.type === 'sport_activity')?.config?.sportType;
-  const hasRegularSports = (regularSports || []).length > 0;
+  const hasRegularSports = normalizedCommitments(goalsPayload).length > 0;
 
   if (!hasRaceFrequency && !hasSportActivity && !hasRegularSports) {
     return legacyGenerateActivitySchedule(goalsPayload);
@@ -218,8 +242,8 @@ export function generateActivitySchedule(goalsPayload) {
   return goalAwareGenerateActivitySchedule(goalsPayload);
 }
 
-// Decides whether Stage 3 (DeepQuestionnaireScreen) completing should be
-// allowed to apply its generated gym split / activity schedule onto
+// Decides whether the merged onboarding flow (GoalsSetupScreen) completing
+// should be allowed to apply its generated gym split / activity schedule onto
 // plan.splitDays / activities. When the user already has an active event
 // training plan (uploaded or AI-generated — real session data, not just the
 // flag) and hasn't explicitly opted to discard it, applying a generated

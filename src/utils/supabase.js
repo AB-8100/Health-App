@@ -313,9 +313,12 @@ export async function saveUserGoals(userId, goalsPayload) {
     training_days_per_week: goalsPayload.trainingDaysPerWeek ?? null,
     unavailable_days:       goalsPayload.unavailableDays ?? [],
     gym_access:             goalsPayload.gymAccess ?? false,
-    pool_access:            goalsPayload.poolAccess ?? false,
-    pool_days:              goalsPayload.poolDays ?? [],
-    regular_sports:         goalsPayload.regularSports ?? [],
+    // Per-discipline day picker (features/specs/deterministic-endurance-plan-generator.md
+    // §A.7) — replaces pool_access/pool_days entirely (derived from whether
+    // 'swim' has any selected days) and the merged standing-commitments list
+    // (§A.5/§A.6) — replaces regular_sports.
+    discipline_days:        goalsPayload.disciplineDays ?? {},
+    standing_commitments:   goalsPayload.standingCommitments ?? [],
     primary_goal_type:      goalsPayload.goals?.[0]?.type ?? null,
     updated_at:             new Date().toISOString(),
   }, { onConflict: 'user_id' });
@@ -377,9 +380,14 @@ export async function loadUserGoals(userId) {
     trainingDaysPerWeek:    data.training_days_per_week ?? null,
     unavailableDays:        data.unavailable_days ?? [],
     gymAccess:              data.gym_access ?? false,
-    poolAccess:             data.pool_access ?? false,
-    poolDays:               data.pool_days ?? [],
-    regularSports:          data.regular_sports ?? [],
+    disciplineDays:         data.discipline_days ?? {},
+    // Read-time fallback for a goal saved before the §A.5/§A.6 merge, whose
+    // regular_sports the migration doesn't touch — map its old {sport,day,
+    // intensity} shape into the new {label,day,time,countsTowardLoad} one so
+    // it isn't silently lost the next time this loads.
+    standingCommitments:    data.standing_commitments?.length
+      ? data.standing_commitments
+      : (data.regular_sports || []).map(s => ({ label: s.sport, day: s.day, time: '', countsTowardLoad: false })),
   };
 }
 

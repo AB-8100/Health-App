@@ -4,7 +4,6 @@ import { getCurrentPlanWeek, computeEventPhases, getPlanWeekStart } from '../dat
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
-import { isSupportedAIRaceType } from '../utils/planPrompt';
 import { submitFeedback } from '../utils/supabase';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
 import { SPLITS } from './GymPlanScreens';
@@ -273,8 +272,6 @@ function AboutScreen({
   eventOverrides = {},
   onUploadTrainingPlan,
   goalsPayload,
-  intake,
-  onGenerateAIPlan,
   onRedoGoals,
   onResetOnboardingSchedule,
   onUpdateSchedule,
@@ -488,32 +485,8 @@ function AboutScreen({
     setImportState('idle');
   };
 
-  // ── AI plan generation ─────────────────────────────────────────────────────
-  const raceType = goalsPayload?.goals?.find(g => g.type === 'event_race')?.config?.raceType;
-  const canGenerateAI = isSupportedAIRaceType(raceType) && typeof onGenerateAIPlan === 'function';
-  const [aiGenState, setAiGenState] = React.useState('idle'); // idle | confirm | working | error
-  const [aiGenError, setAiGenError] = React.useState(null);
-
-  const runGenerateAI = async () => {
-    setAiGenState('working');
-    setAiGenError(null);
-    try {
-      await onGenerateAIPlan();
-      setLP(prev => ({ ...prev, hasEventTraining: true }));
-      setAiGenState('idle');
-    } catch (err) {
-      setAiGenError(err.message || 'Something went wrong generating your plan.');
-      setAiGenState('error');
-    }
-  };
-  const handleGenerateAIClick = () => {
-    if (hasEventTraining) setAiGenState('confirm');
-    else runGenerateAI();
-  };
-  const cancelGenerateAI = () => setAiGenState('idle');
-
-  // ── redo goals & questionnaire (basic or AI — the choice happens again at
-  // the end of Stage 3, same as first-time onboarding) ────────────────────
+  // ── redo goals & questionnaire — regenerates the plan instantly via the
+  // deterministic engine on completion, same as first-time onboarding ──────
   const [redoConfirming, setRedoConfirming] = React.useState(false);
 
   // ── reset the onboarding-generated gym split / activity schedule ────────
@@ -906,66 +879,12 @@ function AboutScreen({
             )}
           </div>
 
-          {/* Generate with Claude */}
-          {canGenerateAI && (
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
-              {aiGenState === 'confirm' ? (
-                <div style={{
-                  padding: '10px 12px', borderRadius: 10,
-                  background: '#F59E0B12', border: '1px solid #F59E0B35',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
-                    Replace your current plan?
-                  </div>
-                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-                    This generates a new plan from your saved goals and questionnaire answers, overwriting your existing event plan and clearing any manual schedule changes.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={cancelGenerateAI} style={{
-                      flex: 1, padding: '8px', borderRadius: 8,
-                      background: 'transparent', border: `1px solid ${t.border}`,
-                      color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>Cancel</button>
-                    <button onClick={runGenerateAI} style={{
-                      flex: 1, padding: '8px', borderRadius: 8,
-                      background: '#DC2626', border: 'none',
-                      color: '#fff', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>Overwrite plan</button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={handleGenerateAIClick}
-                    disabled={aiGenState === 'working'}
-                    style={{
-                      width: '100%', padding: '9px', borderRadius: 10,
-                      background: 'transparent', border: `1px solid ${t.accent}`,
-                      color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
-                      cursor: aiGenState === 'working' ? 'default' : 'pointer',
-                      opacity: aiGenState === 'working' ? 0.6 : 1,
-                    }}
-                  >
-                    {aiGenState === 'working'
-                      ? 'Building your plan… this can take a minute'
-                      : hasEventTraining ? 'Regenerate plan with AI ✦' : 'Generate plan with AI ✦'}
-                  </button>
-                  {aiGenState === 'error' && aiGenError && (
-                    <div style={{ marginTop: 8, fontSize: 11, color: '#DC2626', lineHeight: 1.5 }}>
-                      {aiGenError}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Redo goals & questionnaire — re-runs Stage 2 + Stage 3 from
-              scratch (pre-filled with current answers), then offers the same
-              AI-vs-basic choice as first-time onboarding. Always available
-              whenever the handler is provided — handleRedoGoals (App.jsx)
-              has no actual dependency on intake having been completed, so
-              this isn't gated on that. */}
+          {/* Redo goals & questionnaire — re-runs the merged onboarding flow
+              from scratch (pre-filled with current answers); a plan
+              regenerates automatically on completion, no separate choice to
+              make. Always available whenever the handler is provided —
+              handleRedoGoals (App.jsx) has no actual dependency on intake
+              having been completed, so this isn't gated on that. */}
           {typeof onRedoGoals === 'function' && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
               {redoConfirming ? (
@@ -977,7 +896,7 @@ function AboutScreen({
                     Redo your goals & questionnaire?
                   </div>
                   <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-                    You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — you'll pick AI or basic again at the end, same as before.
+                    You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — your plan regenerates automatically at the end.
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => setRedoConfirming(false)} style={{
