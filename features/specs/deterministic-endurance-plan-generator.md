@@ -156,12 +156,18 @@ periodized, week-by-week plan immediately, with no external API wait.
    holiday date mapping (now day-granular per A.11), and the
    10%-rule/80-20-rule checks — computed as verifiable properties of the
    generated schedule, not a self-reported audit.
-3. **Session-type content**: a library keyed by (discipline, weekly
-   frequency, phase) → ordered session archetypes, with a rotation rule for
-   week-to-week variety. Static data, same pattern as `SPLITS`/`EX_LIB` —
-   not generated per-user. Concrete pace/duration numbers come from the
-   athlete's confirmed target split (`intake.targetPaces`) and the
-   volume-progression formulas.
+3. **Session-type content**: three separate libraries — one each for run,
+   swim, bike — keyed by (weekly frequency, phase) → ordered session
+   archetypes, with a rotation rule for week-to-week variety. Not a shared
+   generic table: each discipline has its own vocabulary, taken from the
+   reference doc's own Glossary tab requirements —
+   run (strides, tempo, fartlek, race pace, easy/recovery, long run), swim
+   (technique drills, build sets, sighting practice, open water/dress
+   rehearsal, pyramid sets, kick sets), bike (spin-ups, tempo, hill repeats,
+   hard/easy intervals, race effort). Static data, same pattern as
+   `SPLITS`/`EX_LIB` — not generated per-user. Concrete pace/duration
+   numbers come from the athlete's confirmed target split
+   (`intake.targetPaces`) and the volume-progression formulas.
 4. **Glossary** becomes a static dictionary (new `data/planGlossary.js`),
    filtered to terms actually present in the generated plan.
 5. **Overview narrative** (phase breakdown, warm-up/cool-down reference,
@@ -186,38 +192,62 @@ correct instead of possibly-hallucinated. This spec must also surface it:
    warm-up/cool-down reference, the holiday/one-off-event adjustments
    summary, the health note (if injury/health data was declared), and the
    compression warning (if total weeks fell short of recommended).
-2. The glossary, filtered to terms present in the athlete's actual plan,
-   shown from the same view (expandable list, term + plain-English
-   description).
-3. The 10%-rule/80-20-rule results — no longer a self-reported "audit" since
+2. **A short plan-mix summary**, distinct from the logistics content in C.1
+   — a few plain-language sentences explaining the actual session-type
+   methodology the engine applied for this athlete, generated from the same
+   rotation choices the engine used to build the schedule (B.3), not a
+   separate prose-writing step. E.g. *"Your 3 runs a week mix an easy run
+   with a long run and a rotating interval/tempo session, alternating week
+   to week. Bike builds from easy spin + tempo toward hill repeats as you
+   move into Build. Swim stays technique-focused through Foundation, adding
+   pyramid sets and open-water sessions from Build onward."* Shown at the
+   top of the same "Plan overview" view.
+3. **The glossary, accessible in two places**, both filtered to terms
+   present in the athlete's actual plan:
+   - The full list in the About Me / `AboutScreen.jsx` plan section
+     (expandable list, term + plain-English description).
+   - A contextual info affordance on individual session cards themselves —
+     `SessionDetailScreen.jsx`'s existing session rows (next to the "Start
+     session" / "✓ Record" / "↕ Shift position in future weeks" actions
+     confirmed in that file) get a small info icon that shows just that
+     session's own term definition (e.g. tapping the icon on a "Tempo run"
+     card shows the tempo-run definition inline), rather than sending the
+     athlete away to the full list. Same treatment for the equivalent
+     session summaries in `WeeklyOverviewScreen.jsx` if that screen also
+     renders per-session labels needing definition.
+4. The 10%-rule/80-20-rule results — no longer a self-reported "audit" since
    they're computed properties of the schedule, but still worth surfacing as
    a short "plan health" summary (e.g. "Weekly volume stays within the 10%
    guideline except 2 weeks — both after a holiday, which is expected") so
    the athlete can see the plan is sound, not just trust it silently.
 
-## D. AI path — moved out of the onboarding flow, kept only for manual comparison
+## D. AI path — moved out of the onboarding flow, validated externally, then removed
 
 1. Onboarding's completion step always uses the deterministic engine — no
    button, no choice, no wait state, since generation is now instant. The
    "Generate my plan with AI" UI (`canGenerate`/`aiGen` state in the current
-   `DeepQuestionnaireScreen`) is removed from onboarding entirely.
-2. The existing Claude/edge-function code
-   (`utils/planPrompt.js`, `utils/planGeneration.js`,
-   `supabase/functions/generate-training-plan`) **stays in the codebase and
-   stays deployed** for now, but only as a manually-triggered comparison
-   path (e.g. a "Regenerate with AI (experimental)" action in `AboutScreen`,
-   gated behind the dev `TweaksPanel` or similar) — used solely to validate
-   the deterministic engine's output against it before the follow-up removal
-   PR. **Flagging as an assumption to confirm**: this is my interpretation
-   of "removed" for planning purposes — actual deletion of the AI code is
-   still a separate follow-up once validated, per the earlier decision; if
-   you'd rather the comparison path not exist in the UI at all during the
-   trial (e.g. run manually via a script instead), say so and I'll drop D.2.
-3. `buildAnswersBlock` in `planPrompt.js` still needs updating to read the
-   merged onboarding payload shape, since it stays live for comparison.
-4. Actual removal (edge function, secret, `planPrompt.js`/`planGeneration.js`,
-   any comparison UI) is its own follow-up PR once you've validated the
-   engine by hand — tag the pre-removal commit, and add a pointer in
+   `DeepQuestionnaireScreen`) is removed from onboarding entirely, and **no
+   equivalent UI is added anywhere else in the app** — confirmed: no
+   AboutScreen entry, no dev-panel toggle.
+2. Validation against the old AI path happens **outside the app**, as a
+   one-off development/QA activity, not a shipped feature: a small
+   standalone script feeds a handful of representative sample intake
+   payloads (covering each of the 7 supported race types, plus edge cases —
+   holidays, one-off events, injuries) through both the existing
+   `buildPlanPrompt`/edge-function path and the new `planEngine.js`, and
+   dumps both outputs for side-by-side review. Nothing end users can reach.
+3. The existing Claude/edge-function code (`utils/planPrompt.js`,
+   `utils/planGeneration.js`, `supabase/functions/generate-training-plan`)
+   stays in the codebase and stays deployed only long enough to run that
+   comparison script against it — not because anything in the shipped app
+   calls it anymore.
+4. `buildAnswersBlock` in `planPrompt.js` still needs updating to read the
+   merged onboarding payload shape, since the comparison script needs it to
+   keep producing valid prompts during the trial.
+5. Once the engine's output has been validated against the comparison runs,
+   actual removal (edge function, `ANTHROPIC_API_KEY` secret,
+   `planPrompt.js`/`planGeneration.js`, the comparison script) is its own
+   follow-up PR — tag the pre-removal commit, and add a pointer in
    `docs/PROJECT_CONTEXT.md` §7.4 noting where/why it was removed.
 
 ## Data model implications
@@ -279,11 +309,19 @@ correct instead of possibly-hallucinated. This spec must also surface it:
   two; `handleIntakeComplete`/`handleStartQuestionnaire` merge.
 - `src/utils/planEngine.js` (new) + `src/utils/planEngine.test.js` (new).
 - `src/data/planGlossary.js` (new).
-- `src/screens/AboutScreen.jsx` — plan overview/glossary/plan-health surface
-  (C); AI comparison trigger if D.2 is confirmed.
+- `src/screens/AboutScreen.jsx` — plan overview/plan-mix summary/glossary
+  list/plan-health surface (C).
 - `src/screens/WeeklyOverviewScreen.jsx` — possible entry point into the new
-  plan-overview view from `PhaseBar` (C).
-- `src/utils/planPrompt.js` — updated to the merged payload shape (D.3).
+  plan-overview view from `PhaseBar` (C); per-session glossary info icon if
+  this screen also renders per-session labels needing definition.
+- `src/screens/SessionDetailScreen.jsx` — per-session glossary info icon
+  next to the existing "Start session"/"✓ Record"/"Shift position" actions
+  (C.3).
+- `src/utils/planPrompt.js` — updated to the merged payload shape, kept live
+  only for the external comparison script during the trial (D.4).
+- *(dev-only, not shipped)* a standalone comparison script run during the
+  trial (D.2) — not part of the app build; exact location/whether it's
+  checked in at all is an implementation-time call, not a spec requirement.
 - `src/utils/scheduleGeneration.js` — reads the derived `trainingDays`/
   `unavailableDays` shape and the merged standing-commitments list.
 - `src/utils/supabase.js` — mappers for the changed `user_goals`/
