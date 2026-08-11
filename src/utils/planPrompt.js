@@ -75,7 +75,7 @@ function buildAnswersBlock({ goalsPayload, intake }) {
   lines.push('## 1. Race Details');
   lines.push(`Q1 Race date: ${fmt(cfg.raceDate)}`);
   lines.push(`Q2 Race type: ${fmt(mappedRaceType, 'Unknown')}`);
-  lines.push(`Q3 Start date: today (${new Date().toISOString().slice(0, 10)})`);
+  lines.push(`Q3 Start date: ${fmt(cfg.startDate, new Date().toISOString().slice(0, 10))}`);
   lines.push(`Q4 Total weeks: calculate from start date to race date`);
   lines.push('');
 
@@ -83,32 +83,43 @@ function buildAnswersBlock({ goalsPayload, intake }) {
   if (triathlon) {
     lines.push('**Swim**');
     lines.push(`Q5/Q6 Continuous swim distance / pace: ${fmt(swim.longestSessionM && `${swim.longestSessionM}m continuous`)}; 400m time ${fmt(swim.time400m)}`);
-    lines.push(`Swim sessions per week currently: ${fmt(swim.weeklySessionsCount, '0')}`);
+    lines.push(`Open-water experience: ${fmt(swim.openWaterExperience, 'None declared')}; wetsuit experience: ${fmt(swim.wetsuitExperience, 'None declared')}`);
     lines.push('**Bike**');
     lines.push(`Q9/Q11 Cycling fitness / longest recent ride: FTP ${fmt(bike.ftpWatts && `${bike.ftpWatts}W`)}, longest ride ${fmt(bike.longestRideKm && `${bike.longestRideKm}km`)}`);
-    lines.push(`Bike sessions per week currently: ${fmt(bike.weeklySessionsCount, '0')}`);
+    lines.push(`Bike type: ${fmt(bike.bikeType)}`);
     lines.push(`Q12 Discipline ranking (strongest → weakest): ${ranking.join(' > ')}`);
   }
   lines.push('**Run**');
   lines.push(`Q13 5K time/pace: ${fmt(run.time5k)}`);
   lines.push(`Q14 Longest recent run: ${fmt(run.longestEffortKm && `${run.longestEffortKm}km`)}`);
-  lines.push(`Q15 Current run frequency: ${fmt(run.weeklyRunsCount, '0')}x/week`);
+  lines.push(`Q16 Can run continuously for 60 min: ${run.canRunContinuously60min === true ? 'Yes' : run.canRunContinuously60min === false ? 'No' : 'Not specified'}`);
   lines.push(`Other run times on file — 10K: ${fmt(run.time10k)}, Half marathon: ${fmt(run.timeHalfMarathon)}, Marathon: ${fmt(run.timeMarathon)}`);
   lines.push('');
 
   lines.push('## 3. Training Availability');
   lines.push(`Q17 Training days per week: ${fmt(gp.trainingDaysPerWeek)}`);
-  const freq = cfg.disciplineFrequency || {};
+  // §A.7 replaced the discipline-frequency count with a per-discipline day
+  // picker on the goals payload itself — frequency is just how many days
+  // were picked for each. Fall back to the legacy disciplineFrequency shape
+  // for a goal saved before that merge.
+  const disciplineDays = gp.disciplineDays || {};
+  const freq = Object.keys(disciplineDays).length
+    ? Object.fromEntries(Object.entries(disciplineDays).map(([d, days]) => [d, (days || []).length]))
+    : (cfg.disciplineFrequency || {});
   if (Object.keys(freq).length) {
     lines.push(`Requested weekly frequency per discipline (set by the athlete — match these, don't invent your own): ${
       Object.entries(freq).map(([d, n]) => `${d} x${n}/week`).join(', ')
     }`);
   }
   lines.push(`Q18 Fixed unavailable days: ${daysLabel(gp.unavailableDays)}`);
-  lines.push(`Q19 Standing commitments: ${(avail.standingCommitments || []).length
-    ? avail.standingCommitments.map(c => `${c.label} (${dayLabel(c.day)}${c.time ? ' ' + c.time : ''}) — outside training load`).join('; ')
+  // §A.5/§A.6 merged standingCommitments (goalsPayload, with a load toggle)
+  // and the old regularSports list into one — fall back to the pre-merge
+  // availability.standingCommitments shape for an older saved intake.
+  const commitments = gp.standingCommitments?.length ? gp.standingCommitments : (avail.standingCommitments || []);
+  lines.push(`Q19 Standing commitments: ${commitments.length
+    ? commitments.map(c => `${c.label} (${dayLabel(c.day)}${c.time ? ' ' + c.time : ''}) — ${c.countsTowardLoad ? 'counts toward training load' : 'outside training load'}`).join('; ')
     : 'None'}`);
-  if (triathlon) lines.push(`Q20 Pool access days: ${daysLabel(gp.poolDays)}`);
+  if (triathlon) lines.push(`Q20 Pool access days: ${daysLabel(disciplineDays.swim)}`);
   lines.push(`Q21 Long/key session day: ${dayLabel(prefs.longSessionDay)}`);
   lines.push(`Q21 Second session day: ${dayLabel(prefs.secondDisciplineDay)}`);
   lines.push(`Q22 Gym/conditioning access: ${gp.gymAccess ? `Yes — preferred day: ${dayLabel(prefs.conditioningDay)}` : 'No — replace conditioning with rest/active recovery'}`);
@@ -149,6 +160,12 @@ function buildAnswersBlock({ goalsPayload, intake }) {
   lines.push(`Q31 Target finish time: ${targetSeconds ? formatSecondsAsHMS(targetSeconds) : 'Not specified'}`);
   if (cutoffSeconds) {
     lines.push(`Race cutoff / qualifying time: ${formatSecondsAsHMS(cutoffSeconds)} — the plan must realistically get the athlete under this`);
+  }
+  if (triathlon && cfg.cutoffTimes && Object.keys(cfg.cutoffTimes).length) {
+    const legLines = Object.entries(cfg.cutoffTimes)
+      .filter(([, secs]) => secs > 0)
+      .map(([disc, secs]) => `${disc} ${formatSecondsAsHMS(secs)}`);
+    if (legLines.length) lines.push(`Per-discipline cutoffs (§A.10): ${legLines.join(', ')}`);
   }
   const targetPaces = intake?.targetPaces;
   if (targetPaces && Object.keys(targetPaces).length) {

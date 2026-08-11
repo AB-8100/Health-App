@@ -1396,6 +1396,7 @@ function App() {
                preselectedQueues={preselectedQueues}
                onSavePreselectedQueue={savePreselectedQueue}
                tracksCycle={profile.tracksCycle}
+               glossary={eventPlan.meta?.glossary}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}

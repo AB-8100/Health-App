@@ -257,6 +257,74 @@ function FeedbackSection({ theme, userId }) {
   );
 }
 
+// Surfaces the plan's own content (features/specs/deterministic-endurance-plan-generator.md
+// §C) — previously computed, normalized, and stored on the plan object but
+// never rendered anywhere. Collapsed by default (tap to expand), same
+// pattern as Section's other subsections. Works for any plan source that
+// carries these meta fields — the deterministic engine always does;
+// planMix/planHealth are absent for an uploaded/AI-generated plan, so those
+// blocks just don't render rather than showing empty.
+function PlanOverviewSection({ eventPlan, theme }) {
+  const t = themes[theme];
+  const [expanded, setExpanded] = React.useState(false);
+  const meta = eventPlan.meta || {};
+  const glossary = meta.glossary || [];
+  if (!meta.overview && !glossary.length) return null;
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
+      <button onClick={() => setExpanded(v => !v)} style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: t.sans,
+      }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Plan overview</span>
+        <span style={{ fontSize: 11, color: t.text3 }}>{expanded ? '▲ Hide' : '▼ Show'}</span>
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          {meta.planMix && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10, background: t.accent + '0C',
+              border: `1px solid ${t.accent}25`, fontSize: 11.5, color: t.text2, lineHeight: 1.55, marginBottom: 10,
+            }}>{meta.planMix}</div>
+          )}
+
+          {meta.overview && (
+            <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.6, marginBottom: 10 }}>
+              {meta.overview.split('\n\n').map((para, i) => (
+                <p key={i} style={{ margin: i === 0 ? '0 0 8px' : '8px 0' }}>{para}</p>
+              ))}
+            </div>
+          )}
+
+          {meta.planHealth?.summary && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10, background: t.surface2,
+              border: `1px solid ${t.border}`, marginBottom: 10,
+            }}>
+              <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 4 }}>Plan health</div>
+              <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{meta.planHealth.summary}</div>
+            </div>
+          )}
+
+          {glossary.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 6 }}>Glossary</div>
+              {glossary.map(g => (
+                <div key={g.term} style={{ padding: '7px 0', borderTop: `1px solid ${t.border}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{g.term} <span style={{ fontSize: 9.5, color: t.text3, fontWeight: 400 }}>· {g.discipline}</span></div>
+                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginTop: 2 }}>{g.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AboutScreen({
   width = 390, height = 820, theme = 'light',
   userId,
@@ -783,6 +851,8 @@ function AboutScreen({
                 color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
                 cursor: 'pointer',
               }}>View weekly overview →</button>
+
+              <PlanOverviewSection eventPlan={eventPlan} theme={theme} />
             </>
           ) : (
             <>

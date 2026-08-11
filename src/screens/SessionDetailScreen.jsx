@@ -26,6 +26,44 @@ function fmtElapsed(totalSeconds = 0) {
   return `${s}s`;
 }
 
+// Matches a scheduled event-plan session back to its glossary term
+// (features/specs/deterministic-endurance-plan-generator.md §C.3) — a brick
+// day's run leg is flagged "Brick" rather than carrying a sessionType that's
+// itself a glossary term, so that takes priority; everything else matches
+// its own sessionType directly (see data/sessionLibraries.js, where session
+// archetypes' sessionType is already the glossary term for most entries).
+function findGlossaryEntry(sess, glossary) {
+  if (!glossary?.length || sess.source !== 'event_plan') return null;
+  const raw = sess.raw || {};
+  if (raw.flag?.includes('Brick')) return glossary.find(g => g.term === 'Brick') || null;
+  if (raw.flag?.includes('Holiday') && raw.sessionType === 'Open water swim') {
+    return glossary.find(g => g.term === 'Open water / sea swim') || null;
+  }
+  return glossary.find(g => g.term === raw.sessionType) || null;
+}
+
+function GlossaryInfoButton({ open, onToggle, t }) {
+  return (
+    <button onClick={onToggle} title="What is this session?" style={{
+      width: 24, height: 24, borderRadius: '50%', border: `1px solid ${t.border}`,
+      background: open ? t.accent + '15' : 'transparent', color: open ? t.accent : t.text3,
+      fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: t.serif,
+      marginLeft: 'auto',
+    }}>i</button>
+  );
+}
+function GlossaryNote({ entry, t }) {
+  return (
+    <div style={{
+      padding: '10px 12px', borderRadius: 10, background: t.surface2, border: `1px solid ${t.border}`,
+      fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 12,
+    }}>
+      <strong style={{ color: t.text }}>{entry.term}</strong> — {entry.description}
+    </div>
+  );
+}
+
 // Gym completions are logged under "<split day name> day" (see AddSessionSheet
 // / GymSessionScreen), while non-gym completions are logged under the plain
 // activity label — so history has to be looked up under the right label
@@ -219,9 +257,11 @@ export function SessionDetailScreen({
   onShiftSessionPosition,
   preselectedQueues = {}, onSavePreselectedQueue,
   tracksCycle = false, hasGym = true, hasEventTraining = false, hasTrainingActivities = false,
+  glossary = [],
 }) {
   const t = themes[theme];
   const [recordingSess, setRecordingSess] = React.useState(null);
+  const [openGlossaryId, setOpenGlossaryId] = React.useState(null);
   const [editingSession, setEditingSession] = React.useState(null);
   const [historicSess, setHistoricSess] = React.useState(null);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
@@ -348,6 +388,10 @@ export function SessionDetailScreen({
               const label = sess.label || displayLabel;
               const sessPreselected = ((isGym || isGymType) && preselected?.kind === 'gym') || (isConditioning && preselected?.kind === 'conditioning')
                 ? preselected : null;
+              // Contextual glossary info icon (§C.3) — only for a scheduled
+              // event-plan session whose sessionType/flag matches a term in
+              // this athlete's own plan glossary.
+              const glossaryEntry = findGlossaryEntry(sess, glossary);
 
               return (
                 <div key={sess.id} style={cardStyle}>
@@ -356,13 +400,24 @@ export function SessionDetailScreen({
                       width: 46, height: 46, borderRadius: 13, flexShrink: 0, fontSize: 22,
                       background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>{emoji}</div>
-                    <div style={{ minWidth: 0 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontFamily: t.serif, fontSize: 19, color: t.text, lineHeight: 1.1 }}>{label}</div>
                       {sess.detail && (
                         <div style={{ fontSize: 11.5, color: t.text3, marginTop: 3 }}>{sess.detail}</div>
                       )}
                     </div>
+                    {glossaryEntry && (
+                      <GlossaryInfoButton
+                        open={openGlossaryId === sess.id}
+                        onToggle={() => setOpenGlossaryId(id => id === sess.id ? null : sess.id)}
+                        t={t}
+                      />
+                    )}
                   </div>
+
+                  {glossaryEntry && openGlossaryId === sess.id && (
+                    <GlossaryNote entry={glossaryEntry} t={t} />
+                  )}
 
                   {sessPreselected && !completed && (
                     <div style={{ fontSize: 11, color: t.accent, marginBottom: 8 }}>

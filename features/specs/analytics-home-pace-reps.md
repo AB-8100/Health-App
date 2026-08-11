@@ -44,6 +44,17 @@ None. Reads only from the existing in-memory `completedSessions` (already
 loaded via `utils/supabase.js` → `raw` column, see `docs/PROJECT_CONTEXT.md`
 §9). No new Supabase table/column, no new dependency.
 
+**Amendment (from `features/specs/deterministic-endurance-plan-generator.md`
+§A.9):** onboarding's baselines are now mandatory, closing the analytics
+cold-start gap this spec originally accepted — a brand-new user with no
+`completedSessions` yet can still have a real baseline pace/reps data point
+seeded from their onboarding answers (run 5K/10K/half/marathon times, swim
+400m time, etc., stored in `user_intake`). Not implemented as part of this
+pass — flagged here so a future amendment to this spec's chart-building logic
+in `utils/analytics.js` knows to accept an optional seed point instead of
+requiring a first `completedSessions` entry before a chart has anything to
+plot.
+
 ## Edge cases handled
 - Sessions with `distance` present but `elapsed` 0 (or vice versa) are
   excluded from pace series (can't divide by zero / meaningless pace).
