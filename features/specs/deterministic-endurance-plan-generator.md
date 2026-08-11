@@ -35,9 +35,20 @@ transition. This spec merges Stage 2 and Stage 3 into one onboarding flow.
 Only **10K, Half Marathon, Marathon, Triathlon (Sprint / Olympic / 70.3 /
 Full)** get a full generated event plan — the only race types either
 reference doc defines taper/phase/volume rules for. **5K, Cycling Sportive,
-Open Water Swim, and Other remain on the existing basic non-event scheduler**
-(`utils/scheduleGeneration.js`), unchanged by this spec. Coverage is
-revisited based on signal from `features/specs/feedback-entry-point.md`.
+Open Water Swim, and Other are removed from Stage 2's race-type picker
+entirely** (`RACE_TYPES` in `GoalsSetupScreen.jsx`) — the picker should only
+ever offer a race type that can actually produce a generated plan
+end-to-end, not silently degrade to the basic scheduler with no explanation.
+Coverage is revisited based on signal from
+`features/specs/feedback-entry-point.md`; if a type is added back later, it
+re-enters `RACE_TYPES` at the same time rules are added for it, not before.
+
+This is scoped to the `event_race` goal type's race-type options only — the
+other goal types (Strength Programme, Sport Activity, General Fitness,
+Micro Target) aren't affected. They were never meant to produce a periodized
+"plan" in the sense this spec means; they correctly use the existing basic
+scheduler (`utils/scheduleGeneration.js`) as their intended end-to-end path,
+so there's nothing dead-ended about them.
 
 ## User story
 
@@ -69,16 +80,19 @@ periodized, week-by-week plan immediately, with no external API wait.
 3. **Full merged step order** (goal select → rank if >1 → per-goal config →
    per-discipline day picker → availability → mindset → injury →
    pace-confirm if applicable → done). Steps are gated by goal/race type so
-   irrelevant questions never show — this fixes a concrete bug in the
-   current flow, where `DeepQuestionnaireScreen.buildSteps` shows the full
-   run-baseline step (`isRaceGoal`) for *any* `event_race` goal, including
-   Cycling Sportive and Open Water Swim, which have nothing to do with
-   running:
-   - Run baseline (+ Q16, "can you run continuously for 60 min?", for
-     running-appropriate goals only): shown for running races and
-     triathlon, **not** Cycling Sportive/Open Water Swim/Other.
+   irrelevant questions never show. This is simpler than originally scoped:
+   once the race-type picker only offers the 7 engine-supported types (see
+   "Scope" above), **every** `event_race` goal legitimately involves running
+   (10K/Half/Marathon are pure running; all 4 triathlon distances include a
+   run leg) — so the original bug this item was written to fix (run-baseline
+   questions forced on Cycling Sportive/Open Water Swim, which have nothing
+   to do with running) disappears along with those race types, rather than
+   needing its own gating logic:
+   - Run baseline (+ Q16, "can you run continuously for 60 min?"): shown for
+     every `event_race` goal, since all 7 remaining race types need it.
    - Swim baseline, bike baseline, discipline ranking: triathlon only
-     (unchanged from today's gating).
+     (unchanged from today's gating) — this conditional gating is still
+     real and still needed.
    - Swim baseline step gains the two previously-missing reference
      questions: open-water swimming experience, and wetsuit experience.
    - Bike baseline step gains the previously-missing reference question:
@@ -122,10 +136,17 @@ periodized, week-by-week plan immediately, with no external API wait.
    baseline gives the pace chart a starting reference point). Companion
    change needed in `features/specs/analytics-home-pace-reps.md`'s data
    model (currently "None" — will need to accept an optional baseline seed).
-   Current per-discipline frequency ("how many times a week do you
-   *currently* train X") stays, distinct from the target-day picker in A.7 —
-   it calibrates how gentle the Foundation-phase ramp needs to be, not day
-   placement.
+   **Current per-discipline frequency fields removed** (`weeklyRunsCount`,
+   `swimBaseline.weeklySessionsCount`, `bikeBaseline.weeklySessionsCount`) —
+   per decision, the day picker (A.7) is the single source of the *to-be*
+   state the plan is built around; asking "how often do you currently do
+   this" as a separate number is less relevant than it looked. The engine
+   calibrates the Foundation-phase ramp from the baseline performance data
+   that's being kept instead (5K/10K/half/marathon times, longest recent
+   run, 400m swim time, longest swim, FTP, longest ride) — someone with no
+   usable baseline times is treated as a true beginner for ramp purposes;
+   someone with recent times gets ramped from wherever those times imply
+   they already are.
 10. **Per-discipline cutoff times for triathlon** (swim/bike/run only, no
     T1/T2) — extends the existing single `hasCutoffTime`/`cutoffTimeSeconds`
     into a per-discipline map, shown only if the athlete confirms the race
@@ -283,18 +304,29 @@ correct instead of possibly-hallucinated. This spec must also surface it:
 - A goal combination with no race at all (e.g. general fitness only) skips
   every race-specific step (baselines, cutoffs, discipline ranking,
   pace-confirm) automatically via the existing gating pattern.
+- Existing users whose saved `event_race` goal has a now-removed race type
+  (5K, Cycling Sportive, Open Water Swim, Other) — don't hard-block them.
+  They keep working on the existing basic scheduler exactly as today (that
+  behaviour genuinely doesn't change for them); they just can't newly select
+  one of these types going forward, since the picker no longer offers it. If
+  they redo their goals, they need to pick one of the 7 supported types to
+  get a generated plan.
 
 ## Explicitly out of scope
 
 - Deleting the AI generation code (see D.4).
-- Extending generated-plan coverage to 5K / Cycling Sportive / Open Water
-  Swim / Other.
+- Re-adding 5K / Cycling Sportive / Open Water Swim / Other as race-type
+  options before rules exist for them (see "Scope").
 - Reference Q24 ("which regular session a one-off event replaces") staying
   un-asked — left for the engine to infer deterministically from the
   existing schedule, since it doesn't need the athlete to state it.
 - Reference Q10 bike-type answer changing any actual scheduling logic beyond
   being captured and shown back to the athlete — no aero/positioning
   coaching content in this spec.
+- More robust baseline testing (e.g. a proper Critical Swim Speed protocol,
+  a structured running threshold/time-trial test, an equivalent bike test)
+  instead of relying on self-reported PB times — logged as a future idea in
+  `features/ideas.md`, not designed here.
 - Any change to how an *uploaded* `.xlsx` plan is parsed
   (`utils/trainingPlanImport.js`) — unaffected, separate code path.
 - Rebuilding `HomeScreen.jsx`'s demo dashboard.

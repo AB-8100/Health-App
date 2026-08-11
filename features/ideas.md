@@ -10,3 +10,7 @@
 - Garmin Connect API prototype — pull own activity + Women's Health cycle data
 - In-app coach chat that nudges users to log workouts they've skipped
 - Strip triathlon-specific onboarding assumptions into configurable defaults
+- More robust fitness baselines than self-reported PB times — e.g. a proper
+  Critical Swim Speed (CSS) test protocol, a structured running
+  threshold/time-trial test, an equivalent bike test — to feed more accurate
+  pace zones into the training plan generator
