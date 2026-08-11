@@ -116,15 +116,20 @@ const EMPTY_INTAKE = {
   injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExercises: '', aggravatingFactors: '' },
 };
 
-function isRaceGoal(goals = []) {
-  return goals.some(g => g.type === 'event_race');
+// `selectedGoals` (below) is an array of goal *type strings* (e.g.
+// ['event_race', 'general_fitness']), not goal objects — these all take
+// that shape directly rather than expecting a `.type`/`.config` object,
+// which a `goals.some(g => g.type === ...)`-style check would silently
+// always evaluate false against a plain string array.
+function isRaceGoal(selectedGoalTypes = []) {
+  return selectedGoalTypes.includes('event_race');
 }
-function isTriathlonGoal(goals = []) {
-  return isTriathlonRaceType(goals.find(g => g.type === 'event_race')?.config?.raceType);
+function isTriathlonGoal(selectedGoalTypes, eventRaceConfig) {
+  return isRaceGoal(selectedGoalTypes) && isTriathlonRaceType(eventRaceConfig?.raceType);
 }
-function needsPaceConfirm(goals, cfg) {
+function needsPaceConfirm(selectedGoalTypes, cfg) {
   const total = cfg.hasTargetTime ? cfg.targetTimeSeconds : (cfg.hasCutoffTime ? cfg.cutoffTimeSeconds : null);
-  return isRaceGoal(goals) && canComputePace(cfg.raceType) && Number.isFinite(total) && total > 0;
+  return isRaceGoal(selectedGoalTypes) && canComputePace(cfg.raceType) && Number.isFinite(total) && total > 0;
 }
 
 // ─── GoalsSetupScreen ─────────────────────────────────────────────────────────
@@ -206,11 +211,11 @@ export function GoalsSetupScreen({
     if (goals.length >= 2) steps.push('rank');
     goals.forEach(g => steps.push(`config_${g}`));
     steps.push('day_picker');
+    const eventCfg = goalConfigsRef.current['event_race'] || {};
     if (isRaceGoal(goals)) steps.push('run_baseline');
-    if (isTriathlonGoal(goals)) steps.push('swim_baseline', 'bike_baseline', 'discipline_rank');
+    if (isTriathlonGoal(goals, eventCfg)) steps.push('swim_baseline', 'bike_baseline', 'discipline_rank');
     // ── skip point: everything from here on is refinement, not required to get a plan ──
     steps.push('availability', 'preferences', 'mindset', 'injury');
-    const eventCfg = goalConfigsRef.current['event_race'] || {};
     if (needsPaceConfirm(goals, eventCfg)) steps.push('pace_confirm');
     steps.push('done');
     return steps;
