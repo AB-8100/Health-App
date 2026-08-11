@@ -386,9 +386,11 @@ export function GoalsSetupScreen({
   };
 
   // ── completion ────────────────────────────────────────────────────────────
+  const [saving, setSaving] = React.useState(false);
   const handleSkip = () => handleComplete(true);
 
-  const handleComplete = (skipped) => {
+  const handleComplete = async (skipped) => {
+    if (saving) return;
     const trainingDaysUnion = isRaceGoal(selectedGoals)
       ? [...new Set(raceDisciplines.flatMap(d => disciplineDays[d] || []))]
       : trainingDays;
@@ -419,7 +421,18 @@ export function GoalsSetupScreen({
     }
 
     const goalConfigPatch = intake.targetPaces ? { targetPaces: intake.targetPaces } : null;
-    onComplete({ goalsPayload, intakePayload, goalConfigPatch, skipped });
+    // onComplete (App.jsx's handleGoalsSetupComplete) is async — it awaits
+    // the actual Supabase writes before resolving. Blocking on it here
+    // (disabling the buttons below via `saving`) stops a double-submit and,
+    // more importantly, stops the athlete navigating away mid-save, which
+    // is exactly the race that made a completed redo intermittently look
+    // like it hadn't taken effect.
+    setSaving(true);
+    try {
+      await onComplete({ goalsPayload, intakePayload, goalConfigPatch, skipped });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const stepLabel = (s) => ({
@@ -1109,15 +1122,18 @@ export function GoalsSetupScreen({
       <div style={{ padding: '12px 22px 18px', background: t.bg, borderTop: `1px solid ${t.border}` }}>
         {pastSkipPoint ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button onClick={next} disabled={!canAdvance} style={primaryBtnSt(t, canAdvance)}>{isLast ? 'Enter Forma →' : 'Continue →'}</button>
-            <button onClick={handleSkip} style={{
+            <button onClick={next} disabled={!canAdvance || saving} style={primaryBtnSt(t, canAdvance && !saving)}>
+              {saving ? 'Saving…' : (isLast ? 'Enter Forma →' : 'Continue →')}
+            </button>
+            <button onClick={handleSkip} disabled={saving} style={{
               width: '100%', padding: '11px', borderRadius: 13, background: 'transparent', color: t.text2,
-              border: `1px solid ${t.border}`, fontFamily: t.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
+              border: `1px solid ${t.border}`, fontFamily: t.sans, fontSize: 12.5, fontWeight: 500,
+              cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1,
             }}>Skip the rest for now</button>
           </div>
         ) : (
-          <button onClick={next} disabled={!canAdvance} style={primaryBtnSt(t, canAdvance)}>
-            {current === 'done' ? 'Enter Forma →' : 'Continue →'}
+          <button onClick={next} disabled={!canAdvance || saving} style={primaryBtnSt(t, canAdvance && !saving)}>
+            {saving ? 'Saving…' : (current === 'done' ? 'Enter Forma →' : 'Continue →')}
           </button>
         )}
       </div>

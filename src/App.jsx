@@ -500,7 +500,7 @@ function App() {
   // separate Stage 2 and Stage 3 completion handlers into one, since
   // there's no longer a stage boundary between them (see
   // features/specs/deterministic-endurance-plan-generator.md §A).
-  const handleGoalsSetupComplete = ({ goalsPayload: goalsSetupPayload, intakePayload: newIntake, goalConfigPatch, skipped }) => {
+  const handleGoalsSetupComplete = async ({ goalsPayload: goalsSetupPayload, intakePayload: newIntake, goalConfigPatch, skipped }) => {
     // A confirmed (possibly user-edited) target pace/split from the
     // pace_confirm step belongs on the event_race goal itself — both the
     // rule-based scheduler and the plan engine read it from there.
@@ -593,78 +593,92 @@ function App() {
       intakeCompleted: !skipped,
     };
 
-    if (currentUserIdRef.current) {
-      saveUserGoals(currentUserIdRef.current, gp).catch(e => console.warn('Forma: goals save failed', e));
-      saveUserIntake(currentUserIdRef.current, newIntake).catch(e => console.warn('Forma: intake save failed', e));
-    }
     setIntakePayload(newIntake);
     setGoalsPayload(gp);
 
-    const applyGeneratedPlan = () => {
-      if (!generatedPlan) return {};
-      // Only replace the plan from its own chosen start date onward —
-      // preserves whatever was scheduled/logged for any earlier date
-      // (including past dates a prior engine-generated plan already
-      // covered), same reasoning handleUploadTrainingPlan uses for an
-      // .xlsx upload, just anchored to the athlete's own chosen start date
-      // here rather than an automatic "next week" cutoff, since they
-      // explicitly set/confirm it every time they go through this flow.
-      // completedSessions (the actual logged workout history) is a
-      // separate, untouched piece of state either way — this only affects
-      // which *scheduled* sessions and per-day plan state (overrides,
-      // preselected queues, done-flags, sequencing decisions) survive.
+    // Only replace the plan from its own chosen start date onward —
+    // preserves whatever was scheduled/logged for any earlier date
+    // (including past dates a prior engine-generated plan already
+    // covered), same reasoning handleUploadTrainingPlan uses for an .xlsx
+    // upload, just anchored to the athlete's own chosen start date here
+    // rather than an automatic "next week" cutoff, since they explicitly
+    // set/confirm it every time they go through this flow.
+    // completedSessions (the actual logged workout history) is a separate,
+    // untouched piece of state either way — this only affects which
+    // *scheduled* sessions and per-day plan state (overrides, preselected
+    // queues, done-flags, sequencing decisions) survive.
+    let eventPlanOverrides = {};
+    if (generatedPlan) {
       const cutoffKey = generatedPlan.meta?.startDate || getTodayDateKey();
-      const mergedEventPlan = mergeEventPlanFromCutoff(eventPlan, generatedPlan, cutoffKey);
-      const nextEventOverrides = pickBeforeCutoff(eventOverrides, cutoffKey);
-      const nextPreselectedQueues = pickBeforeCutoff(preselectedQueues, cutoffKey);
-      const nextPlanSessionsDone = pickBeforeCutoff(planSessionsDone, cutoffKey);
-      const nextSequencingDecisions = pickBeforeCutoff(sequencingDecisions, cutoffKey);
-      setEventPlan(mergedEventPlan);
-      setEventOverrides(nextEventOverrides);
-      setPreselectedQueues(nextPreselectedQueues);
-      setPlanSessionsDone(nextPlanSessionsDone);
-      setSequencingDecisions(nextSequencingDecisions);
-      return {
-        eventPlan: mergedEventPlan, eventOverrides: nextEventOverrides, preselectedQueues: nextPreselectedQueues,
-        planSessionsDone: nextPlanSessionsDone, sequencingDecisions: nextSequencingDecisions,
+      eventPlanOverrides = {
+        eventPlan: mergeEventPlanFromCutoff(eventPlan, generatedPlan, cutoffKey),
+        eventOverrides: pickBeforeCutoff(eventOverrides, cutoffKey),
+        preselectedQueues: pickBeforeCutoff(preselectedQueues, cutoffKey),
+        planSessionsDone: pickBeforeCutoff(planSessionsDone, cutoffKey),
+        sequencingDecisions: pickBeforeCutoff(sequencingDecisions, cutoffKey),
       };
-    };
+    }
 
-    // If opened from within the main app (redo/re-entry), apply the newly
-    // computed split/activity schedule and return there. Otherwise this is
-    // first-time onboarding — route through completeOnboarding.
-    if (screenBeforeIntakeRef.current !== null) {
-      const returnTo = screenBeforeIntakeRef.current;
-      screenBeforeIntakeRef.current = null;
-      const nextPlan = suppressGenericSchedule ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride };
-      // Suppressing the generic scheduler only stops it adding *new* entries
-      // — a redo that generates a real plan also needs to clear out any
-      // stale `source: 'generated'` activities a previous pass already
-      // wrote (e.g. from before a plan generated successfully), or they
-      // linger forever showing alongside the plan's own sessions on the
-      // same days. Manually-added activities (`source: 'manual'`) are left
-      // untouched.
-      const nextActivities = suppressGenericSchedule
-        ? (generatedPlan ? stripGeneratedActivities(activities) : activities)
-        : { ...activities, ...initialActivities };
-      setProfileRaw(updatedProfile);
-      setPlanRaw(nextPlan);
-      setActivities(nextActivities);
-      setOnboardingStage(null);
-      setIntakeDraft(skipped);
-      const overrides = { profile: updatedProfile, plan: nextPlan, activities: nextActivities, ...applyGeneratedPlan() };
-      setTimeout(() => scheduleSave(overrides), 0);
-      setScreen(returnTo);
-    } else {
-      const completeActivities = suppressGenericSchedule
-        ? (generatedPlan ? stripGeneratedActivities(activities) : {})
-        : initialActivities;
-      completeOnboarding(updatedProfile, completeActivities, suppressGenericSchedule ? null : autoScheduleOverride);
-      const planOverrides = applyGeneratedPlan();
-      if (Object.keys(planOverrides).length) {
-        setTimeout(() => scheduleSave(planOverrides), 0);
+    // If opened from within the main app (redo/re-entry), return there once
+    // done. Otherwise this is first-time onboarding, which always lands on
+    // 'weekly' (same routing completeOnboarding uses — not calling that
+    // shared function directly here since it does its own independent,
+    // fire-and-forget snapshot save; this handler needs everything folded
+    // into the single reliable save below instead).
+    const returnTo = screenBeforeIntakeRef.current;
+    screenBeforeIntakeRef.current = null;
+
+    // Suppressing the generic scheduler only stops it adding *new* entries —
+    // a redo that generates a real plan also needs to clear out any stale
+    // `source: 'generated'` activities a previous pass already wrote (e.g.
+    // from before a plan generated successfully), or they linger forever
+    // showing alongside the plan's own sessions on the same days.
+    // Manually-added activities (`source: 'manual'`) are left untouched.
+    const nextActivities = suppressGenericSchedule
+      ? (generatedPlan ? stripGeneratedActivities(activities) : (returnTo !== null ? activities : {}))
+      : (returnTo !== null ? { ...activities, ...initialActivities } : initialActivities);
+    const nextPlan = returnTo !== null
+      ? (suppressGenericSchedule ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride })
+      : { splitDays: updatedProfile.splitDays ?? null, todayIdx: 0, overrides: {}, ...(suppressGenericSchedule ? {} : autoScheduleOverride ? { scheduleOverride: autoScheduleOverride } : {}) };
+
+    setProfileRaw(updatedProfile);
+    setPlanRaw(nextPlan);
+    setActivities(nextActivities);
+    if (Object.keys(eventPlanOverrides).length) {
+      setEventPlan(eventPlanOverrides.eventPlan);
+      setEventOverrides(eventPlanOverrides.eventOverrides);
+      setPreselectedQueues(eventPlanOverrides.preselectedQueues);
+      setPlanSessionsDone(eventPlanOverrides.planSessionsDone);
+      setSequencingDecisions(eventPlanOverrides.sequencingDecisions);
+    }
+    setOnboarding(false);
+    setOnboardingStage(null);
+    setIntakeDraft(skipped);
+
+    // One reliable save for everything this step just changed: an
+    // immediate (non-debounced) local-cache write plus an *awaited*
+    // Supabase write for goals/intake/the full snapshot together —
+    // previously these were several independent fire-and-forget calls
+    // (saveUserGoals/saveUserIntake/a debounced scheduleSave), which left a
+    // real window where a reload shortly after completing this flow could
+    // land before any of them finished and show stale data — looking
+    // exactly like a redo "didn't take" even though it had.
+    const snapshot = buildSnapshot({ profile: updatedProfile, plan: nextPlan, activities: nextActivities, ...eventPlanOverrides });
+    saveToCache(snapshot, currentUserIdRef.current);
+    if (sheetsConnectedRef.current) saveToSheets(snapshot);
+    if (currentUserIdRef.current) {
+      try {
+        await Promise.all([
+          saveUserGoals(currentUserIdRef.current, gp),
+          saveUserIntake(currentUserIdRef.current, newIntake),
+          saveUserData(currentUserIdRef.current, snapshot),
+        ]);
+      } catch (e) {
+        console.warn('Forma: onboarding save failed', e);
       }
     }
+
+    setScreen(returnTo !== null ? returnTo : 'weekly');
   };
 
   // Re-enters the merged goals+intake flow from within the app, pre-filled
