@@ -278,7 +278,17 @@ export function GoalsSetupScreen({
       if (prev.length >= 3) return prev;
       return [...prev, id];
     });
-    if (!goalConfigs[id]) setGoalConfigs(c => ({ ...c, [id]: { ...DEFAULT_CONFIG[id] } }));
+    if (!goalConfigs[id]) {
+      // Start date's input displays today's date via a `|| todayISO()` visual
+      // fallback so the field never looks empty — but that fallback only
+      // lives in the input's `value` prop. Without seeding it into real
+      // state here too, canAdvance's `eventCfg.startDate` check stays false
+      // (and Continue stays permanently disabled) until the user happens to
+      // manually re-touch a field that already looked filled in.
+      const config = { ...DEFAULT_CONFIG[id] };
+      if (id === 'event_race') config.startDate = todayISO();
+      setGoalConfigs(c => ({ ...c, [id]: config }));
+    }
   };
   const moveGoal = (idx, dir) => {
     setSelectedGoals(prev => {
