@@ -1,11 +1,14 @@
 // [COMPONENT] Single merged onboarding flow (Stage 2 + former Stage 3 —
 // see features/specs/deterministic-endurance-plan-generator.md §A). Absorbs
 // DeepQuestionnaireScreen.jsx's steps: goal select → rank → per-goal config
-// → per-discipline day picker → baselines (mandatory) → discipline ranking
-// (triathlon) → [skip point] → availability → preferences → mindset →
-// injury → pace-confirm → done. No AI-generation step — completion always
-// runs the deterministic engine (utils/planEngine.js) for an event_race goal
-// with a supported race type.
+// → pace-confirm (if a target/cutoff time was given) → per-discipline day
+// picker → baselines (mandatory) → discipline ranking (triathlon) →
+// [skip point] → availability → preferences → injury → done. No
+// "Goals & mindset" step — those were free-text fields the deterministic
+// engine has no way to act on (unlike the old AI path, which read them to
+// shape prose tone); baselines are the actual signal now. No AI-generation
+// step either — completion always runs the deterministic engine
+// (utils/planEngine.js) for an event_race goal with a supported race type.
 import React from 'react';
 import themes from '../data/themes';
 import {
@@ -112,7 +115,6 @@ const EMPTY_INTAKE = {
   targetPaces: null,
   availability: { holidays: [], oneOffEvents: [] },
   preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '' },
-  mindset: { primaryGoal: '', disciplineToImprove: '', nervousAbout: '', priorExperience: '', usesSpeedTraining: '', lifestyleNotes: '' },
   injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExercises: '', aggravatingFactors: '' },
 };
 
@@ -194,7 +196,6 @@ export function GoalsSetupScreen({
     bikeBaseline: { ...EMPTY_INTAKE.bikeBaseline, ...(initialIntake?.bikeBaseline || {}) },
     availability: { holidays: [], oneOffEvents: [], ...(initialIntake?.availability || {}) },
     preferences:  { ...EMPTY_INTAKE.preferences,  ...(initialIntake?.preferences  || {}) },
-    mindset:      { ...EMPTY_INTAKE.mindset,      ...(initialIntake?.mindset      || {}) },
     injury:       { ...EMPTY_INTAKE.injury,       ...(initialIntake?.injury       || {}) },
   }));
   const patchIntake = (key, patch) => setIntake(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -221,7 +222,7 @@ export function GoalsSetupScreen({
     if (isRaceGoal(goals)) steps.push('run_baseline');
     if (isTriathlonGoal(goals, eventCfg)) steps.push('swim_baseline', 'bike_baseline', 'discipline_rank');
     // ── skip point: everything from here on is refinement, not required to get a plan ──
-    steps.push('availability', 'preferences', 'mindset', 'injury');
+    steps.push('availability', 'preferences', 'injury');
     steps.push('done');
     return steps;
   };
@@ -420,7 +421,7 @@ export function GoalsSetupScreen({
     config_general_fitness: 'Activities', day_picker: 'Schedule & access',
     run_baseline: 'Run baseline', swim_baseline: 'Swim baseline', bike_baseline: 'Bike baseline',
     discipline_rank: 'Discipline ranking', availability: 'Availability',
-    preferences: 'Day preferences', mindset: 'Goals & mindset', injury: 'Health & injury',
+    preferences: 'Day preferences', injury: 'Health & injury',
     pace_confirm: 'Confirm pace targets', done: '',
   }[s] || s);
 
@@ -970,41 +971,6 @@ export function GoalsSetupScreen({
                 <DaySelect value={intake.preferences.conditioningDay} onChange={v => patchIntake('preferences', { conditioningDay: v })} t={t} />
               </DQField>
             )}
-          </div>
-        )}
-
-        {current === 'mindset' && (
-          <div>
-            <StepTitle t={t}>Goals & mindset.</StepTitle>
-            <StepSub t={t}>Helps us tailor tone and priorities — everything here is optional.</StepSub>
-            <DQField label="What's your primary goal for race day?" hint="e.g. just finish strong / beat a specific time / milestone event" t={t}>
-              <input value={intake.mindset.primaryGoal} onChange={e => patchIntake('mindset', { primaryGoal: e.target.value })} placeholder="e.g. Finish my first triathlon" style={inputSt(t)} />
-            </DQField>
-            {triathlon && (
-              <DQField label="Which discipline do you most want to improve?" t={t}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {['swim', 'bike', 'run'].map(d => (
-                    <button key={d} onClick={() => patchIntake('mindset', { disciplineToImprove: d })} style={{
-                      flex: 1, padding: '10px 0', borderRadius: 9, background: intake.mindset.disciplineToImprove === d ? t.accent + '15' : t.surface,
-                      border: `1.5px solid ${intake.mindset.disciplineToImprove === d ? t.accent : t.border2}`, color: intake.mindset.disciplineToImprove === d ? t.accent : t.text2,
-                      fontFamily: t.sans, fontSize: 12, cursor: 'pointer',
-                    }}>{DISCIPLINE_META[d].icon} {DISCIPLINE_META[d].label}</button>
-                  ))}
-                </div>
-              </DQField>
-            )}
-            <DQField label="What are you most nervous or uncertain about?" t={t}>
-              <input value={intake.mindset.nervousAbout} onChange={e => patchIntake('mindset', { nervousAbout: e.target.value })} placeholder="e.g. Open water swimming" style={inputSt(t)} />
-            </DQField>
-            <DQField label="Have you done this type of race before?" hint="Optional" t={t}>
-              <input value={intake.mindset.priorExperience} onChange={e => patchIntake('mindset', { priorExperience: e.target.value })} placeholder="e.g. Olympic distance, 2024" style={inputSt(t)} />
-            </DQField>
-            <DQField label="Do you currently do any speed or interval training?" hint="Optional" t={t}>
-              <input value={intake.mindset.usesSpeedTraining} onChange={e => patchIntake('mindset', { usesSpeedTraining: e.target.value })} placeholder="e.g. Weekly parkrun" style={inputSt(t)} />
-            </DQField>
-            <DQField label="Anything else about your lifestyle or schedule we should know?" hint="Optional" t={t}>
-              <textarea value={intake.mindset.lifestyleNotes} onChange={e => patchIntake('mindset', { lifestyleNotes: e.target.value })} placeholder="e.g. Shift worker — schedule varies week to week" rows={3} style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }} />
-            </DQField>
           </div>
         )}
 
