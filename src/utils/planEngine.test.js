@@ -182,6 +182,19 @@ describe('buildTrainingPlan — triathlon race', () => {
     expect(hasConditioning).toBe(true);
   });
 
+  it('tailors the conditioning circuit toward a declared injury area and excludes avoided exercises', () => {
+    const plan = buildTrainingPlan(triIntake({
+      injury: {
+        pastInjuries: [{ area: 'Shoulder', description: '', resolved: false }],
+        avoidExerciseIds: ['squat', 'lunge'],
+      },
+    }));
+    const conditioningEntry = Object.values(plan.sessions).flat().find(e => e.type === 'conditioning');
+    expect(conditioningEntry.sessionType).toMatch(/shoulder|band pull-apart/i);
+    expect(conditioningEntry.sessionType.toLowerCase()).not.toContain('squat');
+    expect(conditioningEntry.sessionType.toLowerCase()).not.toContain('lunge');
+  });
+
   it('reports eventDistances as swim/bike/run legs', () => {
     const plan = buildTrainingPlan(triIntake());
     expect(plan.meta.eventDistances).toBe('1.5km / 40km / 10km');

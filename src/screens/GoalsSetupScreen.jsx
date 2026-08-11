@@ -15,6 +15,7 @@ import {
   canComputePace, deriveSplitFromBaseline, formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
 } from '../utils/raceTargets';
 import { isEngineSupportedRaceType } from '../utils/planEngine';
+import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ const EMPTY_INTAKE = {
   targetPaces: null,
   availability: { holidays: [], oneOffEvents: [] },
   preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '' },
-  injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExercises: '', aggravatingFactors: '' },
+  injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExerciseIds: [], aggravatingFactors: '' },
 };
 
 // `selectedGoals` (below) is an array of goal *type strings* (e.g.
@@ -1010,8 +1011,23 @@ export function GoalsSetupScreen({
             <DQField label="Any health conditions we should know about?" hint="Heart conditions, asthma, diabetes, etc." t={t}>
               <textarea value={intake.injury.healthConditions} onChange={e => patchInjury({ healthConditions: e.target.value })} placeholder="e.g. Mild asthma — use inhaler before hard sessions" rows={3} style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }} />
             </DQField>
-            <DQField label="Any exercises or movements you've been advised to avoid?" t={t}>
-              <textarea value={intake.injury.avoidExercises} onChange={e => patchInjury({ avoidExercises: e.target.value })} placeholder="e.g. No deep squats, avoid high-impact plyometrics" rows={2} style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }} />
+            <DQField label="Any conditioning exercises to avoid?" hint="Excluded outright from your conditioning circuit, not just flagged — e.g. skip squats if that's advised for a knee." t={t}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {CONDITIONING_EXERCISES.map(ex => {
+                  const selected = (intake.injury.avoidExerciseIds || []).includes(ex.id);
+                  return (
+                    <button key={ex.id} onClick={() => {
+                      const prev = intake.injury.avoidExerciseIds || [];
+                      const next = selected ? prev.filter(id => id !== ex.id) : [...prev, ex.id];
+                      patchInjury({ avoidExerciseIds: next });
+                    }} style={{
+                      padding: '5px 9px', borderRadius: 7, background: selected ? '#DC262615' : t.surface,
+                      border: `1.5px solid ${selected ? '#DC2626' : t.border2}`, color: selected ? '#DC2626' : t.text2,
+                      fontFamily: t.sans, fontSize: 11, cursor: 'pointer',
+                    }}>{ex.name}</button>
+                  );
+                })}
+              </div>
             </DQField>
             <DQField label="Any movements or surfaces that consistently aggravate symptoms?" t={t}>
               <textarea value={intake.injury.aggravatingFactors} onChange={e => patchInjury({ aggravatingFactors: e.target.value })} placeholder="e.g. Downhill running flares up my knee" rows={2} style={{ ...inputSt(t), resize: 'none', lineHeight: 1.6 }} />

@@ -39,6 +39,10 @@ function findGlossaryEntry(sess, glossary) {
   if (raw.flag?.includes('Holiday') && raw.sessionType === 'Open water swim') {
     return glossary.find(g => g.term === 'Open water / sea swim') || null;
   }
+  // A conditioning session's sessionType is the athlete's own selected
+  // exercise list (e.g. "Circuit: Bird dog, Clamshell..."), not a fixed
+  // glossary term — match by type instead of exact sessionType text.
+  if (raw.type === 'conditioning') return glossary.find(g => g.term === 'Conditioning circuit') || null;
   return glossary.find(g => g.term === raw.sessionType) || null;
 }
 

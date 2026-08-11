@@ -40,7 +40,7 @@ const PLAN_GLOSSARY = [
   { term: 'Recovery week', discipline: 'Combined', description: 'A planned lower-volume week (roughly 30% less than a normal week) every few weeks, at the same frequency but lighter load — lets your body absorb the training you’ve done rather than accumulating fatigue.' },
 
   // ── Conditioning ──
-  { term: 'Conditioning circuit', discipline: 'Conditioning', description: 'A short bodyweight circuit (glute bridge, bird dog, clamshell, dead bug, side plank) run for 2–3 rounds — general injury-prevention strength work, not a personalised treatment plan.' },
+  { term: 'Conditioning circuit', discipline: 'Conditioning', description: 'A short bodyweight circuit run for 2–3 rounds, weighted toward strengthening and mobility work for any injury areas you declared (and never including exercises you asked to avoid) — the default is general hip/core work (glute bridge, bird dog, clamshell, dead bug, side plank) if none were declared. General injury-prevention support, not a personalised treatment plan.' },
 ];
 
 export default PLAN_GLOSSARY;

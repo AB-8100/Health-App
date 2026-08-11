@@ -4,6 +4,7 @@
 // shape the app already stores for an event training plan) instead of an
 // executable Python script / downloadable spreadsheet.
 import { formatSecondsAsHMS, legDistanceKm, formatPaceForDiscipline } from './raceTargets';
+import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
 
 const RACE_TYPE_MAP = {
   '10K':                        '10K',
@@ -146,7 +147,13 @@ function buildAnswersBlock({ goalsPayload, intake }) {
     : 'None declared'}`);
   lines.push(`Current niggles/soreness: ${fmt(inj.currentNiggles, 'None')}`);
   lines.push(`Health conditions: ${fmt(inj.healthConditions, 'None')}`);
-  lines.push(`Q29 Exercises/movements advised to avoid: ${fmt(inj.avoidExercises, 'None')}`);
+  // avoidExercises (free text) was replaced by a structured avoidExerciseIds
+  // multi-select — fall back to the old free-text field for an intake saved
+  // before that change.
+  const avoidNames = (inj.avoidExerciseIds || [])
+    .map(id => CONDITIONING_EXERCISES.find(e => e.id === id)?.name)
+    .filter(Boolean);
+  lines.push(`Q29 Exercises/movements advised to avoid: ${avoidNames.length ? avoidNames.join(', ') : fmt(inj.avoidExercises, 'None')}`);
   lines.push(`Q30 Aggravating movements/surfaces: ${fmt(inj.aggravatingFactors, 'None')}`);
   lines.push('');
 

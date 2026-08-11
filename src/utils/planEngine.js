@@ -32,6 +32,7 @@ import { RUN_RACE_DISTANCES_KM, TRIATHLON_LEG_DISTANCES_KM, legDistanceKm } from
 import { colorForPhase } from './trainingPlanImport';
 import { RUN_LIBRARY, SWIM_LIBRARY, BIKE_LIBRARY, RUN_LONG_TERM, BIKE_LONG_TERM, nextFromRotation } from '../data/sessionLibraries';
 import { glossaryForTerms } from '../data/planGlossary';
+import { selectConditioningExercises } from '../data/conditioningLibrary';
 
 export const SUPPORTED_RACE_TYPES = [
   '10K', 'Half Marathon', 'Marathon',
@@ -288,8 +289,16 @@ function buildSwimEntry({ weekNum, phase, weeklyMeters, rotationIdx }) {
   return { type: 'swim', label: 'Swim', sessionType: archetype.sessionType, duration: swimDuration(weeklyMeters), flag: '', intensity: archetype.intensity, week: weekNum, phase: phase.label };
 }
 
-function buildConditioningEntry(weekNum, phase) {
-  return { type: 'conditioning', label: 'Conditioning', sessionType: 'Conditioning circuit', duration: '22min', flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
+// Conditioning doubles as injury-prevention/support work (per user decision):
+// exercises targeting a declared past-injury area are prioritized into the
+// circuit, and anything the athlete flagged to avoid is excluded outright
+// rather than just noted. Falls back to the standard baseline circuit
+// (glute bridge, bird dog, clamshell, dead bug, side plank) with nothing
+// declared.
+function buildConditioningEntry(weekNum, phase, conditioningExercises) {
+  const names = conditioningExercises.map(e => e.name);
+  const sessionType = names.length ? `Circuit: ${names.join(', ')}` : 'Conditioning circuit';
+  return { type: 'conditioning', label: 'Conditioning', sessionType, duration: '22min', flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
 }
 
 function buildRestEntry(weekNum, phase) {
@@ -365,6 +374,10 @@ export function buildTrainingPlan(intake) {
   const runLongDay = pickAnchorDay(runDays, triathlon ? null : preferences.longSessionDay, 'sunday');
   const bikeLongDay = triathlon ? pickAnchorDay(disciplineDays.bike || [], preferences.longSessionDay, 'sunday') : null;
   const conditioningDay = gymAccess ? (preferences.conditioningDay || null) : null;
+  const conditioningExercises = selectConditioningExercises({
+    areas: (injury.pastInjuries || []).map(p => p.area),
+    avoidIds: injury.avoidExerciseIds || [],
+  });
 
   // Discipline-frequency-in-Foundation ramp (triathlon only, §B.2): caps how
   // many of the athlete's own selected days for a discipline are actually
@@ -472,7 +485,7 @@ export function buildTrainingPlan(intake) {
         }
       }
       if (conditioningDay === dayKey && phase.label !== 'Taper' && weekNum < totalWeeks) {
-        entries.push(buildConditioningEntry(weekNum, phase));
+        entries.push(buildConditioningEntry(weekNum, phase, conditioningExercises));
       }
     }
 
@@ -685,7 +698,11 @@ function buildOverview({ raceType, triathlon, phases, phaseMode, holidays, oneOf
     lines.push(`One-off events: ${oneOffEvents.map(e => `${e.label} on ${e.date}`).join('; ')} — each replaces that day's session, with an easy recovery day after and the displaced session rescheduled where a slot allows (otherwise absorbed).`);
   }
   if (injury.pastInjuries?.length || injury.currentNiggles || injury.healthConditions) {
-    lines.push('Health note: this plan includes general injury-prevention conditioning work, not a personalised treatment plan — get a physio review before starting, and stop any exercise immediately if it increases pain, numbness, or tingling.');
+    const areas = [...new Set((injury.pastInjuries || []).map(p => p.area).filter(Boolean))];
+    const tailoredNote = areas.length
+      ? ` Conditioning sessions have been weighted toward ${areas.join('/').toLowerCase()} strengthening and mobility work based on the areas you declared${injury.avoidExerciseIds?.length ? ', excluding the exercises you asked to avoid' : ''}.`
+      : '';
+    lines.push(`Health note: this plan includes injury-aware conditioning work, not a personalised treatment plan.${tailoredNote} Get a physio review before starting, and stop any exercise immediately if it increases pain, numbness, or tingling.`);
   }
   return lines.join('\n\n');
 }
