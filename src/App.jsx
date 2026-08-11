@@ -602,12 +602,32 @@ function App() {
 
     const applyGeneratedPlan = () => {
       if (!generatedPlan) return {};
-      setEventPlan(generatedPlan);
-      setEventOverrides({});
-      setPreselectedQueues({});
-      setPlanSessionsDone({});
-      setSequencingDecisions({});
-      return { eventPlan: generatedPlan, eventOverrides: {}, preselectedQueues: {}, planSessionsDone: {}, sequencingDecisions: {} };
+      // Only replace the plan from its own chosen start date onward —
+      // preserves whatever was scheduled/logged for any earlier date
+      // (including past dates a prior engine-generated plan already
+      // covered), same reasoning handleUploadTrainingPlan uses for an
+      // .xlsx upload, just anchored to the athlete's own chosen start date
+      // here rather than an automatic "next week" cutoff, since they
+      // explicitly set/confirm it every time they go through this flow.
+      // completedSessions (the actual logged workout history) is a
+      // separate, untouched piece of state either way — this only affects
+      // which *scheduled* sessions and per-day plan state (overrides,
+      // preselected queues, done-flags, sequencing decisions) survive.
+      const cutoffKey = generatedPlan.meta?.startDate || getTodayDateKey();
+      const mergedEventPlan = mergeEventPlanFromCutoff(eventPlan, generatedPlan, cutoffKey);
+      const nextEventOverrides = pickBeforeCutoff(eventOverrides, cutoffKey);
+      const nextPreselectedQueues = pickBeforeCutoff(preselectedQueues, cutoffKey);
+      const nextPlanSessionsDone = pickBeforeCutoff(planSessionsDone, cutoffKey);
+      const nextSequencingDecisions = pickBeforeCutoff(sequencingDecisions, cutoffKey);
+      setEventPlan(mergedEventPlan);
+      setEventOverrides(nextEventOverrides);
+      setPreselectedQueues(nextPreselectedQueues);
+      setPlanSessionsDone(nextPlanSessionsDone);
+      setSequencingDecisions(nextSequencingDecisions);
+      return {
+        eventPlan: mergedEventPlan, eventOverrides: nextEventOverrides, preselectedQueues: nextPreselectedQueues,
+        planSessionsDone: nextPlanSessionsDone, sequencingDecisions: nextSequencingDecisions,
+      };
     };
 
     // If opened from within the main app (redo/re-entry), apply the newly
