@@ -116,4 +116,40 @@ test.describe('core screens render without error', () => {
     }
     expect(page.__consoleErrors).toEqual([]);
   });
+
+  test('Redo goals & questionnaire opens the merged onboarding flow with no AI generation button', async ({ page }) => {
+    // features/specs/deterministic-endurance-plan-generator.md §A/§D — Stage 2
+    // and the former Stage 3 are one continuous flow now, with no AI-generation
+    // entry point anywhere in the app.
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    const redoButton = page.getByRole('button', { name: /redo my goals/i });
+    await expect(redoButton).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+
+    await redoButton.click();
+    await page.getByRole('button', { name: /^continue$/i }).click();
+    await expect(page.getByText(/what are your goals/i)).toBeVisible();
+
+    const bodyText = await page.locator('body').innerText();
+    expect(bodyText).not.toMatch(/generate.*with ai|regenerate.*with ai/i);
+    expect(page.__consoleErrors).toEqual([]);
+
+    // Back out without completing — should not throw or leave onboarding stuck.
+    await page.getByRole('button', { name: '×' }).first().click();
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
+  test('About screen Feedback section accepts a message and submit is disabled while empty', async ({ page }) => {
+    // features/specs/feedback-entry-point.md
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Feedback$/).first()).toBeVisible();
+
+    const submitButton = page.getByRole('button', { name: /send feedback/i });
+    await expect(submitButton).toBeDisabled();
+
+    const textarea = page.getByPlaceholder(/what's on your mind/i);
+    await textarea.fill('Smoke test feedback — please ignore.');
+    await expect(submitButton).toBeEnabled();
+    expect(page.__consoleErrors).toEqual([]);
+  });
 });

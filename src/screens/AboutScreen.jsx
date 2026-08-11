@@ -4,7 +4,7 @@ import { getCurrentPlanWeek, computeEventPhases, getPlanWeekStart } from '../dat
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
-import { isSupportedAIRaceType } from '../utils/planPrompt';
+import { submitFeedback } from '../utils/supabase';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
 import { SPLITS } from './GymPlanScreens';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
@@ -194,8 +194,140 @@ function GoalPaceRow({ theme, label, unit, confirmedValue, manualValue, onSave }
   );
 }
 
+// Feedback entry point (features/specs/feedback-entry-point.md) — one
+// free-text textarea + submit, writing a single row to `user_feedback`.
+// Errors keep the draft text in place rather than clearing it (spec's
+// "Edge cases handled" — don't lose what the user typed on a failed write).
+function FeedbackSection({ theme, userId }) {
+  const t = themes[theme];
+  const [message, setMessage] = React.useState('');
+  const [state, setState] = React.useState('idle'); // idle | submitting | sent | error
+
+  const submit = async () => {
+    if (!message.trim() || state === 'submitting') return;
+    setState('submitting');
+    try {
+      await submitFeedback(userId, message.trim());
+      setMessage('');
+      setState('sent');
+    } catch {
+      setState('error');
+    }
+  };
+
+  return (
+    <Section title="Feedback" theme={theme}>
+      <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
+        Missing a race type, found a bug, or have an idea? Tell us — this goes straight to the team.
+      </div>
+      <textarea
+        value={message}
+        onChange={(e) => { setMessage(e.target.value); if (state !== 'idle') setState('idle'); }}
+        placeholder="What's on your mind?"
+        rows={4}
+        style={{
+          width: '100%', padding: '11px 13px', borderRadius: 10,
+          border: `1px solid ${t.border2}`, background: t.surface2,
+          fontFamily: t.sans, fontSize: 13, color: t.text, outline: 'none',
+          resize: 'none', lineHeight: 1.6, boxSizing: 'border-box', marginBottom: 10,
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!message.trim() || state === 'submitting'}
+        style={{
+          width: '100%', padding: '10px', borderRadius: 10,
+          background: (message.trim() && state !== 'submitting') ? t.accent : t.border,
+          color: (message.trim() && state !== 'submitting') ? t.accentText : t.text3,
+          border: 'none', fontFamily: t.sans, fontSize: 12.5, fontWeight: 600,
+          cursor: (message.trim() && state !== 'submitting') ? 'pointer' : 'default',
+        }}
+      >
+        {state === 'submitting' ? 'Sending…' : 'Send feedback'}
+      </button>
+      {state === 'sent' && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: t.green }}>Thanks — your feedback was sent.</div>
+      )}
+      {state === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626' }}>
+          Couldn't send that — check your connection and try again.
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// Surfaces the plan's own content (features/specs/deterministic-endurance-plan-generator.md
+// §C) — previously computed, normalized, and stored on the plan object but
+// never rendered anywhere. Collapsed by default (tap to expand), same
+// pattern as Section's other subsections. Works for any plan source that
+// carries these meta fields — the deterministic engine always does;
+// planMix/planHealth are absent for an uploaded/AI-generated plan, so those
+// blocks just don't render rather than showing empty.
+function PlanOverviewSection({ eventPlan, theme }) {
+  const t = themes[theme];
+  const [expanded, setExpanded] = React.useState(false);
+  const meta = eventPlan.meta || {};
+  const glossary = meta.glossary || [];
+  if (!meta.overview && !glossary.length) return null;
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
+      <button onClick={() => setExpanded(v => !v)} style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: t.sans,
+      }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Plan overview</span>
+        <span style={{ fontSize: 11, color: t.text3 }}>{expanded ? '▲ Hide' : '▼ Show'}</span>
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          {meta.planMix && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10, background: t.accent + '0C',
+              border: `1px solid ${t.accent}25`, fontSize: 11.5, color: t.text2, lineHeight: 1.55, marginBottom: 10,
+            }}>{meta.planMix}</div>
+          )}
+
+          {meta.overview && (
+            <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.6, marginBottom: 10 }}>
+              {meta.overview.split('\n\n').map((para, i) => (
+                <p key={i} style={{ margin: i === 0 ? '0 0 8px' : '8px 0' }}>{para}</p>
+              ))}
+            </div>
+          )}
+
+          {meta.planHealth?.summary && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10, background: t.surface2,
+              border: `1px solid ${t.border}`, marginBottom: 10,
+            }}>
+              <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 4 }}>Plan health</div>
+              <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{meta.planHealth.summary}</div>
+            </div>
+          )}
+
+          {glossary.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 6 }}>Glossary</div>
+              {glossary.map(g => (
+                <div key={g.term} style={{ padding: '7px 0', borderTop: `1px solid ${t.border}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{g.term} <span style={{ fontSize: 9.5, color: t.text3, fontWeight: 400 }}>· {g.discipline}</span></div>
+                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginTop: 2 }}>{g.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AboutScreen({
   width = 390, height = 820, theme = 'light',
+  userId,
   profile = {}, userSettings = {}, plan = {}, activities = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, onSetupTrainingPlan,
@@ -208,8 +340,6 @@ function AboutScreen({
   eventOverrides = {},
   onUploadTrainingPlan,
   goalsPayload,
-  intake,
-  onGenerateAIPlan,
   onRedoGoals,
   onResetOnboardingSchedule,
   onUpdateSchedule,
@@ -423,32 +553,8 @@ function AboutScreen({
     setImportState('idle');
   };
 
-  // ── AI plan generation ─────────────────────────────────────────────────────
-  const raceType = goalsPayload?.goals?.find(g => g.type === 'event_race')?.config?.raceType;
-  const canGenerateAI = isSupportedAIRaceType(raceType) && typeof onGenerateAIPlan === 'function';
-  const [aiGenState, setAiGenState] = React.useState('idle'); // idle | confirm | working | error
-  const [aiGenError, setAiGenError] = React.useState(null);
-
-  const runGenerateAI = async () => {
-    setAiGenState('working');
-    setAiGenError(null);
-    try {
-      await onGenerateAIPlan();
-      setLP(prev => ({ ...prev, hasEventTraining: true }));
-      setAiGenState('idle');
-    } catch (err) {
-      setAiGenError(err.message || 'Something went wrong generating your plan.');
-      setAiGenState('error');
-    }
-  };
-  const handleGenerateAIClick = () => {
-    if (hasEventTraining) setAiGenState('confirm');
-    else runGenerateAI();
-  };
-  const cancelGenerateAI = () => setAiGenState('idle');
-
-  // ── redo goals & questionnaire (basic or AI — the choice happens again at
-  // the end of Stage 3, same as first-time onboarding) ────────────────────
+  // ── redo goals & questionnaire — regenerates the plan instantly via the
+  // deterministic engine on completion, same as first-time onboarding ──────
   const [redoConfirming, setRedoConfirming] = React.useState(false);
 
   // ── reset the onboarding-generated gym split / activity schedule ────────
@@ -745,6 +851,8 @@ function AboutScreen({
                 color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
                 cursor: 'pointer',
               }}>View weekly overview →</button>
+
+              <PlanOverviewSection eventPlan={eventPlan} theme={theme} />
             </>
           ) : (
             <>
@@ -841,66 +949,12 @@ function AboutScreen({
             )}
           </div>
 
-          {/* Generate with Claude */}
-          {canGenerateAI && (
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
-              {aiGenState === 'confirm' ? (
-                <div style={{
-                  padding: '10px 12px', borderRadius: 10,
-                  background: '#F59E0B12', border: '1px solid #F59E0B35',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 3 }}>
-                    Replace your current plan?
-                  </div>
-                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-                    This generates a new plan from your saved goals and questionnaire answers, overwriting your existing event plan and clearing any manual schedule changes.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={cancelGenerateAI} style={{
-                      flex: 1, padding: '8px', borderRadius: 8,
-                      background: 'transparent', border: `1px solid ${t.border}`,
-                      color: t.text2, fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>Cancel</button>
-                    <button onClick={runGenerateAI} style={{
-                      flex: 1, padding: '8px', borderRadius: 8,
-                      background: '#DC2626', border: 'none',
-                      color: '#fff', fontFamily: t.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>Overwrite plan</button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={handleGenerateAIClick}
-                    disabled={aiGenState === 'working'}
-                    style={{
-                      width: '100%', padding: '9px', borderRadius: 10,
-                      background: 'transparent', border: `1px solid ${t.accent}`,
-                      color: t.accent, fontFamily: t.sans, fontSize: 12, fontWeight: 600,
-                      cursor: aiGenState === 'working' ? 'default' : 'pointer',
-                      opacity: aiGenState === 'working' ? 0.6 : 1,
-                    }}
-                  >
-                    {aiGenState === 'working'
-                      ? 'Building your plan… this can take a minute'
-                      : hasEventTraining ? 'Regenerate plan with AI ✦' : 'Generate plan with AI ✦'}
-                  </button>
-                  {aiGenState === 'error' && aiGenError && (
-                    <div style={{ marginTop: 8, fontSize: 11, color: '#DC2626', lineHeight: 1.5 }}>
-                      {aiGenError}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Redo goals & questionnaire — re-runs Stage 2 + Stage 3 from
-              scratch (pre-filled with current answers), then offers the same
-              AI-vs-basic choice as first-time onboarding. Always available
-              whenever the handler is provided — handleRedoGoals (App.jsx)
-              has no actual dependency on intake having been completed, so
-              this isn't gated on that. */}
+          {/* Redo goals & questionnaire — re-runs the merged onboarding flow
+              from scratch (pre-filled with current answers); a plan
+              regenerates automatically on completion, no separate choice to
+              make. Always available whenever the handler is provided —
+              handleRedoGoals (App.jsx) has no actual dependency on intake
+              having been completed, so this isn't gated on that. */}
           {typeof onRedoGoals === 'function' && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
               {redoConfirming ? (
@@ -912,7 +966,7 @@ function AboutScreen({
                     Redo your goals & questionnaire?
                   </div>
                   <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-                    You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — you'll pick AI or basic again at the end, same as before.
+                    You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — your plan regenerates automatically at the end.
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => setRedoConfirming(false)} style={{
@@ -1279,6 +1333,8 @@ function AboutScreen({
           </div>
         </Section>
 
+        <FeedbackSection theme={theme} userId={userId} />
+
         {/* App info + sign out */}
         <div style={{
           textAlign: 'center', padding: '8px 0 16px',
@@ -1304,4 +1360,4 @@ function AboutScreen({
 }
 
 
-export { FieldRow, Section, AboutScreen };
+export { FieldRow, Section, PlanOverviewSection, AboutScreen };

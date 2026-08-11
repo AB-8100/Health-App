@@ -65,7 +65,9 @@ src/
 │   ├── eventPlan.js              Pure date helpers for the "event training plan" feature (UTC-anchored)
 │   ├── sessionDisplay.js         emoji/label/color lookup by session type, shared across screens
 │   ├── formaGoals.js             Static demo goal data (legacy dashboard concept, largely superseded by Goals/Intake onboarding)
-│   └── exerciseDbMap.js          Maps internal exercise ids → wger.de exercise DB ids (for images/lookups)
+│   ├── exerciseDbMap.js          Maps internal exercise ids → wger.de exercise DB ids (for images/lookups)
+│   ├── sessionLibraries.js       Static run/swim/bike session-content tables for utils/planEngine.js
+│   └── planGlossary.js           Static glossary dictionary for engine-generated plans
 ├── utils/
 │   ├── storage.js                localStorage cache + debounced save orchestration (scheduleSaveAll)
 │   ├── supabase.js               Supabase client + full load/save mapping for every table
@@ -73,16 +75,16 @@ src/
 │   ├── overtrain.js               Training-load conflict checker (uses ref_activities table)
 │   ├── trainingPlanImport.js      Hand-rolled .xlsx parser (JSZip + DOMParser) for uploaded event plans
 │   ├── eventDaySessions.js        Resolves which sessions apply to a date (override vs. uploaded plan)
-│   └── sessionCompletion.js       Matches completed sessions to scheduled ones for a given day
+│   ├── sessionCompletion.js       Matches completed sessions to scheduled ones for a given day
+│   └── planEngine.js              Deterministic training-plan generator — see §7.4
 ├── components/
 │   ├── SharedUI.jsx               AnimatedNumber, StackedRings, PulseDot, BottomNav, DraftPlanBanner
 │   └── tweaks/TweaksPanel.jsx     Dev-only floating panel (theme toggle, screen jump, reset data)
 └── screens/
     ├── LoginScreen.jsx            Supabase email/password sign-in + sign-up
     ├── ProfileSetupScreen.jsx     Onboarding Stage 1 — name/DOB/height/weight, unit toggle
-    ├── GoalsSetupScreen.jsx       Onboarding Stage 2 — goal picking, ranking, per-goal config, schedule, facilities, sports
-    ├── DeepQuestionnaireScreen.jsx Onboarding Stage 3 (optional/skippable) — fitness baselines, availability, injury history
-    ├── OnboardingScreen.jsx        Legacy single-screen onboarding wizard (still reachable via TweaksPanel, mostly superseded by the 3-stage flow)
+    ├── GoalsSetupScreen.jsx       Onboarding Stage 2 — the merged goals+intake flow (goal picking, ranking, per-goal config, schedule/day-picker, facilities, baselines, availability, mindset, injury) — see §6
+    ├── OnboardingScreen.jsx        Legacy single-screen onboarding wizard (still reachable via TweaksPanel, mostly superseded by the flow above)
     ├── HomeScreen.jsx              `RefinedHome` — dashboard: rotating focus card, activity rings, sparkline (largely still demo data, see §9)
     ├── WeeklyOverviewScreen.jsx    7-day planner: gym + event-plan + user activities merged per day, drag-to-reorder, phase bar
     ├── SessionDetailScreen.jsx     Drill-down for a single day from Weekly Overview: start/log/edit/delete sessions
@@ -147,38 +149,57 @@ Supabase Auth (email/password only in the UI — no OAuth wired up despite
 
 ---
 
-## 6. Onboarding — 3-stage flow
+## 6. Onboarding — 2-stage flow
 
 This is the main "new user" path and it's more elaborate than the README's
-description of a single wizard:
+description of a single wizard. As of
+`features/specs/deterministic-endurance-plan-generator.md` §A, the former
+3-stage flow (Profile → Goals → deep Intake) is 2 stages — the old Stage 2
+(goals) and Stage 3 (deep intake/questionnaire) merged into one continuous
+screen, since AI generation (the reason Stage 3 was a separately-skippable
+"refine your plan, five minutes" step) no longer gates plan generation.
 
 1. **Stage 1 — `ProfileSetupScreen`**: name, DOB (age derived), height/weight
    with metric↔imperial toggle. On complete → Stage 2.
-2. **Stage 2 — `GoalsSetupScreen`**: multi-select goal types (`event_race`,
+2. **Stage 2 — `GoalsSetupScreen`** (also `onboardingStage: 'goals'`): one
+   continuous flow — multi-select goal types (`event_race`,
    `strength_programme`, `sport_activity`, `general_fitness`, `micro_target`),
    ranks them (Primary/Secondary/Supporting) if >1 selected, per-goal-type
-   config screens, weekly training-day picker, gym/pool facility access,
-   regular sports list. Saved to Supabase `user_goals` table. On complete →
-   Stage 3.
-3. **Stage 3 — `DeepQuestionnaireScreen`** (skippable, "draft" status if
-   skipped): conditionally shows run/swim/bike baseline steps depending on
-   goal types (e.g. triathlon-flavoured `event_race` shows all three),
-   availability (holidays, one-off events, standing commitments), injury
-   history. Saved to Supabase `user_intake` table.
+   config screens, a per-discipline day picker for `event_race` goals
+   (swim/bike/run — frequency is just the day count) or the plain weekly
+   training-day toggle for everything else, gym access, a merged standing-
+   commitments/regular-sports list (with a "counts toward training load"
+   toggle) — then straight into what used to be Stage 3: mandatory run/
+   swim/bike baseline questions (gated by goal type), discipline ranking
+   (triathlon), a **"Skip the rest for now" point**, then availability
+   (holidays, one-off events), day preferences, goals/mindset, injury
+   history, and a pace-confirm step if a target/cutoff time was given.
+   `goals`-shaped fields save to Supabase `user_goals`, intake-shaped fields
+   to `user_intake` — still two tables, one screen.
 
-After Stage 3, `handleIntakeComplete` computes an **auto-generated weekly
-activity schedule** from the goals payload (`generateActivitySchedule` /
-`getAutoSplitDays` in `App.jsx`): spreads chosen activities across the
+On completion, `handleGoalsSetupComplete` (`App.jsx`) always runs the
+deterministic plan engine (`utils/planEngine.js`) for an `event_race` goal
+whose race type it has rules for — instantly, no AI call, no wait state —
+and otherwise computes the **auto-generated weekly activity schedule** from
+the goals payload (`generateActivitySchedule` / `getAutoSplitDays`) the same
+way it always did for non-race goals: spreads chosen activities across the
 selected training days, decides `plan.splitDays` (1–5) from however many of
-those days are gym days, and non-gym days become `activities` entries.
+those days are gym days, non-gym days become `activities` entries. The two
+are mutually exclusive per date — the generic scheduler skips an
+`event_race` goal's own disciplines whenever a real plan was just generated
+for them, so neither layers duplicate sessions over the other.
 
-Stage 3 can also be **re-entered later** from within the app (About screen or
-a banner) via `handleStartQuestionnaire` — in that case completing it patches
-the existing plan/activities in place rather than running full onboarding.
+The merged flow can also be **re-entered later** from within the app (About
+screen or a banner) via `handleRedoGoals` — in that case completing it
+patches the existing plan/activities in place rather than running full
+onboarding, and never overwrites an already-active event plan (uploaded or
+previously generated) without an explicit "discard" step, which this merged
+flow doesn't currently offer — redoing onboarding with an active plan just
+leaves that plan untouched.
 
 There is also a **legacy single-screen `OnboardingScreen.jsx`** still present
-and reachable via the dev TweaksPanel, but the 3-stage flow above is what new
-users actually go through.
+and reachable via the dev TweaksPanel, but the flow above is what new users
+actually go through.
 
 ---
 
@@ -226,19 +247,50 @@ pending ones. Drag-and-drop (`@hello-pangea/dnd`) lets a user reorder which
 split day lands on which weekday. A `PhaseBar` shows Foundation/Build/
 Peak/Taper phase context when an event plan is active.
 
-### 7.4 Event training plans (`eventPlan.js`, `trainingPlanImport.js`)
-A user can upload a **`.xlsx` training plan** (e.g. an 18-week triathlon plan)
-from the About screen. It's parsed **without a full XLSX library** — a
-hand-rolled reader pulls just `workbook.xml`, `sharedStrings.xml`, and the
-matching worksheet XML out of the zip via JSZip + `DOMParser`, looking for a
-header row containing `date`, `wk`, `phase`, `discipline` columns. Produces
-`{ meta, phases, sessions }`, stored in Supabase `training_plans`
-(`training_type='event'`). Replacing a plan wipes gym split, activities, and
-all per-day overrides so the Weekly Overview shows *only* the freshly
-uploaded plan (`handleUploadTrainingPlan` in `App.jsx`). Plan dates are
-UTC-midnight-anchored throughout so a plan's "Monday" doesn't shift for users
-in different timezones; "today", by contrast, is computed from the local
-clock.
+### 7.4 Event training plans (`eventPlan.js`, `trainingPlanImport.js`, `utils/planEngine.js`)
+Three ways an event training plan gets built, all producing the same
+`{ meta, phases, sessions }` shape stored in Supabase `training_plans`
+(`training_type='event'`):
+
+1. **Deterministic engine (`utils/planEngine.js`)** — the shipped path for a
+   new/redone `event_race` goal with an engine-supported race type (10K,
+   Half Marathon, Marathon, or one of the 4 triathlon distances). Pure
+   data-table + arithmetic rules engine (taper lengths, phase splits,
+   peak-volume targets, discipline-frequency ramp, brick/holiday/one-off-event
+   handling, computed 10%-rule/80-20-rule plan-health checks) — no API call,
+   generates instantly on onboarding completion. `meta` additionally carries
+   `planMix` (a plain-language session-methodology summary) and `planHealth`
+   (`{ tenPercentRule, eightyTwentyRule, summary }`), surfaced in
+   `AboutScreen.jsx`'s "Plan overview" section and, per-session, as a
+   glossary info icon in `SessionDetailScreen.jsx` (matched against
+   `meta.glossary`, `data/planGlossary.js`'s full dictionary filtered to
+   terms the plan actually uses).
+2. **Uploaded `.xlsx`** — a user can upload a training plan (e.g. an
+   18-week triathlon plan) from the About screen. Parsed **without a full
+   XLSX library** — a hand-rolled reader pulls just `workbook.xml`,
+   `sharedStrings.xml`, and the matching worksheet XML out of the zip via
+   JSZip + `DOMParser`, looking for a header row containing `date`, `wk`,
+   `phase`, `discipline` columns.
+3. **AI-generated (`utils/planPrompt.js` → `generate-training-plan` edge
+   function → `utils/planGeneration.js`)** — the original Claude-based
+   generator. No longer reachable from the shipped app (no onboarding step,
+   no AboutScreen button) as of the deterministic engine replacing it; the
+   code stays in the codebase only to run a one-off comparison script
+   against the engine's output during validation, not because anything
+   calls it anymore. Actual removal (this code, the edge function, the
+   `ANTHROPIC_API_KEY` secret) is an explicit follow-up once that validation
+   is done.
+
+Replacing a plan wipes gym split, activities, and all per-day overrides so
+the Weekly Overview shows *only* the freshly applied plan. An `.xlsx` upload
+goes through `handleUploadTrainingPlan` (`App.jsx`), which only applies from
+the week *after* the one the upload happens in, preserving already-logged
+history for past/current weeks — a freshly engine-generated plan from
+onboarding applies directly instead (no prior history to preserve there),
+handled inline in `handleGoalsSetupComplete`. Plan dates are
+UTC-midnight-anchored throughout so a plan's "Monday" doesn't shift for
+users in different timezones; "today", by contrast, is computed from the
+local clock.
 
 ### 7.5 Food tracking (`FoodScreen.jsx`)
 Weekly view, 4 meal buckets (breakfast/lunch/dinner/snacks), a built-in
@@ -282,8 +334,9 @@ enabled, one policy per CRUD op scoped to `auth.uid() = user_id`.
 | `custom_foods` | name, calories, protein_g, carbs_g, fat_g, sugar_g, extra (jsonb) | fully replaced on every save |
 | `day_activities` | day_idx, items (jsonb) | `unique(user_id, day_idx)`, one row per weekday |
 | `training_plans` | training_type ('event'), overrides (jsonb), done (jsonb), meta/phases/sessions (jsonb, added later), preselected_queues (jsonb, added later) | `unique(user_id, training_type)` — designed to support future non-event training types |
-| `user_goals` | goals (jsonb array), primary_goal_type, training_days_per_week, unavailable_days (text[]), gym_access, pool_access, pool_days (text[]), regular_sports (jsonb) | Stage 2 onboarding output |
-| `user_intake` | status ('draft'\|'complete'), run/swim/bike_baseline (jsonb), availability (jsonb), injury (jsonb), completed_at | Stage 3 onboarding output |
+| `user_goals` | goals (jsonb array — event_race config includes start date, per-discipline cutoff times), primary_goal_type, training_days_per_week, unavailable_days (text[]), gym_access, discipline_days (jsonb), standing_commitments (jsonb), regular_sports (jsonb, legacy — kept only for read-time fallback, see `utils/supabase.js`) | merged onboarding flow output (§6) — `pool_access`/`pool_days` were dropped, derived from `discipline_days.swim` instead |
+| `user_intake` | status ('draft'\|'complete'), run/swim/bike_baseline (jsonb), availability (jsonb), injury (jsonb), completed_at | merged onboarding flow output (§6) |
+| `user_feedback` | message (text), created_at | insert-only from the client (no select/update/delete policy) — the in-app feedback entry point, `AboutScreen.jsx`'s "Feedback" section |
 | `ref_activities` / `ref_exercises` / `ref_muscle_groups` | public read-only reference/seed data | no `user_id` column |
 
 A Postgres RPC `get_user_local_date(p_user_id)` returns "today" as a
@@ -347,11 +400,11 @@ Redirect URL allow-list and Google Cloud Console's Authorized JS origins.
   the uuid column); the DB assigns its own id and the client's own id lives
   in a `raw`/spread field instead.
 - **Onboarding routing is stage-based, not screen-based** — `onboardingStage`
-  (`'profile' | 'goals' | 'intake' | null`) takes priority over `screen` in
-  `renderScreen`. Re-entering Stage 3 later in the app (`handleStartQuestionnaire`)
-  reconstructs a `goalsPayload` from the current `profile` rather than reading
-  back the original Stage 2 payload — watch for drift if you add new
-  goal-dependent fields to Stage 3.
+  (`'profile' | 'goals' | null`) takes priority over `screen` in
+  `renderScreen`. Re-entering the merged flow later in the app
+  (`handleRedoGoals`) pre-fills from the persisted `goalsPayload`/
+  `intakePayload` state (reloaded from Supabase on login) — watch for drift
+  if you add a new goal-dependent field that isn't threaded through both.
 - **Event-plan dates are UTC-midnight-anchored; "today" is local** — mixing
   these up reintroduces off-by-one-day bugs across timezones (see comments
   in `data/eventPlan.js` and `WeeklyOverviewScreen.jsx`'s `toDateKey`).
@@ -380,7 +433,8 @@ Redirect URL allow-list and Google Cloud Console's Authorized JS origins.
 | I want to... | Look at |
 |---|---|
 | Change what happens on sign-up/sign-in | `App.jsx` (`bootstrapUser`, `handleLogin`, `handleSignUp`), `screens/LoginScreen.jsx` |
-| Add a new onboarding question | `screens/GoalsSetupScreen.jsx` or `screens/DeepQuestionnaireScreen.jsx` + matching Supabase migration + `utils/supabase.js` mappers |
+| Add a new onboarding question | `screens/GoalsSetupScreen.jsx` (the whole merged flow lives here now) + matching Supabase migration + `utils/supabase.js` mappers |
+| Change a training-plan taper/phase/volume rule | `utils/planEngine.js` (tables + pure functions), `data/sessionLibraries.js` (session content), `data/planGlossary.js` (terms) |
 | Change a workout split template or exercise | `screens/GymPlanScreens.jsx` (`EX_LIB`, `SPLITS`) |
 | Change how a live workout is logged | `screens/GymSessionScreen.jsx` |
 | Change what shows on the weekly planner | `screens/WeeklyOverviewScreen.jsx` (`buildWeekData`), `utils/eventDaySessions.js`, `utils/sessionCompletion.js` |

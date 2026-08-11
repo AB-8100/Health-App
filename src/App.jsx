@@ -2,7 +2,7 @@ import React from 'react';
 
 import { loadFromCache, saveToCache, scheduleSaveAll } from './utils/storage';
 import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, loadUserGoals, loadUserIntake } from './utils/supabase';
-import { generateTrainingPlanWithAI } from './utils/planGeneration';
+import { buildTrainingPlan, isEngineSupportedRaceType } from './utils/planEngine';
 import { isDuplicateSignupResponse } from './utils/authErrors';
 import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
 import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from './utils/scheduleReconciliation';
@@ -22,7 +22,6 @@ import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getNextWeekS
 import { shiftActivityWeekday, shiftEventPlanWeekday } from './utils/sessionPositionShift';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
-import { DeepQuestionnaireScreen } from './screens/DeepQuestionnaireScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
@@ -53,6 +52,20 @@ const DEFAULT_EVENT_PLAN = { meta: {}, phases: [], sessions: {} };
 // generateActivitySchedule / getAutoSplitDays now live in
 // utils/scheduleGeneration.js (imported above) so their pure logic is
 // directly testable.
+
+// Drops every generic-scheduler-authored entry (source: 'generated') from an
+// `activities` map, keeping manually-added ones (source: 'manual') intact —
+// used when a deterministic-engine plan just got (re-)generated, so a stale
+// generated activity from an earlier pass doesn't keep showing up duplicated
+// alongside the plan's own sessions on the same day.
+function stripGeneratedActivities(acts) {
+  const cleaned = {};
+  Object.entries(acts || {}).forEach(([dayIdx, items]) => {
+    const kept = (items || []).filter(item => item.source !== 'generated');
+    if (kept.length) cleaned[dayIdx] = kept;
+  });
+  return cleaned;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error boundary — catches render crashes so the app never goes fully blank
@@ -134,19 +147,18 @@ function App() {
   const [screen, setScreen]               = React.useState('gym-hub');
   const [profile, setProfileRaw]          = React.useState(EMPTY_PROFILE);
   const [onboardingActive, setOnboarding] = React.useState(false);
-  // 'profile' = Stage 1 | 'goals' = Stage 2 | 'intake' = Stage 3 | null = main app
+  // 'profile' = Stage 1 | 'goals' = the single merged goals+intake flow | null = main app
+  // (see features/specs/deterministic-endurance-plan-generator.md §A — former
+  // Stage 3 'intake' was merged into 'goals', so this only ever has 2 non-null values now)
   const [onboardingStage, setOnboardingStage] = React.useState(null);
-  // Holds the Stage 2 payload while Stage 3 (intake) is shown
-  const [pendingGoalsPayload, setPendingGoalsPayload] = React.useState(null);
-  // Persisted Stage 2 / Stage 3 answers, reloaded from Supabase — kept around
-  // (independent of the ephemeral pendingGoalsPayload above) so the AI plan
-  // generator can be re-run any time from About Me, not just right after
-  // finishing onboarding.
+  // Persisted goals/intake answers, reloaded from Supabase — kept around so
+  // the merged flow can be re-entered ("redo my goals") pre-filled with
+  // whatever's already saved, not just right after finishing onboarding.
   const [goalsPayload, setGoalsPayload] = React.useState(null);
   const [intakePayload, setIntakePayload] = React.useState(null);
-  // Whether Stage 3 was opened from the main app (not initial onboarding)
+  // Whether the merged flow was opened from within the main app (not initial onboarding)
   const screenBeforeIntakeRef = React.useRef(null);
-  // True when the user has a saved intake draft (started but not finished)
+  // True when the user has a saved intake draft (started but skipped the rest)
   const [intakeDraft, setIntakeDraft] = React.useState(false);
   const [plan, setPlanRaw]                = React.useState(DEFAULT_PLAN);
   const [userSettings, setSettingsRaw]    = React.useState(DEFAULT_SETTINGS);
@@ -483,83 +495,114 @@ function App() {
     setOnboardingStage('goals');
   };
 
-  // Called when Stage 2 (GoalsSetup) is complete — routes to Stage 3 (intake)
-  const handleGoalsSetupComplete = (goalsSetupPayload) => {
-    // Persist goals to Supabase
-    if (currentUserIdRef.current) {
-      saveUserGoals(currentUserIdRef.current, goalsSetupPayload)
-        .catch(e => console.warn('Forma: goals save failed', e));
-    }
-    // Hold onto the payload so Stage 3 can read goal types for conditional sections
-    setPendingGoalsPayload(goalsSetupPayload);
-    setGoalsPayload(goalsSetupPayload);
-    setOnboardingStage('intake');
-  };
+  // Called when the single merged goals+intake flow (GoalsSetupScreen)
+  // completes or is skipped past the skip point — combines what used to be
+  // separate Stage 2 and Stage 3 completion handlers into one, since
+  // there's no longer a stage boundary between them (see
+  // features/specs/deterministic-endurance-plan-generator.md §A).
+  const handleGoalsSetupComplete = async ({ goalsPayload: goalsSetupPayload, intakePayload: newIntake, goalConfigPatch, skipped }) => {
+    // A confirmed (possibly user-edited) target pace/split from the
+    // pace_confirm step belongs on the event_race goal itself — both the
+    // rule-based scheduler and the plan engine read it from there.
+    let gp = goalConfigPatch
+      ? {
+          ...goalsSetupPayload,
+          goals: (goalsSetupPayload.goals || []).map(g =>
+            g.type === 'event_race' ? { ...g, config: { ...g.config, ...goalConfigPatch } } : g
+          ),
+        }
+      : goalsSetupPayload;
 
-  // Re-enters Stage 2 (Goals Setup) from within the app, pre-filled with the
-  // user's saved goals — used by "Redo my goals & questionnaire" in About Me.
-  // Flows into Stage 3 as normal afterward (handleGoalsSetupComplete above),
-  // then Stage 3's own completion (handleIntakeComplete below) applies the
-  // regenerated schedule — nothing changes until that whole redo completes.
-  const handleRedoGoals = (fromScreen) => {
-    screenBeforeIntakeRef.current = fromScreen || screen;
-    setOnboarding(false);
-    setOnboardingStage('goals');
-  };
-
-  // Called when the user exits the goals redo at its first step without completing
-  const handleExitGoalsRedo = () => {
-    setOnboardingStage(null);
-    const returnTo = screenBeforeIntakeRef.current || 'weekly';
-    screenBeforeIntakeRef.current = null;
-    setScreen(returnTo);
-  };
-
-  // Called when Stage 3 (DeepQuestionnaire) completes or is skipped.
-  // `discardEventPlan` is an explicit, user-confirmed opt-in (surfaced by
-  // DeepQuestionnaireScreen when an active uploaded/generated event plan
-  // already exists) to replace that plan with the freshly generated
-  // split/activity schedule below. Without it, an existing active event plan
-  // is left completely untouched — see `hasActiveEventPlan` below.
-  const handleIntakeComplete = (intakePayload, skipped, goalConfigPatch, discardEventPlan = false) => {
-    // Snapshot this *before* any state below is computed from the new
-    // answers — otherwise a redo/re-entry that doesn't reselect the race
-    // goal would silently flip `hasEventTraining` off and orphan the still-
-    // loaded plan data while also layering a new gym split on top of it in
-    // the Weekly Overview (the exact "onboarding overwrote my race plan" bug).
+    // Never silently overwrite an active plan that came from an upload or
+    // the (now-unreachable) AI path — those represent real external
+    // content, not something onboarding itself produced, so redoing
+    // onboarding leaves them untouched without an explicit opt-in the
+    // merged flow doesn't currently offer. An *engine*-generated plan is
+    // different: redoing onboarding is now the only way to regenerate one
+    // (there's no separate "regenerate" button any more), generation is
+    // instant/free, and the whole point of a redo is usually to reflect
+    // changed answers (new day picks, a different race type, ...) in a
+    // fresh plan — so treat it as always safe to replace, same as
+    // `discardEventPlan: true` used to require an explicit checkbox for.
+    //
+    // Read the marker from `eventPlan.meta`, not the top-level
+    // `eventPlan.sourceFileName` field: utils/supabase.js's training_plans
+    // row only has meta/phases/sessions jsonb columns, so a top-level field
+    // is silently dropped every time the plan round-trips through a save +
+    // reload (loadUserData rebuilds eventPlan from exactly those three
+    // columns). That meant this check only ever passed in the same
+    // in-memory session a plan was first generated in — any redo after a
+    // page reload (i.e. almost every real redo) saw `sourceFileName`
+    // already gone, always evaluated to false, and silently fell back to
+    // "block" forever, so nothing the athlete changed on a redo ever took
+    // effect. planEngine.js now duplicates the marker inside `meta` so it
+    // actually survives the round trip.
+    //
+    // `|| !!eventPlan?.meta?.planHealth` is a one-time bridge for anyone
+    // whose currently-stored plan was generated before this fix shipped —
+    // its `meta.sourceFileName` was never written, so without this it would
+    // stay permanently stuck blocking every future redo too, since nothing
+    // else can add the marker to a plan already in the database.
+    // `planHealth` was always in `meta` (never dropped) and only the engine
+    // ever sets it, so it's a reliable signal on old data. Safe to remove
+    // once every engine-generated plan in the database was created after
+    // this fix (i.e. everyone has redone onboarding at least once).
+    const existingPlanIsEngineGenerated = eventPlan?.meta?.sourceFileName === 'Generated by Forma' || !!eventPlan?.meta?.planHealth;
     const blockScheduleApply = shouldBlockGeneratedSchedule({
       hasEventTraining: profile.hasEventTraining,
       eventPlanSessions: eventPlan.sessions,
-      discardEventPlan,
+      discardEventPlan: existingPlanIsEngineGenerated,
     });
 
-    let gp = pendingGoalsPayload || {};
-    // A confirmed (possibly user-edited) target pace/split from the
-    // pace_confirm step belongs on the event_race goal itself — both the
-    // rule-based scheduler and the AI prompt read it from there — so merge
-    // it in before anything below reads `gp.goals`.
-    if (goalConfigPatch) {
-      gp = {
-        ...gp,
-        goals: (gp.goals || []).map(g =>
-          g.type === 'event_race' ? { ...g, config: { ...g.config, ...goalConfigPatch } } : g
-        ),
-      };
-    }
     const primaryGoalType = gp.goals?.[0]?.type ?? '';
     const hasEvent = gp.goals?.some(g => g.type === 'event_race');
     const hasTrainingActivities =
       gp.goals?.some(g => g.type === 'general_fitness' && (g.config?.activities || []).length > 0) ||
       gp.goals?.some(g => g.type === 'sport_activity' && g.config?.sportType) ||
-      (gp.regularSports || []).length > 0;
+      (gp.standingCommitments || []).length > 0;
 
     const gymAccess = gp.gymAccess ?? profile.hasGym;
+
+    // Deterministic plan generation (§B/§D) — runs instantly, no AI call, no
+    // button. Only for an event_race goal whose race type the engine has
+    // rules for (isEngineSupportedRaceType), and never over an active plan
+    // blockScheduleApply is protecting. Computed *before* the generic
+    // gym-split/activity schedule below so that schedule can skip the
+    // event_race goal's own disciplines when a real plan is about to cover
+    // them — otherwise both would inject sessions on the same days (the
+    // generic scheduler has no awareness of the plan engine's own
+    // day-by-day output).
+    const eventGoalCfg = gp.goals?.find(g => g.type === 'event_race')?.config;
+    let generatedPlan = null;
+    if (!blockScheduleApply && eventGoalCfg?.raceType && eventGoalCfg?.raceDate && isEngineSupportedRaceType(eventGoalCfg.raceType)) {
+      try {
+        generatedPlan = buildTrainingPlan({
+          raceType: eventGoalCfg.raceType,
+          startDate: eventGoalCfg.startDate,
+          raceDate: eventGoalCfg.raceDate,
+          fitnessLevel: eventGoalCfg.fitnessLevel,
+          disciplineDays: gp.disciplineDays,
+          disciplineRanking: newIntake.disciplineRanking,
+          baselines: { run: newIntake.runBaseline, swim: newIntake.swimBaseline, bike: newIntake.bikeBaseline },
+          preferences: newIntake.preferences,
+          gymAccess,
+          holidays: newIntake.availability?.holidays,
+          oneOffEvents: newIntake.availability?.oneOffEvents,
+          cutoffTimes: eventGoalCfg.cutoffTimes,
+          targetPaces: newIntake.targetPaces,
+          injury: newIntake.injury,
+        });
+      } catch (e) {
+        console.warn('Forma: plan engine could not generate a plan from these answers', e);
+      }
+    }
+    // A freshly generated plan supersedes the generic scheduler exactly like
+    // an already-active one blocks it — same reasoning shouldBlockGeneratedSchedule
+    // uses, just for a plan that's about to exist rather than one that already does.
+    const suppressGenericSchedule = blockScheduleApply || !!generatedPlan;
+
     const { schedule: initialActivities, gymDayCount, gymDayIdxs } = generateActivitySchedule({ ...gp, gymAccess });
     const autoSplitDays = getAutoSplitDays(gymDayCount);
-    // Places the auto split's days on the weekdays the user actually chose
-    // (gymDayIdxs) instead of leaving scheduleOverride unset, which made the
-    // Weekly Overview and gym screens fall back to the split template's own
-    // hardcoded default schedule regardless of the selected training days.
     const autoSplitDayIds = autoSplitDays ? (SPLITS[autoSplitDays]?.days || []).map(d => d.id) : [];
     const autoScheduleOverride = buildGymScheduleOverride(gymDayIdxs, autoSplitDayIds);
 
@@ -567,97 +610,125 @@ function App() {
       ...profile,
       goal: primaryGoalType,
       hasGym: gymAccess,
-      // Keep the existing plan in charge unless the user explicitly opted to
-      // discard it — otherwise freshly submitted goals that don't reselect
-      // event_race would flip this off and orphan the still-loaded plan.
       hasEventTraining: blockScheduleApply ? true : hasEvent,
       hasTrainingActivities: !!hasTrainingActivities,
-      splitDays: blockScheduleApply ? profile.splitDays : autoSplitDays,
+      splitDays: suppressGenericSchedule ? profile.splitDays : autoSplitDays,
       intakeCompleted: !skipped,
     };
 
-    // Persist intake, and re-save goals if the pace_confirm step added
-    // target paces after Stage 2's own save already ran, to Supabase
-    if (currentUserIdRef.current) {
-      saveUserIntake(currentUserIdRef.current, intakePayload)
-        .catch(e => console.warn('Forma: intake save failed', e));
-      if (goalConfigPatch) {
-        saveUserGoals(currentUserIdRef.current, gp)
-          .catch(e => console.warn('Forma: goals save failed', e));
-      }
-    }
-    setIntakePayload(intakePayload);
+    setIntakePayload(newIntake);
     setGoalsPayload(gp);
 
-    setPendingGoalsPayload(null);
-
-    // Explicit, confirmed replace: fully clear the old plan so nothing from
-    // it lingers in the Weekly Overview alongside the new split/activities.
-    if (discardEventPlan) {
-      setEventPlan(DEFAULT_EVENT_PLAN);
-      setEventOverrides({});
-      setPreselectedQueues({});
-      setPlanSessionsDone({});
-      setSequencingDecisions({});
+    // Only replace the plan from its own chosen start date onward —
+    // preserves whatever was scheduled/logged for any earlier date
+    // (including past dates a prior engine-generated plan already
+    // covered), same reasoning handleUploadTrainingPlan uses for an .xlsx
+    // upload, just anchored to the athlete's own chosen start date here
+    // rather than an automatic "next week" cutoff, since they explicitly
+    // set/confirm it every time they go through this flow.
+    // completedSessions (the actual logged workout history) is a separate,
+    // untouched piece of state either way — this only affects which
+    // *scheduled* sessions and per-day plan state (overrides, preselected
+    // queues, done-flags, sequencing decisions) survive.
+    let eventPlanOverrides = {};
+    if (generatedPlan) {
+      const cutoffKey = generatedPlan.meta?.startDate || getTodayDateKey();
+      eventPlanOverrides = {
+        eventPlan: mergeEventPlanFromCutoff(eventPlan, generatedPlan, cutoffKey),
+        eventOverrides: pickBeforeCutoff(eventOverrides, cutoffKey),
+        preselectedQueues: pickBeforeCutoff(preselectedQueues, cutoffKey),
+        planSessionsDone: pickBeforeCutoff(planSessionsDone, cutoffKey),
+        sequencingDecisions: pickBeforeCutoff(sequencingDecisions, cutoffKey),
+      };
     }
 
-    // If opened from the main app (not initial onboarding), apply the newly
-    // computed split/activity schedule (same as completeOnboarding does) and
-    // return — previously this only saved `profile`, so the split/activities
-    // it just generated were silently dropped and the weekly plan kept
-    // showing rest days after navigating away and back. Skipped entirely
-    // when blockScheduleApply is true, so an active event plan's days stay
-    // exactly as they were.
-    if (screenBeforeIntakeRef.current !== null) {
-      const returnTo = screenBeforeIntakeRef.current;
-      screenBeforeIntakeRef.current = null;
-      const nextPlan = blockScheduleApply ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride };
-      const nextActivities = blockScheduleApply ? activities : { ...activities, ...initialActivities };
-      setProfileRaw(updatedProfile);
-      setPlanRaw(nextPlan);
-      setActivities(nextActivities);
-      setOnboardingStage(null);
-      setIntakeDraft(skipped);
-      const overrides = { profile: updatedProfile, plan: nextPlan, activities: nextActivities };
-      if (discardEventPlan) {
-        Object.assign(overrides, {
-          eventPlan: DEFAULT_EVENT_PLAN, eventOverrides: {}, preselectedQueues: {},
-          planSessionsDone: {}, sequencingDecisions: {},
-        });
-      }
-      setTimeout(() => scheduleSave(overrides), 0);
-      setScreen(returnTo);
-    } else {
-      completeOnboarding(updatedProfile, blockScheduleApply ? {} : initialActivities, blockScheduleApply ? null : autoScheduleOverride);
-    }
-  };
+    // If opened from within the main app (redo/re-entry), return there once
+    // done. Otherwise this is first-time onboarding, which always lands on
+    // 'weekly' (same routing completeOnboarding uses — not calling that
+    // shared function directly here since it does its own independent,
+    // fire-and-forget snapshot save; this handler needs everything folded
+    // into the single reliable save below instead).
+    const returnTo = screenBeforeIntakeRef.current;
+    screenBeforeIntakeRef.current = null;
 
-  // Opens Stage 3 from within the main app (banner tap on weekly or profile screens)
-  const handleStartQuestionnaire = (fromScreen) => {
-    screenBeforeIntakeRef.current = fromScreen || screen;
-    // Build a minimal goalsPayload from the current profile so intake steps are
-    // correct. `profile.goal` is the older single-select field and can never
-    // be 'event_race', so an existing uploaded event plan must be carried
-    // forward explicitly here — otherwise handleIntakeComplete recomputes
-    // hasEventTraining from this reconstructed payload and wipes it out.
-    const goalsFromProfile = profile.goal
-      ? [{ type: profile.goal, config: {} }]
-      : [];
-    if (profile.hasEventTraining) goalsFromProfile.push({ type: 'event_race', config: {} });
-    // Layer in richer scheduling/facility fields from the persisted goalsPayload
-    // (if loaded) so the AI plan generator has more to work with — but keep
-    // `goals`/`gymAccess` computed fresh from `profile` above, since those are
-    // the fields most likely to have changed since the saved payload.
-    setPendingGoalsPayload({ ...(goalsPayload || {}), goals: goalsFromProfile, gymAccess: profile.hasGym });
+    // Suppressing the generic scheduler only stops it adding *new* entries —
+    // a redo that generates a real plan also needs to clear out any stale
+    // `source: 'generated'` activities a previous pass already wrote (e.g.
+    // from before a plan generated successfully), or they linger forever
+    // showing alongside the plan's own sessions on the same days.
+    // Manually-added activities (`source: 'manual'`) are left untouched.
+    const nextActivities = suppressGenericSchedule
+      ? (generatedPlan ? stripGeneratedActivities(activities) : (returnTo !== null ? activities : {}))
+      : (returnTo !== null ? { ...activities, ...initialActivities } : initialActivities);
+    const nextPlan = returnTo !== null
+      ? (suppressGenericSchedule ? plan : { ...plan, splitDays: autoSplitDays, scheduleOverride: autoScheduleOverride })
+      : { splitDays: updatedProfile.splitDays ?? null, todayIdx: 0, overrides: {}, ...(suppressGenericSchedule ? {} : autoScheduleOverride ? { scheduleOverride: autoScheduleOverride } : {}) };
+
+    setProfileRaw(updatedProfile);
+    setPlanRaw(nextPlan);
+    setActivities(nextActivities);
+    if (Object.keys(eventPlanOverrides).length) {
+      setEventPlan(eventPlanOverrides.eventPlan);
+      setEventOverrides(eventPlanOverrides.eventOverrides);
+      setPreselectedQueues(eventPlanOverrides.preselectedQueues);
+      setPlanSessionsDone(eventPlanOverrides.planSessionsDone);
+      setSequencingDecisions(eventPlanOverrides.sequencingDecisions);
+    }
     setOnboarding(false);
-    setOnboardingStage('intake');
+    setOnboardingStage(null);
+    setIntakeDraft(skipped);
+
+    // One reliable save for everything this step just changed: an
+    // immediate (non-debounced) local-cache write plus an *awaited*
+    // Supabase write for goals/intake/the full snapshot together —
+    // previously these were several independent fire-and-forget calls
+    // (saveUserGoals/saveUserIntake/a debounced scheduleSave), which left a
+    // real window where a reload shortly after completing this flow could
+    // land before any of them finished and show stale data — looking
+    // exactly like a redo "didn't take" even though it had.
+    const snapshot = buildSnapshot({ profile: updatedProfile, plan: nextPlan, activities: nextActivities, ...eventPlanOverrides });
+    saveToCache(snapshot, currentUserIdRef.current);
+    if (sheetsConnectedRef.current) saveToSheets(snapshot);
+    if (currentUserIdRef.current) {
+      try {
+        await Promise.all([
+          saveUserGoals(currentUserIdRef.current, gp),
+          saveUserIntake(currentUserIdRef.current, newIntake),
+          saveUserData(currentUserIdRef.current, snapshot),
+        ]);
+      } catch (e) {
+        console.warn('Forma: onboarding save failed', e);
+      }
+    }
+
+    // Always land on Weekly Overview after actually *completing* the flow —
+    // regardless of where it was opened from (first-time onboarding, About
+    // Me's "Set up training plan"/"Redo my goals", or the Weekly Overview
+    // prompt itself). `returnTo` still matters above for deciding how to
+    // merge activities/plan state (a redo vs. genuinely first-time), but
+    // finishing should always show the athlete their (possibly freshly
+    // regenerated) week, not bounce them back to wherever they started —
+    // that previously sent a completed redo from About Me back to About Me,
+    // so a freshly regenerated plan was never actually visible without an
+    // extra manual navigation. Exiting the flow early (onExit /
+    // handleExitGoalsRedo, below) still returns to the origin screen, since
+    // nothing was completed there.
+    setScreen('weekly');
   };
 
-  // Called when the user exits Stage 3 mid-flow (saves draft, returns to previous screen)
-  const handleExitQuestionnaire = () => {
+  // Re-enters the merged goals+intake flow from within the app, pre-filled
+  // with the user's saved answers — used by "Redo my goals & questionnaire"
+  // and the draft-plan banner in About Me. Nothing changes until the flow
+  // completes (handleGoalsSetupComplete above).
+  const handleRedoGoals = (fromScreen) => {
+    screenBeforeIntakeRef.current = fromScreen || screen;
+    setOnboarding(false);
+    setOnboardingStage('goals');
+  };
+
+  // Called when the user exits the redo/re-entry at its first step without completing
+  const handleExitGoalsRedo = () => {
     setOnboardingStage(null);
-    setIntakeDraft(true);
-    setPendingGoalsPayload(null);
     const returnTo = screenBeforeIntakeRef.current || 'weekly';
     screenBeforeIntakeRef.current = null;
     setScreen(returnTo);
@@ -967,10 +1038,10 @@ function App() {
 
   // NOTE: despite the name, this is reached by more than genuinely brand-new
   // signups — bootstrapUser routes any *existing* account with no `goal` set
-  // into Stage 2, and About Me's "Complete your profile / Set up training
-  // plan" button (onSetupTrainingPlan) opens Stage 2 the same direct way, and
-  // both land here via handleIntakeComplete once Stage 3 finishes. This used
-  // to hardcode completedSessions: [], foodLog: {}, and userSettings:
+  // into the merged goals+intake flow, and About Me's "Complete your profile
+  // / Set up training plan" button (onSetupTrainingPlan) opens it the same
+  // direct way, and both land here via handleGoalsSetupComplete once it
+  // finishes. This used to hardcode completedSessions: [], foodLog: {}, and userSettings:
   // DEFAULT_SETTINGS into the saved snapshot regardless — harmless for an
   // actually-new account (those are already empty) but a silent full wipe of
   // a returning user's logged history and food log (both delete-then-insert
@@ -1097,9 +1168,11 @@ function App() {
     }
   }, [screen, viewingDay, currentUser?.id]);
 
-  // Replaces the event training plan from an uploaded spreadsheet (or an
-  // AI-generated one, via generateAndApplyPlan below), applying it only from
-  // the week *after* the one the upload happens in. Both the current week
+  // Replaces the event training plan from an uploaded spreadsheet, applying
+  // it only from the week *after* the one the upload happens in — a freshly
+  // completed onboarding's own deterministic-engine plan is applied
+  // separately in handleGoalsSetupComplete, not through this function (no
+  // prior history to preserve there). Both the current week
   // (including its remaining days) and every past week keep exactly what
   // they showed before — their own event-plan sessions/overrides/completion
   // state — so a new import can neither retroactively blank out a week
@@ -1163,18 +1236,6 @@ function App() {
     return saveUserData(currentUserIdRef.current, buildSnapshot(overrides));
   };
 
-  // Generates a training plan via the Claude API (through the
-  // generate-training-plan edge function) from the athlete's saved goals +
-  // intake answers, then applies it exactly like an uploaded spreadsheet
-  // would via handleUploadTrainingPlan. Throws on failure so callers
-  // (DeepQuestionnaireScreen's done step, AboutScreen's regenerate button)
-  // can show their own loading/error state.
-  const generateAndApplyPlan = async (gp, intakeData) => {
-    const parsed = await generateTrainingPlanWithAI({ goalsPayload: gp, intake: intakeData });
-    await handleUploadTrainingPlan(parsed);
-    return parsed;
-  };
-
   if (authState === 'loading') {
     return (
       <div className="stage">
@@ -1216,6 +1277,7 @@ function App() {
       return <GoalsSetupScreen width={contentW} height={contentH} theme={tweaks.theme}
                userId={currentUser?.id}
                initialGoalsPayload={goalsPayload}
+               initialIntake={intakePayload}
                onComplete={handleGoalsSetupComplete}
                // Always exitable, not just when re-entered via "redo goals" —
                // bootstrapUser's auto-route (existing account, no `goal` set)
@@ -1225,18 +1287,6 @@ function App() {
                // back to 'weekly' when there's no prior screen to return to,
                // so it's always safe to offer a way out.
                onExit={handleExitGoalsRedo} />;
-    if (onboardingStage === 'intake')
-      return <DeepQuestionnaireScreen width={contentW} height={contentH} theme={tweaks.theme}
-               userId={currentUser?.id}
-               goalsPayload={pendingGoalsPayload}
-               initialIntake={intakePayload}
-               hasActiveEventPlan={shouldBlockGeneratedSchedule({ hasEventTraining, eventPlanSessions: eventPlan.sessions, discardEventPlan: false })}
-               onComplete={handleIntakeComplete}
-               onGeneratePlan={(intakeDraft) => generateAndApplyPlan(pendingGoalsPayload, intakeDraft)}
-               // Same reasoning as GoalsSetupScreen's onExit above — always
-               // exitable, since Stage 3 is just as reachable via a direct
-               // auto-route as via an explicit "redo"/"start questionnaire" entry.
-               onExit={handleExitQuestionnaire} />;
     if (onboardingActive)
       return <OnboardingScreen width={contentW} height={contentH} theme={tweaks.theme}
                onComplete={completeOnboarding}
@@ -1351,6 +1401,7 @@ function App() {
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'about-me')
       return <AboutScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
                profile={profile}
                userSettings={userSettings}
                plan={plan}
@@ -1371,13 +1422,11 @@ function App() {
                onReconnectSheets={handleReconnectSheets}
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
-               onStartQuestionnaire={() => handleStartQuestionnaire('about-me')}
+               onStartQuestionnaire={() => handleRedoGoals('about-me')}
                eventPlan={eventPlan}
                eventOverrides={eventOverrides}
                onUploadTrainingPlan={handleUploadTrainingPlan}
                goalsPayload={goalsPayload}
-               intake={intakePayload}
-               onGenerateAIPlan={() => generateAndApplyPlan(goalsPayload, intakePayload)}
                onRedoGoals={() => handleRedoGoals('about-me')}
                onUpdateSchedule={(newSched, splitDaysDefault) => setPlan(p => ({
                  ...p,
@@ -1415,7 +1464,7 @@ function App() {
                onUpdatePlan={(newSched) => setPlan(p => ({ ...p, scheduleOverride: newSched }))}
                intakeCompleted={!!profile.intakeCompleted}
                intakeDraft={intakeDraft}
-               onStartQuestionnaire={() => handleStartQuestionnaire('weekly')}
+               onStartQuestionnaire={() => handleRedoGoals('weekly')}
                completedSessions={completedSessions}
                sequencingDecisions={sequencingDecisions}
                onUpdateSequencingDecisions={(next) => {
@@ -1449,6 +1498,7 @@ function App() {
                preselectedQueues={preselectedQueues}
                onSavePreselectedQueue={savePreselectedQueue}
                tracksCycle={profile.tracksCycle}
+               glossary={eventPlan.meta?.glossary}
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'gym-library')
       return <ExerciseLibraryScreen width={contentW} height={contentH} theme={tweaks.theme}
@@ -1488,11 +1538,9 @@ function App() {
     ? 'PROFILE SETUP'
     : onboardingStage === 'goals'
       ? 'GOALS SETUP'
-      : onboardingStage === 'intake'
-        ? 'DEEP INTAKE'
-        : onboardingActive
-          ? 'ONBOARDING'
-          : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
+      : onboardingActive
+        ? 'ONBOARDING'
+        : screen.replace(/^gym-?/, '').toUpperCase() || screen.toUpperCase();
 
   return (
     <>
@@ -1524,11 +1572,10 @@ function App() {
         <TweakSection label="Navigate">
           <TweakSelect
             label="Screen"
-            value={onboardingStage === 'profile' ? 'profile-setup' : onboardingStage === 'goals' ? 'goals-setup' : onboardingStage === 'intake' ? 'deep-intake' : onboardingActive ? 'onboarding' : screen}
+            value={onboardingStage === 'profile' ? 'profile-setup' : onboardingStage === 'goals' ? 'goals-setup' : onboardingActive ? 'onboarding' : screen}
             options={[
               { value: 'profile-setup', label: 'Profile Setup (Stage 1)' },
-              { value: 'goals-setup',   label: 'Goals Setup (Stage 2)' },
-              { value: 'deep-intake',   label: 'Deep Intake (Stage 3)' },
+              { value: 'goals-setup',   label: 'Goals + Intake Setup (Stage 2)' },
               { value: 'onboarding',    label: 'Legacy Onboarding' },
               { value: 'home',        label: 'Home' },
               { value: 'gym-hub',     label: 'Gym · Hub' },
@@ -1546,7 +1593,6 @@ function App() {
             onChange={(v) => {
               if (v === 'profile-setup') { setOnboardingStage('profile'); setOnboarding(false); }
               else if (v === 'goals-setup') { setOnboardingStage('goals'); setOnboarding(false); }
-              else if (v === 'deep-intake') { setOnboardingStage('intake'); setOnboarding(false); }
               else if (v === 'onboarding') { setOnboarding(true); setOnboardingStage(null); }
               else { setOnboarding(false); setOnboardingStage(null); setScreen(v); }
             }}
