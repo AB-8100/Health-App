@@ -5,6 +5,7 @@ import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
 import { isSupportedAIRaceType } from '../utils/planPrompt';
+import { submitFeedback } from '../utils/supabase';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
 import { SPLITS } from './GymPlanScreens';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
@@ -194,8 +195,72 @@ function GoalPaceRow({ theme, label, unit, confirmedValue, manualValue, onSave }
   );
 }
 
+// Feedback entry point (features/specs/feedback-entry-point.md) — one
+// free-text textarea + submit, writing a single row to `user_feedback`.
+// Errors keep the draft text in place rather than clearing it (spec's
+// "Edge cases handled" — don't lose what the user typed on a failed write).
+function FeedbackSection({ theme, userId }) {
+  const t = themes[theme];
+  const [message, setMessage] = React.useState('');
+  const [state, setState] = React.useState('idle'); // idle | submitting | sent | error
+
+  const submit = async () => {
+    if (!message.trim() || state === 'submitting') return;
+    setState('submitting');
+    try {
+      await submitFeedback(userId, message.trim());
+      setMessage('');
+      setState('sent');
+    } catch {
+      setState('error');
+    }
+  };
+
+  return (
+    <Section title="Feedback" theme={theme}>
+      <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
+        Missing a race type, found a bug, or have an idea? Tell us — this goes straight to the team.
+      </div>
+      <textarea
+        value={message}
+        onChange={(e) => { setMessage(e.target.value); if (state !== 'idle') setState('idle'); }}
+        placeholder="What's on your mind?"
+        rows={4}
+        style={{
+          width: '100%', padding: '11px 13px', borderRadius: 10,
+          border: `1px solid ${t.border2}`, background: t.surface2,
+          fontFamily: t.sans, fontSize: 13, color: t.text, outline: 'none',
+          resize: 'none', lineHeight: 1.6, boxSizing: 'border-box', marginBottom: 10,
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!message.trim() || state === 'submitting'}
+        style={{
+          width: '100%', padding: '10px', borderRadius: 10,
+          background: (message.trim() && state !== 'submitting') ? t.accent : t.border,
+          color: (message.trim() && state !== 'submitting') ? t.accentText : t.text3,
+          border: 'none', fontFamily: t.sans, fontSize: 12.5, fontWeight: 600,
+          cursor: (message.trim() && state !== 'submitting') ? 'pointer' : 'default',
+        }}
+      >
+        {state === 'submitting' ? 'Sending…' : 'Send feedback'}
+      </button>
+      {state === 'sent' && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: t.green }}>Thanks — your feedback was sent.</div>
+      )}
+      {state === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626' }}>
+          Couldn't send that — check your connection and try again.
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function AboutScreen({
   width = 390, height = 820, theme = 'light',
+  userId,
   profile = {}, userSettings = {}, plan = {}, activities = {},
   onSaveProfile, onSaveSettings,
   onBack, onNav, onSignOut, onSetupTrainingPlan,
@@ -1278,6 +1343,8 @@ function AboutScreen({
             Set automatically once you confirm pace targets in the questionnaire — add your own here if you're only uploading a training plan.
           </div>
         </Section>
+
+        <FeedbackSection theme={theme} userId={userId} />
 
         {/* App info + sign out */}
         <div style={{

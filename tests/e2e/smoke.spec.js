@@ -116,4 +116,18 @@ test.describe('core screens render without error', () => {
     }
     expect(page.__consoleErrors).toEqual([]);
   });
+
+  test('About screen Feedback section accepts a message and submit is disabled while empty', async ({ page }) => {
+    // features/specs/feedback-entry-point.md
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Feedback$/).first()).toBeVisible();
+
+    const submitButton = page.getByRole('button', { name: /send feedback/i });
+    await expect(submitButton).toBeDisabled();
+
+    const textarea = page.getByPlaceholder(/what's on your mind/i);
+    await textarea.fill('Smoke test feedback — please ignore.');
+    await expect(submitButton).toBeEnabled();
+    expect(page.__consoleErrors).toEqual([]);
+  });
 });

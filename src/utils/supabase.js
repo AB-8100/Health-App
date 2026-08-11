@@ -383,6 +383,17 @@ export async function loadUserGoals(userId) {
   };
 }
 
+// ── Feedback ──────────────────────────────────────────────────────────────────
+// Insert-only — see supabase/migrations/20260811_create_user_feedback.sql and
+// features/specs/feedback-entry-point.md. Not wrapped in try/catch here (unlike
+// scheduleSave's other writes) so the caller can await it and show an inline
+// error rather than silently losing what the user typed — see that spec's
+// "Edge cases handled" section.
+export async function submitFeedback(userId, message) {
+  const { error } = await supabase.from('user_feedback').insert({ user_id: userId, message });
+  if (error) throw error;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Returns today's date string (YYYY-MM-DD) in the user's local timezone via Supabase

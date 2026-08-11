@@ -1351,6 +1351,7 @@ function App() {
                hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities} />;
     if (s === 'about-me')
       return <AboutScreen width={contentW} height={contentH} theme={tweaks.theme}
+               userId={currentUser?.id}
                profile={profile}
                userSettings={userSettings}
                plan={plan}

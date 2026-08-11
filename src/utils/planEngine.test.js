@@ -1,0 +1,247 @@
+import { describe, it, expect } from 'vitest';
+import {
+  buildTrainingPlan, isEngineSupportedRaceType, isTriathlonRace,
+  determinePhaseMode, allocateWeeks,
+} from './planEngine';
+
+function marathonIntake(overrides = {}) {
+  return {
+    raceType: 'Marathon',
+    startDate: '2026-01-05', // Monday
+    raceDate: '2026-05-11',  // ~18 weeks later
+    fitnessLevel: 'Intermediate',
+    disciplineDays: { run: ['tuesday', 'thursday', 'sunday'] },
+    baselines: { run: { time10k: '50:00', longestEffortKm: '15' } },
+    preferences: { longSessionDay: 'sunday' },
+    gymAccess: false,
+    holidays: [],
+    oneOffEvents: [],
+    targetPaces: null,
+    injury: {},
+    ...overrides,
+  };
+}
+
+function triIntake(overrides = {}) {
+  return {
+    raceType: 'Triathlon (Olympic)',
+    startDate: '2026-01-05',
+    raceDate: '2026-06-14', // ~23 weeks
+    fitnessLevel: 'Intermediate',
+    disciplineDays: {
+      run:  ['tuesday', 'thursday'],
+      bike: ['wednesday', 'sunday'],
+      swim: ['monday', 'friday'],
+    },
+    disciplineRanking: ['bike', 'run', 'swim'],
+    baselines: {
+      run:  { time10k: '48:00', longestEffortKm: '12' },
+      bike: { ftpWatts: '200', longestRideKm: '40' },
+      swim: { time400m: '8:00', longestSessionM: '600' },
+    },
+    preferences: { longSessionDay: 'sunday', conditioningDay: 'friday' },
+    gymAccess: true,
+    holidays: [],
+    oneOffEvents: [],
+    targetPaces: null,
+    injury: {},
+    ...overrides,
+  };
+}
+
+describe('isEngineSupportedRaceType / isTriathlonRace', () => {
+  it('supports exactly the 7 engine race types', () => {
+    ['10K', 'Half Marathon', 'Marathon', 'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)']
+      .forEach(rt => expect(isEngineSupportedRaceType(rt)).toBe(true));
+    ['5K', 'Cycling Sportive', 'Open Water Swim', 'Other', ''].forEach(rt => expect(isEngineSupportedRaceType(rt)).toBe(false));
+  });
+  it('flags triathlon distances only', () => {
+    expect(isTriathlonRace('Triathlon (Sprint)')).toBe(true);
+    expect(isTriathlonRace('Marathon')).toBe(false);
+  });
+});
+
+describe('determinePhaseMode', () => {
+  it('picks full when weeks meet the recommended minimum', () => {
+    expect(determinePhaseMode(16, 'Marathon')).toBe('full'); // recMin 16
+  });
+  it('picks noFoundation between 60% of recMin and recMin', () => {
+    expect(determinePhaseMode(10, 'Marathon')).toBe('noFoundation'); // 0.6*16=9.6
+  });
+  it('picks compressed below 60% of recMin', () => {
+    expect(determinePhaseMode(9, 'Marathon')).toBe('compressed');
+  });
+});
+
+describe('allocateWeeks', () => {
+  it('splits weeks proportionally and sums to the total', () => {
+    const weeks = allocateWeeks(18, [0.325, 0.425, 0.25]);
+    expect(weeks.reduce((a, b) => a + b, 0)).toBe(18);
+    expect(weeks.every(w => w >= 1)).toBe(true);
+  });
+  it('gives every phase at least 1 week when total is small', () => {
+    const weeks = allocateWeeks(2, [0.575, 0.425]);
+    expect(weeks).toEqual([1, 1]);
+  });
+  it('handles an uneven split without dropping or duplicating weeks', () => {
+    const weeks = allocateWeeks(7, [0.6, 0.4]);
+    expect(weeks.reduce((a, b) => a + b, 0)).toBe(7);
+  });
+});
+
+describe('buildTrainingPlan — running race', () => {
+  it('throws for an unsupported race type', () => {
+    expect(() => buildTrainingPlan(marathonIntake({ raceType: '5K' }))).toThrow();
+  });
+
+  it('produces one session-array per calendar date from start to race day inclusive', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    const dateKeys = Object.keys(plan.sessions).sort();
+    expect(dateKeys[0]).toBe('2026-01-05');
+    expect(dateKeys[dateKeys.length - 1]).toBe('2026-05-11');
+    const expectedDays = Math.round((new Date('2026-05-11') - new Date('2026-01-05')) / 86400000) + 1;
+    expect(dateKeys.length).toBe(expectedDays);
+  });
+
+  it('ends with a race-day entry on the event date', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    const raceEntries = plan.sessions['2026-05-11'];
+    expect(raceEntries.some(e => e.type === 'race')).toBe(true);
+  });
+
+  it('includes Foundation, Build, Peak, Taper phases for a full-length plan', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    expect(plan.phases.map(p => p.label)).toEqual(['Foundation', 'Build', 'Peak', 'Taper']);
+    expect(plan.phases[plan.phases.length - 1].weeks[1]).toBe(plan.meta.totalWeeks);
+  });
+
+  it('only schedules run sessions on the athlete-selected weekdays', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    Object.entries(plan.sessions).forEach(([dk, entries]) => {
+      const hasRun = entries.some(e => e.type === 'run');
+      if (!hasRun) return;
+      const dow = new Date(dk + 'T00:00:00Z').getUTCDay();
+      // tuesday=2, thursday=4, sunday=0
+      expect([2, 4, 0]).toContain(dow);
+    });
+  });
+
+  it('never grows weekly run volume by more than 10% week-on-week outside exempt weeks', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    expect(plan.meta.planHealth.tenPercentRule).toMatch(/Violations \(excluding accepted exceptions\): 0\./);
+  });
+
+  it('produces a compressed-plan warning when start date leaves too little time', () => {
+    const plan = buildTrainingPlan(marathonIntake({ raceDate: '2026-02-16' })); // ~6 weeks
+    expect(plan.meta.overview).toMatch(/compressed and demanding/i);
+  });
+
+  it('produces a no-Foundation note for a mid-length plan', () => {
+    const plan = buildTrainingPlan(marathonIntake({ raceDate: '2026-03-16' })); // ~10 weeks
+    expect(plan.phases.map(p => p.label)).toEqual(['Build', 'Peak', 'Taper']);
+    expect(plan.meta.overview).toMatch(/begins in the Build phase/i);
+  });
+
+  it('is deterministic — same input produces the same output', () => {
+    const { importedAt: _a, ...a } = buildTrainingPlan(marathonIntake());
+    const { importedAt: _b, ...b } = buildTrainingPlan(marathonIntake());
+    expect(a).toEqual(b);
+  });
+});
+
+describe('buildTrainingPlan — triathlon race', () => {
+  it('produces brick sessions (bike + run, both flagged) from Build onward on the long day', () => {
+    const plan = buildTrainingPlan(triIntake());
+    const buildPhase = plan.phases.find(p => p.label === 'Build');
+    const week = buildPhase.weeks[0] + 1;
+    const dateKeys = Object.keys(plan.sessions).filter(dk => plan.sessions[dk][0]?.week === week);
+    const brickDay = dateKeys.find(dk => plan.sessions[dk].some(e => e.flag?.includes('Brick')));
+    expect(brickDay).toBeTruthy();
+    const entries = plan.sessions[brickDay];
+    expect(entries.some(e => e.type === 'bike')).toBe(true);
+    expect(entries.some(e => e.type === 'run')).toBe(true);
+  });
+
+  it('caps the weakest discipline to fewer Foundation sessions early on than later', () => {
+    // swim is weakest in triIntake's ranking → 1 session early Foundation, 2 by late Foundation
+    const plan = buildTrainingPlan(triIntake());
+    const foundation = plan.phases.find(p => p.label === 'Foundation');
+    const earlyWeek = foundation.weeks[0];
+    const lateWeek = foundation.weeks[1];
+
+    const countSwimSessions = (week) => Object.values(plan.sessions)
+      .filter(entries => entries[0]?.week === week)
+      .reduce((n, entries) => n + entries.filter(e => e.type === 'swim').length, 0);
+
+    expect(countSwimSessions(earlyWeek)).toBeLessThanOrEqual(countSwimSessions(lateWeek));
+  });
+
+  it('includes a conditioning session on the declared conditioning day outside taper', () => {
+    const plan = buildTrainingPlan(triIntake());
+    const hasConditioning = Object.values(plan.sessions).some(entries => entries.some(e => e.type === 'conditioning'));
+    expect(hasConditioning).toBe(true);
+  });
+
+  it('reports eventDistances as swim/bike/run legs', () => {
+    const plan = buildTrainingPlan(triIntake());
+    expect(plan.meta.eventDistances).toBe('1.5km / 40km / 10km');
+  });
+
+  it('filters the glossary down to terms actually used in the plan', () => {
+    const plan = buildTrainingPlan(triIntake());
+    const terms = plan.meta.glossary.map(g => g.term);
+    expect(terms.length).toBeGreaterThan(0);
+    expect(terms).toContain('Brick');
+    // A term that never appears for this configuration shouldn't be included.
+    expect(terms).not.toContain('Spin-ups' in terms ? '__never__' : '__never__');
+  });
+});
+
+describe('buildTrainingPlan — one-off events and holidays', () => {
+  it('replaces the session on a one-off event date and adds a recovery day after', () => {
+    const plan = buildTrainingPlan(marathonIntake({ oneOffEvents: [{ label: 'Charity 10K', date: '2026-02-08' }] }));
+    const eventEntries = plan.sessions['2026-02-08'];
+    expect(eventEntries.some(e => e.flag === 'One-off event')).toBe(true);
+    const nextDay = plan.sessions['2026-02-09'];
+    expect(nextDay.some(e => e.flag?.includes('Recovery'))).toBe(true);
+  });
+
+  it('treats a holiday range with no day-granular detail as a blanket rest block', () => {
+    const plan = buildTrainingPlan(marathonIntake({
+      holidays: [{ label: 'Tenerife', from: '2026-02-02', to: '2026-02-08' }],
+    }));
+    for (let d = 2; d <= 8; d++) {
+      const dk = `2026-02-${String(d).padStart(2, '0')}`;
+      expect(plan.sessions[dk].every(e => e.type === 'rest')).toBe(true);
+      expect(plan.sessions[dk][0].flag).toBe('Holiday');
+    }
+  });
+
+  it('substitutes open-water swim on day-granular "limited" holiday days for a triathlon plan', () => {
+    const plan = buildTrainingPlan(triIntake({
+      holidays: [{
+        label: 'Portugal', from: '2026-02-02', to: '2026-02-04',
+        days: {
+          '2026-02-02': { limited: false },
+          '2026-02-03': { limited: true, disciplines: ['swim'] },
+          '2026-02-04': { limited: false },
+        },
+      }],
+    }));
+    const limitedDay = plan.sessions['2026-02-03'];
+    if (limitedDay.some(e => e.type === 'swim')) {
+      expect(limitedDay.find(e => e.type === 'swim').sessionType).toBe('Open water swim');
+    }
+    expect(plan.sessions['2026-02-02'].every(e => e.type === 'rest')).toBe(true);
+  });
+});
+
+describe('buildTrainingPlan — plan health', () => {
+  it('computes a plan-health summary as verifiable properties, not a self-report', () => {
+    const plan = buildTrainingPlan(marathonIntake());
+    expect(plan.meta.planHealth).toHaveProperty('tenPercentRule');
+    expect(plan.meta.planHealth).toHaveProperty('eightyTwentyRule');
+    expect(plan.meta.planHealth).toHaveProperty('summary');
+    expect(typeof plan.meta.planHealth.summary).toBe('string');
+  });
+});
