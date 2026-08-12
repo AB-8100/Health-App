@@ -192,6 +192,19 @@ describe('buildTrainingPlan — triathlon race', () => {
     expect(hasConditioning).toBe(true);
   });
 
+  it('still schedules a conditioning session when conditioningDay is left blank, avoiding the long session day', () => {
+    const plan = buildTrainingPlan(triIntake({
+      preferences: { longSessionDay: 'sunday', conditioningDay: '' },
+    }));
+    const conditioningDows = Object.entries(plan.sessions)
+      .filter(([, entries]) => entries.some(e => e.type === 'conditioning'))
+      .map(([dk]) => new Date(dk).getUTCDay());
+
+    expect(conditioningDows.length).toBeGreaterThan(0);
+    // Sunday (dow 0) is the long bike/run day — conditioning shouldn't land there.
+    expect(conditioningDows.every(dow => dow !== 0)).toBe(true);
+  });
+
   it('tailors the conditioning circuit toward a declared injury area and excludes avoided exercises', () => {
     const plan = buildTrainingPlan(triIntake({
       injury: {

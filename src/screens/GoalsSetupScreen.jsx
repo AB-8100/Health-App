@@ -992,7 +992,7 @@ export function GoalsSetupScreen({
         {current === 'discipline_rank' && (
           <div>
             <StepTitle t={t}>Rank your disciplines.</StepTitle>
-            <StepSub t={t}>Strongest to weakest. Your weakest discipline gets priority for extra weekly sessions early on.</StepSub>
+            <StepSub t={t}>Strongest to weakest. During the early Foundation phase, your weakest discipline gets priority for extra sessions within the days you've already picked — this doesn't change Build or Taper, and plans short enough to skip a Foundation phase won't see an effect.</StepSub>
             {disciplineRanking.map((disc, idx) => {
               const meta = DISCIPLINE_META[disc];
               return (

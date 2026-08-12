@@ -263,13 +263,15 @@ function FeedbackSection({ theme, userId }) {
 // pattern as Section's other subsections. Works for any plan source that
 // carries these meta fields — the deterministic engine always does;
 // planMix/planHealth are absent for an uploaded/AI-generated plan, so those
-// blocks just don't render rather than showing empty.
+// blocks just don't render rather than showing empty. No inline glossary
+// list here — the glossary's only surfaced per-session, via the contextual
+// info icon on session cards (SessionDetailScreen.jsx), so this stays a
+// summary of the plan itself rather than duplicating that list.
 function PlanOverviewSection({ eventPlan, theme }) {
   const t = themes[theme];
   const [expanded, setExpanded] = React.useState(false);
   const meta = eventPlan.meta || {};
-  const glossary = meta.glossary || [];
-  if (!meta.overview && !glossary.length) return null;
+  if (!meta.overview && !meta.planMix && !meta.planHealth?.summary) return null;
 
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
@@ -305,18 +307,6 @@ function PlanOverviewSection({ eventPlan, theme }) {
             }}>
               <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 4 }}>Plan health</div>
               <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{meta.planHealth.summary}</div>
-            </div>
-          )}
-
-          {glossary.length > 0 && (
-            <div>
-              <div style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.text3, fontWeight: 600, marginBottom: 6 }}>Glossary</div>
-              {glossary.map(g => (
-                <div key={g.term} style={{ padding: '7px 0', borderTop: `1px solid ${t.border}` }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{g.term} <span style={{ fontSize: 9.5, color: t.text3, fontWeight: 400 }}>· {g.discipline}</span></div>
-                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginTop: 2 }}>{g.description}</div>
-                </div>
-              ))}
             </div>
           )}
         </div>

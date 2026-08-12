@@ -197,6 +197,17 @@ function pickAnchorDay(selectedDays, preferred, fallback) {
   return sorted[sorted.length - 1];
 }
 
+// Conditioning day defaults to a mid-week day when the athlete leaves the
+// preference blank, per the onboarding hint's promise ("Won't be placed on
+// the same day as a long or high-intensity session unless chosen here") —
+// mirrors the dropped "Default: mid-week day" rule from the original
+// AI-prompt spec (utils/planPrompt.js).
+function pickConditioningDay(explicit, avoidDays) {
+  if (explicit) return explicit;
+  const candidates = ['wednesday', 'tuesday', 'thursday', 'monday', 'friday', 'saturday', 'sunday'];
+  return candidates.find(d => !avoidDays.includes(d)) || 'wednesday';
+}
+
 // ── Volume/duration progression (STEP 6) ─────────────────────────────────────
 
 function estimateRunPaceSecPerKm(baselines, targetPaces, raceType) {
@@ -373,7 +384,9 @@ export function buildTrainingPlan(intake) {
 
   const runLongDay = pickAnchorDay(runDays, triathlon ? null : preferences.longSessionDay, 'sunday');
   const bikeLongDay = triathlon ? pickAnchorDay(disciplineDays.bike || [], preferences.longSessionDay, 'sunday') : null;
-  const conditioningDay = gymAccess ? (preferences.conditioningDay || null) : null;
+  const conditioningDay = gymAccess
+    ? pickConditioningDay(preferences.conditioningDay, [runLongDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean))
+    : null;
   const conditioningExercises = selectConditioningExercises({
     areas: (injury.pastInjuries || []).map(p => p.area),
     avoidIds: injury.avoidExerciseIds || [],
