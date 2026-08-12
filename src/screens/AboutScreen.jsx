@@ -7,6 +7,7 @@ import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
 import { submitFeedback } from '../utils/supabase';
 import { GOAL_TYPES, RANK_LABELS } from './GoalsSetupScreen';
 import { SPLITS } from './GymPlanScreens';
+import PLAN_GLOSSARY from '../data/planGlossary';
 import { computeSuggestedCalories } from '../utils/calorieCalc';
 import { getGoalPaceValue, parseGoalPaceInput, formatPaceValue, paceUnitForType } from '../utils/analytics';
 import {
@@ -322,6 +323,56 @@ function PlanOverviewSection({ eventPlan, theme }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Standalone reference glossary (data/planGlossary.js's full PLAN_GLOSSARY,
+// not the per-plan subset PlanOverviewSection above shows) — always
+// available regardless of whether the user has an active event plan, or
+// whether that plan's `meta` carries the deterministic engine's own
+// glossary/overview fields (an uploaded/AI-generated/pre-engine plan won't).
+// Collapsed by default since it's the full ~18-term dictionary.
+function GlossarySection({ theme }) {
+  const t = themes[theme];
+  const [expanded, setExpanded] = React.useState(false);
+
+  let lastDiscipline = null;
+
+  return (
+    <Section title="Glossary" theme={theme}>
+      <button onClick={() => setExpanded(v => !v)} style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: t.sans,
+      }}>
+        <span style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, textAlign: 'left' }}>
+          What the terms in your training plan mean — Run, Swim, Bike, and conditioning session types.
+        </span>
+        <span style={{ fontSize: 11, color: t.text3, flexShrink: 0, marginLeft: 10 }}>{expanded ? '▲ Hide' : '▼ Show'}</span>
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          {PLAN_GLOSSARY.map(g => {
+            const showHeader = g.discipline !== lastDiscipline;
+            lastDiscipline = g.discipline;
+            return (
+              <React.Fragment key={g.term}>
+                {showHeader && (
+                  <div style={{
+                    fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase',
+                    color: t.text3, fontWeight: 600, marginTop: 10, marginBottom: 2,
+                  }}>{g.discipline}</div>
+                )}
+                <div style={{ padding: '7px 0', borderTop: `1px solid ${t.border}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{g.term}</div>
+                  <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginTop: 2 }}>{g.description}</div>
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -1335,6 +1386,8 @@ function AboutScreen({
 
         <FeedbackSection theme={theme} userId={userId} />
 
+        <GlossarySection theme={theme} />
+
         {/* App info + sign out */}
         <div style={{
           textAlign: 'center', padding: '8px 0 16px',
@@ -1360,4 +1413,4 @@ function AboutScreen({
 }
 
 
-export { FieldRow, Section, PlanOverviewSection, AboutScreen };
+export { FieldRow, Section, PlanOverviewSection, GlossarySection, AboutScreen };
