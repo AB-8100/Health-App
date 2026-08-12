@@ -17,6 +17,15 @@ import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from '../utils
 
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Plan weeks aren't always Monday-anchored (getPlanWeekStart only snaps to
+// Monday when there's no plan startDate — a real event plan's startDate can
+// be any weekday), so the day label must be derived from the row's actual
+// date rather than assumed from its position in the week. Same
+// (getUTCDay() + 6) % 7 rotation planEngine.js's dayKeyOf() uses.
+export function dayShortLabel(d) {
+  return DAY_SHORT[(d.getUTCDay() + 6) % 7];
+}
+
 // Plan dates are UTC-midnight-anchored (see data/eventPlan.js), so date keys
 // are read via toISOString rather than local getters to avoid off-by-one
 // days for users east/west of UTC.
@@ -393,7 +402,7 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
             color: dayIdx === i ? '#fff' : t.text2,
             fontFamily: t.sans, fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
           }}>
-            {DAY_SHORT[i]}
+            {dayShortLabel(day.d)}
             <div style={{ fontSize: 9, opacity: .8, fontWeight: 500 }}>{day.d.getUTCDate()}</div>
           </button>
         ))}
@@ -505,7 +514,7 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, sequencingDecisio
           }}
         >
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.06em', color: isToday ? t.accent : t.text3, textTransform: 'uppercase' }}>
-            {DAY_SHORT[i]}
+            {dayShortLabel(d)}
           </div>
           <div style={{ fontSize: 14, fontWeight: isToday ? 700 : 400, color: isToday ? t.accent : t.text, lineHeight: 1.2 }}>
             {d.getUTCDate()}

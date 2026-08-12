@@ -1,8 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { buildWeekData, sessionOrderKey } from './WeeklyOverviewScreen';
+import { buildWeekData, sessionOrderKey, dayShortLabel } from './WeeklyOverviewScreen';
 
 // A Monday-anchored plan start so week 1 lines up with DAY_SHORT's Mon..Sun.
 const START_DATE = '2026-01-05'; // a Monday
+
+// UTC-midnight-anchored, matching how plan dates are parsed elsewhere.
+function utcDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+describe('dayShortLabel', () => {
+  it('derives the label from the actual date, not a fixed Mon-start position', () => {
+    // A plan startDate need not be a Monday (getPlanWeekStart only snaps to
+    // Monday when there's no startDate at all) — the label must still match
+    // the real weekday, e.g. 2026-08-12 is actually a Wednesday.
+    expect(dayShortLabel(utcDate('2026-08-12'))).toBe('Wed');
+  });
+
+  it('covers all seven weekdays', () => {
+    const expected = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // 2026-01-05 is a Monday
+    for (let i = 0; i < 7; i++) {
+      const d = utcDate('2026-01-05');
+      d.setUTCDate(d.getUTCDate() + i);
+      expect(dayShortLabel(d)).toBe(expected[i]);
+    }
+  });
+});
 
 const eventSessions = {
   '2026-01-05': [{ type: 'swim', label: 'Swim', sessionType: 'Endurance', duration: '30 min' }],
