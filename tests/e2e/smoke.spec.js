@@ -152,4 +152,19 @@ test.describe('core screens render without error', () => {
     await expect(submitButton).toBeEnabled();
     expect(page.__consoleErrors).toEqual([]);
   });
+
+  test('About screen shows a standalone Glossary section irrespective of plan state', async ({ page }) => {
+    // The Glossary bar always renders data/planGlossary.js's full static
+    // list — unlike Training plan's collapsible "Plan overview", it does not
+    // depend on the active plan's meta carrying engine-generated
+    // overview/glossary fields (an uploaded/AI-generated/pre-engine plan
+    // won't have those).
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await expect(page.getByText(/^Glossary$/).first()).toBeVisible();
+
+    await page.getByText(/▼ Show/).last().click();
+    await expect(page.getByText(/^Easy run$/).first()).toBeVisible();
+    await expect(page.getByText(/^Brick$/).first()).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+  });
 });
