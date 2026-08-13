@@ -15,24 +15,60 @@ onto specific files, functions, and data shapes that already exist in this
 codebase, and flags every place a genuinely new decision had to be made to
 do that mapping (marked **Decision:**).
 
+## Revision note
+
+This draft supersedes an earlier version of this document that modelled
+Trail Running as an entirely new top-level goal type, separate from
+`event_race`. Product feedback overrode that: **trail running is a race
+type** — a trail runner is training toward a race, same as a 10K or
+marathon runner, just with different session logic underneath. This
+revision folds it into the *existing* `RACE_TYPES` picker/`event_race`
+onboarding flow instead of building a parallel goal type. This turns out to
+simplify the implementation considerably (§A), not just satisfy the product
+direction — most of onboarding, `App.jsx` wiring, and the plan-preview logic
+need **zero** changes, because they're already generic over "any engine-
+supported race type." Three product decisions drive this revision:
+
+1. **Trail Running belongs in `RACE_TYPES`**, alongside 10K/Half/Marathon/
+   Triathlon — not a separate discipline picker. See §A.
+2. **Activity labelling stays `type: 'run'`** — confirmed, unchanged from
+   the original draft (§B.0). The differentiator is the *session content*
+   the plan generates (hill repeats, time-on-feet long run), not a new
+   activity type. A marathon runner and a trail runner are both doing
+   "runs"; the plan logic behind those runs is what differs.
+3. **Conditioning is unconditional in every generated plan**, not just
+   trail's. Previously `buildTrainingPlan` only added a conditioning day
+   `if (gymAccess)`; that gate is removed entirely. This is a scope
+   expansion beyond trail running specifically — flagged prominently in §B.6
+   since it changes generation behaviour for 10K/Half Marathon/Marathon/
+   Triathlon plans too, not just the new race type.
+
+This also resolves an open question the product spec itself flagged
+("Should trail running be available to brand-new users at signup, or gated
+behind having completed at least one existing plan?") **for free**: since
+Trail Running is just another button in the same `RACE_TYPES` row every
+other race type already renders in, from day one of `GoalsSetupScreen`,
+there's no separate gating mechanism to build or decide on — any user
+picking the "Race / Event" goal sees it immediately, same as 10K or
+Marathon.
+
 ## Context — how this fits what's already built
 
 Forma already has a fully-built deterministic plan engine
 (`src/utils/planEngine.js`, see
 `features/specs/deterministic-endurance-plan-generator.md`) that builds
 periodized plans for 10K / Half Marathon / Marathon / 4 triathlon distances
-from a merged onboarding payload (`GoalsSetupScreen.jsx`), and a generic
-session-logging layer (`ActivityTimerScreen` in `GymSessionScreen.jsx`) that
-already lets a user optionally log distance on any non-gym session,
-independent of what the plan prescribed. Most of what the product spec asks
-for is a **new plan-generation code path plus onboarding steps that produce
-its input**, not new logging or cross-sport-load infrastructure — that
-infrastructure is type-driven and already generic. The single most important
-implementation decision in this document is in §B.0: trail sessions reuse
-`type: 'run'` so they fall through every existing `run`-aware code path
-(display, load-engine matching, pace analytics, session completion) for
-free, rather than introducing a new session `type` that would need each of
-those touched individually.
+from a merged onboarding payload (`GoalsSetupScreen.jsx`), keyed entirely by
+a single `raceType` string flowing through `RACE_TYPES` →
+`SUPPORTED_RACE_TYPES` → `buildTrainingPlan()`. Adding a new race type is
+already a supported extension point; the work is almost entirely inside
+`buildTrainingPlan()` itself — a new internal branch for how *session
+content* gets generated for this one race type, not new onboarding
+plumbing. The session-logging layer
+(`ActivityTimerScreen` in `GymSessionScreen.jsx`) already lets a user
+optionally log distance on any non-gym session, independent of what the
+plan prescribed, so P0's km-logging requirement needs no new code either
+(§D).
 
 ## Scope for this pass
 
@@ -45,195 +81,223 @@ explainer copy) and P2 (GPX import, race-taper plans, terrain-aware effort,
 Strava) are **explicitly out of scope** — see that section. Don't build them
 in this pass; a future spec picks them up once P0 has shipped and been used.
 
-## A. Onboarding — new goal type, not a toggle on an existing one
+**One deliberate deviation from the product spec's own Non-Goals, per
+product direction:** the original product spec listed "race-specific
+taper/peak plans" as a Non-Goal and described this as a raceless
+"base-building" plan. Now that trail running is a race type with a real
+race date (same as every other `RACE_TYPES` entry), the plan naturally runs
+up to that date — see §B.1 for exactly what is and isn't included (no
+distinct Taper *phase*/volume-cut block, but the plan does end on the
+athlete's chosen race day with a Race Day entry, same as any other race
+type).
 
-**Decision:** Trail Running is a new entry in `GOAL_TYPES`
-(`src/screens/GoalsSetupScreen.jsx:43`), not a new `RACE_TYPES` entry
-(`GoalsSetupScreen.jsx:55`, backed by `SUPPORTED_RACE_TYPES` in
-`planEngine.js:37`). The product spec's user story is explicit about this
-("select 'Trail Running' as a distinct discipline (not a toggle on road
-running)"), and mechanically the two pickers mean different things: every
-`RACE_TYPES` entry funnels into the same date-to-race arithmetic (taper
-length, phase-split-by-race-date, a fixed race day). Trail running has no
-race date in this spec (P0 is base-building only, no taper) — its "how long
-is this plan" input is a direct 12–16 week choice, not a race-date
-subtraction. Forcing it through the `RACE_TYPES`/`config_event_race` path
-would mean threading a fake race date through taper logic that's explicitly
-a Non-Goal.
+## A. Onboarding — a new `RACE_TYPES` entry, reusing the existing flow
 
-1. **New goal type** in `GOAL_TYPES`:
-   ```js
-   { id: 'trail_running', label: 'Trail Running', sub: 'Time-on-feet base building for trail racing', icon: '⛰️' },
+**Decision, superseding the previous draft:** Trail Running is added to
+`RACE_TYPES` (`src/screens/GoalsSetupScreen.jsx:55`) and
+`SUPPORTED_RACE_TYPES` (`src/utils/planEngine.js:37`), exactly like any
+other running race type. It is **not** a new `GOAL_TYPES` entry. Because
+`App.jsx`'s `handleGoalsSetupComplete` already calls `buildTrainingPlan`
+whenever `isEngineSupportedRaceType(eventGoalCfg.raceType)` is true
+(`App.jsx:577`), and `GoalsSetupScreen.jsx`'s plan preview (`previewPlan`,
+`GoalsSetupScreen.jsx:260`) already does the same, **adding the string to
+these two arrays is what actually wires a new race type into both the real
+generation path and the live onboarding preview — no new call sites, no new
+`App.jsx` code at all.**
+
+1. ```js
+   // GoalsSetupScreen.jsx
+   const RACE_TYPES = [
+     '10K', 'Half Marathon', 'Marathon', 'Trail Running',
+     'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)',
+   ];
    ```
-2. **New default config** in `DEFAULT_CONFIG`:
    ```js
-   trail_running: { startDate: '', planWeeks: 12, fitnessLevel: '' },
+   // planEngine.js
+   export const SUPPORTED_RACE_TYPES = [
+     '10K', 'Half Marathon', 'Marathon', 'Trail Running',
+     'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)',
+   ];
+   export function isTrailRaceType(raceType) { return raceType === 'Trail Running'; }
    ```
-   `planWeeks` is a direct integer in `[12, 16]` (P0 acceptance criterion:
-   "Generated plan length is configurable within 12–16 weeks") — a row of 5
-   selectable buttons (12/13/14/15/16), same visual pattern
-   `FITNESS_LEVELS`/`RACE_TYPES` already use (`GoalsSetupScreen.jsx:595–630`
-   for the existing button-row pattern to copy). No race date, no target
-   time, no cutoff time — none of those apply to a base-building plan with
-   no race attached.
-3. **New config step** `config_trail_running`, added to `buildSteps()`
-   (`GoalsSetupScreen.jsx:210`) automatically since it iterates
-   `goals.forEach(g => steps.push(\`config_${g}\`))` — no change needed
-   there. New render branch alongside the existing `config_event_race`
-   block (`GoalsSetupScreen.jsx:588`): plan-length picker, start date
-   (default `todayISO()`, same pattern as `config_event_race`'s start date),
-   fitness-level picker (reuse `FITNESS_LEVELS` verbatim — "Beginner /
-   Intermediate / Fit but new to this" applies just as well to trail).
-4. **`canAdvance` gating** (`GoalsSetupScreen.jsx:287`): add
-   ```js
-   if (current === 'config_trail_running') return !!(goalConfigs['trail_running']?.startDate && goalConfigs['trail_running']?.planWeeks && goalConfigs['trail_running']?.fitnessLevel);
-   ```
-5. **Mutual exclusivity with `event_race`.** **Decision, flagging per
-   `CLAUDE.md`:** both `event_race` and `trail_running` produce a full
-   periodized plan written into the same `training_plans` row
-   (`training_type: 'event'`, `unique(user_id, training_type)` — see
-   `docs/PROJECT_CONTEXT.md` §9). The schema already only supports one
-   active generated plan at a time; that's an existing constraint, not a
-   new one, but this feature is the first time two *different* goal types
-   would compete for that same slot. Rather than silently letting whichever
-   goal's config completes last win (confusing — the athlete picked both,
-   sees both configured, but only one becomes a real plan), block the
-   combination at the picker: in `toggleGoal` (`GoalsSetupScreen.jsx:313`),
-   if the user selects `trail_running` while `event_race` is already
-   selected (or vice versa), don't add it — surface inline copy near the
-   goal-select step ("Trail Running and Race/Event both build a full
-   training plan — pick one for now, you can switch later.") This is a
-   product/UX call worth a human sanity-check, not just an engineering
-   default — flag it in the PR description explicitly, same as this spec
-   flags it here.
-6. **Day picker** (`GoalsSetupScreen.jsx:831`, currently gated by
-   `isRaceGoal(selectedGoals)`): generalize the gate to
-   `isRaceGoal(selectedGoals) || isTrailGoal(selectedGoals)` (new helper,
-   same shape as `isRaceGoal`), and generalize `raceDisciplines`
-   (`GoalsSetupScreen.jsx:250`) to resolve to `['trail']` when a trail goal
-   is selected (add a `trail: { icon: '⛰️', label: 'Trail run' }` entry to
-   `DISCIPLINE_META`, `GoalsSetupScreen.jsx:25`). This reuses the exact
-   same 7-day multi-select UI already built for running/swim/bike — no new
-   component.
-   - **Day count validation is stricter than the existing "at least 1
-     day" rule** (`GoalsSetupScreen.jsx:304`): P0 requires exactly 3–4
-     running sessions/week (1 long + 1 hill + 1–2 easy). Add a
-     trail-specific branch to `canAdvance`'s `day_picker` case:
+2. **`config_event_race` step needs no new fields.** Race type, start date,
+   race date, fitness level, target-time toggle, cutoff-time toggle are all
+   already generic across every race type (`GoalsSetupScreen.jsx:588–730`).
+   Trail runners answer the same questions; a target/cutoff time, if given,
+   is simply never read by the trail-specific generation branch (§B.2) —
+   consistent with the Non-Goal that trail pace isn't a reliable planning
+   signal, it's just not wasted effort to hide the field, since some trail
+   races do have real cutoffs worth recording for the athlete's own
+   reference.
+3. **Day picker** (`GoalsSetupScreen.jsx:831`, `disciplinesForRaceType`,
+   `GoalsSetupScreen.jsx:38`): `disciplinesForRaceType('Trail Running')`
+   already falls into the existing `return ['run']` default branch (only
+   triathlon needs the triple-discipline branch) — **no change needed
+   there.** Trail sessions are picked under the same `disciplineDays.run`
+   key 10K/Half/Marathon already use; there is no separate `disciplineDays.
+   trail` key.
+   - **Day-count validation is stricter than the generic "≥1 day" rule**
+     (`GoalsSetupScreen.jsx:304`) for this one race type specifically — P0
+     requires exactly 3–4 running sessions/week (1 long + 1 hill + 1–2
+     easy). Add a branch to `canAdvance`'s `day_picker` case:
      ```js
-     if (isTrailGoal(selectedGoals)) {
-       const n = (disciplineDays.trail || []).length;
-       return n >= 3 && n <= 4;
+     if (current === 'day_picker') {
+       if (isRaceGoal(selectedGoals)) {
+         if (isTrailRaceType(eventCfg.raceType)) {
+           const n = (disciplineDays.run || []).length;
+           return n >= 3 && n <= 4;
+         }
+         return raceDisciplines.every(d => (disciplineDays[d] || []).length >= 1);
+       }
+       return trainingDays.length >= 1;
      }
      ```
-     with inline copy telling the athlete to pick 3 or 4 days (not "at
-     least 1").
-7. **Long-run and hill-workout day preference.** `preferences.longSessionDay`
-   already exists and is exactly what's needed for the long run anchor
-   (reuse verbatim — same field, same UI, `GoalsSetupScreen.jsx`'s
-   preferences step). There is **no existing field for which of the
-   selected days is the hill day** — add `preferences.hillDay` to
-   `EMPTY_INTAKE.preferences` (`GoalsSetupScreen.jsx:121`) and to whatever
-   step currently sets `longSessionDay`/`secondDisciplineDay`/
-   `conditioningDay` (the "preferences" step later in the flow), shown only
-   when a trail goal is selected. No migration — `user_intake.preferences`
-   is already a jsonb column (`utils/supabase.js:339,364`), so a new key
-   nests in for free.
-8. **Baseline step.** P0 needs *some* fitness-ramp starting point, but the
-   product spec's Non-Goals explicitly exclude pace-zone logic — asking for
-   5K/10K times (the existing `run_baseline` step,
-   `GoalsSetupScreen.jsx:115`) would be exactly the pace-shaped signal this
-   feature is meant to avoid leaning on. **Decision:** new step
-   `trail_baseline` (added to `buildSteps()` in place of `run_baseline` when
-   the goal is `trail_running` — trail goals skip `run_baseline` entirely,
-   they don't need a road pace baseline): a single field,
+     with inline copy telling the athlete to pick 3 or 4 days when
+     `isTrailRaceType(eventCfg.raceType)`, instead of the generic "pick at
+     least one day" copy.
+4. **`run_baseline` step already shown for every `event_race` goal**
+   (unchanged — trail is a running race type, same as today's "every
+   remaining race type needs a run baseline" rule per
+   `deterministic-endurance-plan-generator.md` §A.3). The existing
+   5K/10K/half/marathon time fields render as-is (harmless if left blank or
+   filled — trail's generation branch doesn't read them). Add one
+   trail-only field to this step, shown when `isTrailRaceType(eventCfg.
+   raceType)`:
    *"Roughly how long is the longest continuous run or hike you've done
-   recently? (minutes)"* — stored as `runBaseline.longestEffortMinutes`
+   recently? (minutes)"* → stored as `runBaseline.longestEffortMinutes`
    (new key nested inside the existing `user_intake.run_baseline` jsonb
-   column — no migration, and deliberately kept separate from the existing
-   `longestEffortKm` key so road-plan fitness-ratio logic in
-   `buildTrainingPlan` is untouched). Mandatory but self-reported, same "no
-   hard block on specific fields" treatment the existing baseline steps get
-   (`GoalsSetupScreen.jsx:308`).
-9. **Everything else in the merged flow reuses as-is, unchanged:**
+   column — no migration, deliberately separate from the existing
+   `longestEffortKm` key so the road-running fitness-ratio logic in
+   `buildTrainingPlan` is untouched).
+5. **Preferences step** gains one new field, shown only when
+   `isTrailRaceType(eventCfg.raceType)`: which of the selected days is the
+   hill-workout day. Add `preferences.hillDay` to `EMPTY_INTAKE.preferences`
+   (`GoalsSetupScreen.jsx:121`) alongside the existing `longSessionDay`/
+   `secondDisciplineDay`/`conditioningDay`. No migration —
+   `user_intake.preferences` is already a jsonb column
+   (`utils/supabase.js:339,364`). The long-run day reuses
+   `preferences.longSessionDay` verbatim — no new field needed for that
+   one, it already means exactly the right thing for any single-discipline
+   running race type.
+6. **Triathlon-only steps** (`swim_baseline`, `bike_baseline`,
+   `discipline_rank`) already skip for any non-triathlon race type via
+   `isTriathlonGoal` (`GoalsSetupScreen.jsx:133`, driven by
+   `isTriathlonRaceType`'s `/triathlon/i` regex, which correctly doesn't
+   match `'Trail Running'`) — **no change needed.**
+7. **Everything else in the merged flow reuses as-is, unchanged:**
    availability (holidays/one-off events), injury history, gym access
-   toggle, standing commitments. None of these are running/triathlon-
-   specific in their current implementation.
+   toggle, standing commitments.
 
-## B. Deterministic plan engine — `buildTrailPlan()`
+## B. Plan generation — a new branch inside `buildTrainingPlan()`, not a new function
 
-New function in `src/utils/planEngine.js` (same file — reuses its private
-date helpers `parseUTCDate`/`toDateKey`/`addDays`/`dayKeyOf`/`diffDays`/
-`clamp`, `allocateWeeks`, `computeRecoveryWeeks`, `minutesDuration`,
-`buildRestEntry`, `pickAnchorDay`, `pickConditioningDay`, `fitnessRatio`,
-`buildWeeklySeries`, `buildConditioningEntry`, `selectConditioningExercises`
-directly — no new file, no export surface needed for those helpers since
-they're module-private and this lives in the same module). Exported
-alongside `buildTrainingPlan`.
+**Decision, superseding the previous draft's standalone `buildTrailPlan()`:**
+because Trail Running is now a race type flowing through the existing
+`buildTrainingPlan(intake)` entry point (`planEngine.js:321`), the trail-
+specific logic lives as an `if (trail) { … } else { … existing … }` branch
+inside that function, not a separate exported function. This keeps the
+single entry point / single output contract the rest of the app already
+depends on (`isEngineSupportedRaceType`, `mergeEventPlanFromCutoff`, Weekly
+Overview, `AboutScreen.jsx`'s plan-overview section) working for trail with
+no changes anywhere outside `planEngine.js` and its data tables.
 
-### B.0 Session `type` reuse (the key simplifying decision)
+```js
+const trail = raceType === 'Trail Running';
+```
 
-Every trail session entry uses `type: 'run'`, exactly like the existing
-engine's running sessions — **not** a new `'trail'`/`'trail_run'` type. This
-one choice is what makes §D/§E below "already works, no code needed"
-instead of new integration work:
+### B.0 Session `type` reuse — confirmed, unchanged
 
-- `SESSION_DISPLAY` (`src/data/sessionDisplay.js`) already has a `run` entry
-  (🏃, `#0090FF`) — trail sessions get it for free. Distinguish trail from
-  road visually via `label`/`sessionType` text only (e.g. `label: 'Trail
-  run'`, `sessionType: 'Trail long run'` / `'Trail hill repeats'` /
-  `'Easy trail run'`), which every screen that renders a session card
-  already reads (`SessionDetailScreen.jsx`, `WeeklyOverviewScreen.jsx`).
+Every trail session entry uses `type: 'run'`, exactly like the engine's
+other running sessions — **not** a new `'trail'`/`'trail_run'` type. This
+one choice is what makes §D/§E "already works, no code needed" instead of
+new integration work:
+
+- `SESSION_DISPLAY` (`src/data/sessionDisplay.js`) already has a `run`
+  entry (🏃, `#0090FF`) — trail sessions get it for free. Distinguish trail
+  from road only via `label`/`sessionType` text (e.g. `label: 'Run'`,
+  `sessionType: 'Trail hill repeats'` / `'Trail long run'` / `'Easy trail
+  run'`), which every screen that renders a session card already reads
+  (`SessionDetailScreen.jsx`, `WeeklyOverviewScreen.jsx`).
 - `overtrain.js`/`sessionLoadEstimate.js`'s ref-activities matching
   (`findRef(s.name, ref) || findRef(s.type, ref)`) already resolves `'run'`
   sessions against `ref_activities` for load scoring — no new
   `ref_activities` row, no code change.
 - `utils/analytics.js`'s pace chart (per
-  `features/specs/analytics-home-pace-reps.md`) already buckets "everything
-  with `type` other than swim/cycle/bike/gym/conditioning and a logged
-  distance" into the mm:ss/km pace series — a trail session with a logged
+  `features/specs/analytics-home-pace-reps.md`) already buckets any session
+  with a `type` other than swim/cycle/bike/gym/conditioning and a logged
+  distance into the mm:ss/km pace series — a trail session with a logged
   `distance` shows up there automatically, no new grouping rule.
 - `ActivityTimerScreen` (§D) and session-completion matching
   (`utils/sessionCompletion.js`) are already type-agnostic for `kind:
   'activity'` sessions.
 
-Do not special-case `type` anywhere in this feature. If a screen needs to
-distinguish "this is a trail run" for copy/behaviour, key off `sessionType`
-or a `flag`, not `type` — introducing a second type value would silently
-break every one of the reuse points above for trail sessions specifically.
+Do not special-case `type` anywhere in this feature. The distinction
+between a marathon runner's plan and a trail runner's plan is entirely in
+which builder function generates that day's session content (§B.2–B.5),
+never in the `type` field the session carries once generated.
 
-### B.1 No taper, no race day — phase structure
+### B.1 Phases — no distinct Taper *phase*, but the plan still ends on race day
 
-```js
-export function buildTrailPlan(intake) {
-  // intake: { startDate, planWeeks (12-16), fitnessLevel,
-  //           disciplineDays: { trail: [...dayKeys] },
-  //           preferences: { longSessionDay, hillDay, conditioningDay },
-  //           baselines: { trail: { longestEffortMinutes } },
-  //           holidays, oneOffEvents, injury }
-```
+The product spec's Non-Goal on taper is honoured at the level of "no
+distinct volume-cut taper block" — trail sessions ramp per §B.2 straight
+through to the athlete's chosen race date, where a normal `race`-type entry
+is emitted exactly like every other race type already gets
+(`planEngine.js`'s existing `if (dk === toDateKey(raceDate))` branch at the
+top of the day-by-day loop — this is unconditional today and needs **no
+change** for trail).
 
-- `totalWeeks = clamp(intake.planWeeks, 12, 16)`.
-- Three phases only — **no Taper phase** (Non-Goal: race-specific
-  taper/peak is out of scope; this is base-building end to end). Weights
-  `[0.35, 0.35, 0.30]` (Foundation/Build/Peak) through the existing
-  `allocateWeeks(totalWeeks, weights)` helper — same phase-color assignment
-  pattern as `computePhases` (`colorForPhase`).
-- Recovery weeks: reuse `computeRecoveryWeeks(phases)` unchanged (every 4th
-  week, 30% volume cut) — the existing implementation already only excludes
-  Taper, which doesn't exist here anyway, so it needs no modification.
-- No `race` entry type is ever emitted (there's no race day in this plan) —
-  the day-by-day loop simply never checks for one.
+- `TAPER_TABLE` gains a `'Trail Running'` row for lookup safety (`taperInfo
+  = TAPER_TABLE[raceType]` is read unconditionally near the top of
+  `buildTrainingPlan`, regardless of race type):
+  ```js
+  'Trail Running': { days: 0, volumeCut: 0 },
+  ```
+- `WEEKS_TABLE` gains:
+  ```js
+  'Trail Running': { min: 10, recMin: 12, recMax: 16 },
+  ```
+  This is what actually delivers the product spec's "12–16 week,
+  configurable" requirement — the athlete doesn't pick a week-count
+  directly, they pick a race date the same way they do for every other race
+  type, and `totalWeeks` falls out of the existing `startDate`/`raceDate`
+  arithmetic (`planEngine.js:329-330`, unchanged). A race date outside the
+  recommended 12–16 week window already gets the existing `noFoundation`/
+  `compressed` warning copy (`determinePhaseMode`, `buildOverview`) for
+  free — no new UI needed for "your plan is compressed."
+- **`computePhases` needs a trail-specific branch** — the existing function
+  always appends a `Taper` phase and subtracts `taperWeeks` from the
+  non-taper allocation (`planEngine.js:159-175`). For trail, skip that
+  entirely and allocate the full `totalWeeks` across Foundation/Build/Peak:
+  ```js
+  function computePhases(raceType, totalWeeks, phaseMode) {
+    if (raceType === 'Trail Running') {
+      const labels = phaseMode === 'full' ? ['Foundation', 'Build', 'Peak'] : ['Build', 'Peak'];
+      const weights = phaseMode === 'full' ? [0.35, 0.35, 0.30] : [0.6, 0.4];
+      const weeks = allocateWeeks(totalWeeks, weights);
+      const phases = [];
+      let cursor = 1;
+      labels.forEach((label, i) => { phases.push({ label, weeks: [cursor, cursor + weeks[i] - 1] }); cursor += weeks[i]; });
+      return phases.map((p, i) => ({ ...p, color: colorForPhase(p.label, i) }));
+    }
+    // ... existing body, unchanged ...
+  }
+  ```
+  Because `nonTaperWeeks` (computed just after `computePhases` is called,
+  `planEngine.js:334`) is derived from the phases actually returned (`max`
+  of every non-Taper phase's end week), this naturally comes out equal to
+  `totalWeeks` for trail with zero extra plumbing — the taper-curve portion
+  of `buildWeeklySeries` (§B.2) simply never executes (`taperWeeksCount =
+  totalWeeks - nonTaperWeeks = 0`).
 
 ### B.2 Long run — time-on-feet, 10–15% weekly growth, not the road-running formula
 
-Reuse `buildWeeklySeries` (`planEngine.js:255`) but it currently hardcodes a
-10% (`×1.10`) week-over-week growth cap, inline at line 265. **Small,
-additive change to a shared function** (flagging per `CLAUDE.md` — this
-touches code outside this feature's own new code, even though it's a
-one-line, backward-compatible addition): add an optional `growthCap`
-parameter defaulting to `1.10` so every existing caller (`buildTrainingPlan`
-for run/bike/swim series) is byte-for-byte unaffected; `buildTrailPlan`
-passes `1.15`.
+`buildWeeklySeries` (`planEngine.js:255`) currently hardcodes a 10%
+(`×1.10`) week-over-week growth cap inline at line 265. **Small, additive
+change to a shared function** (flagging per `CLAUDE.md` — this touches code
+outside this feature's own new code, even though it's a one-line,
+backward-compatible addition): add an optional `growthCap` parameter
+defaulting to `1.10` so every existing caller (run/bike/swim series in the
+non-trail branch) is byte-for-byte unaffected; the trail branch passes
+`1.15`.
 
 ```js
 function buildWeeklySeries({ ..., growthCap = 1.10 }) {
@@ -244,24 +308,34 @@ function buildWeeklySeries({ ..., growthCap = 1.10 }) {
 ```
 
 - **Decision (no reference table given for this in the product spec):**
-  peak long-run time-on-feet by fitness level — pick sensible defaults, flag
-  as tunable:
+  peak long-run time-on-feet by fitness level. Add a new row shape to
+  `PEAK_VOLUME_TABLE` — trail's row doesn't share the triathlon shape
+  (`swimM`/`bikeMin`/`runMin`/...) or the plain-running shape
+  (`longRunKm`/`weeklyKm`, both distance-based and wrong for a
+  time-on-feet plan):
   ```js
-  const TRAIL_PEAK_LONG_RUN_MIN = { 'Beginner': 90, 'Intermediate': 150, 'Fit but new to this': 120 };
+  'Trail Running': { longRunMinByFitness: { 'Beginner': 90, 'Intermediate': 150, 'Fit but new to this': 120 } },
   ```
-  `startValue = peak * trailFitness`, where `trailFitness` follows the same
-  pattern `runFitness`/`bikeFitness`/`swimFitness` already use in
-  `buildTrainingPlan` (`planEngine.js:352`): self-reported baseline
-  overrides the generic `fitnessRatio(fitnessLevel)` when present —
   ```js
-  const trailFitness = baselines.trail?.longestEffortMinutes
-    ? clamp(baselines.trail.longestEffortMinutes / peak, 0.15, 0.75)
-    : fitnessRatio(fitnessLevel);
+  if (trail) {
+    const peakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
+    const trailFitness = baselines.run?.longestEffortMinutes
+      ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
+      : fitnessRatio(fitnessLevel);
+    runLongSeries = runDays.length ? buildWeeklySeries({
+      startValue: peakMin * trailFitness, peakValue: peakMin,
+      totalWeeks, nonTaperWeeks: totalWeeks, recoveryWeeks, taperVolumeCut: 0, growthCap: 1.15,
+    }) : [];
+  } else {
+    // existing pace-based runLongSeries logic, completely unchanged
+  }
   ```
-- Long-run day: `pickAnchorDay(trailDays, preferences.longSessionDay,
-  'sunday')` — reused verbatim.
+  `baselines.run.longestEffortMinutes` is exactly the field §A.4 adds —
+  self-reported baseline overrides the generic `fitnessRatio(fitnessLevel)`
+  when present, same pattern `runFitness`/`bikeFitness`/`swimFitness`
+  already use elsewhere in this function.
 - The generated `duration` field is always a `minutesDuration(...)` string
-  ("`90min`"), never a distance — this is what makes the P0 acceptance
+  (e.g. `"90min"`), never a distance — this is what makes the P0 acceptance
   criterion ("prescribed target remains a duration regardless of whether km
   is logged") true by construction, not by a separate guard.
 
@@ -269,17 +343,16 @@ function buildWeeklySeries({ ..., growthCap = 1.10 }) {
 
 Not a rotation-table lookup like `RUN_LIBRARY`/`BIKE_LIBRARY` (no variety
 needed — the product spec prescribes one specific structure). A single
-builder function:
+builder function, local to `planEngine.js`:
 
 ```js
 const TRAIL_HILL_REPS = { Foundation: 6, Build: 7, Peak: 8 };
 
 function buildTrailHillEntry(weekNum, phase) {
   const reps = TRAIL_HILL_REPS[phase.label] || 6;
-  const duration = minutesDuration(15 + reps * 3); // 15min warm-up + ~3min per rep (60-90s effort + jog/walk recovery down)
+  const duration = minutesDuration(15 + reps * 3); // 15min warm-up + ~3min/rep (60-90s effort + jog/walk recovery down)
   return {
-    type: 'run', label: 'Trail run',
-    sessionType: 'Trail hill repeats',
+    type: 'run', label: 'Run', sessionType: 'Trail hill repeats',
     duration, flag: '', intensity: 'High', week: weekNum, phase: phase.label,
   };
 }
@@ -298,22 +371,21 @@ const TRAIL_EASY_MIN = { Foundation: 30, Build: 35, Peak: 35 };
 
 function buildTrailEasyEntry(weekNum, phase) {
   return {
-    type: 'run', label: 'Trail run',
-    sessionType: 'Easy trail run',
+    type: 'run', label: 'Run', sessionType: 'Easy trail run',
     duration: minutesDuration(TRAIL_EASY_MIN[phase.label] || 30),
     flag: '', intensity: 'Low', week: weekNum, phase: phase.label,
   };
 }
 ```
 
-No rotation, no progression series — flat duration per phase is enough to
-satisfy the P0 requirement ("labeled with a 'conversational effort' cue
-rather than a pace target"); the cue itself is the `sessionType` string
-("Easy trail run") plus the glossary entry (§C) surfacing the "comfortable,
-conversational-pace" description wherever the glossary info-icon pattern
-already renders it (`SessionDetailScreen.jsx`, per
-`deterministic-endurance-plan-generator.md` §C.3 — already built, nothing
-new to wire up).
+No rotation, no progression series — a flat duration per phase satisfies
+the P0 requirement ("labeled with a 'conversational effort' cue rather than
+a pace target"). The cue itself is the existing `'Easy run'` glossary
+term's description ("comfortable, conversational-pace running" —
+`data/planGlossary.js:12`), which the plan-mix/glossary surface
+(`deterministic-endurance-plan-generator.md` §C.3, already built) already
+renders wherever a session's info icon is tapped — reused as-is, no new
+glossary entry needed for this one.
 
 ### B.5 Weekly day assignment
 
@@ -327,142 +399,150 @@ function assignTrailDays(trailDays, preferences) {
 }
 ```
 
-In the day-by-day loop: if `dayKey === longDay` → `buildTrailLongEntry`
-(from the B.2 series); if `dayKey === hillDay` → `buildTrailHillEntry`; if
-`dayKey` is in `easyDays` → `buildTrailEasyEntry`; else (including the
-conditioning day and any non-selected day) → fall through to the
-conditioning/rest logic below.
-
-### B.6 Strength & stability — unconditional, not gated by `gymAccess`
-
-**This is the detail most likely to get silently dropped by copying the
-existing pattern too literally — call it out explicitly.** The existing
-`conditioningDay` in `buildTrainingPlan` is only added `if (gymAccess)`
-(`planEngine.js:387`), because that conditioning content assumes gym
-equipment access is the reason to gate it. The product spec's strength/
-stability requirement for trail is unconditional — squats, lunges,
-step-ups, ankle work are all bodyweight, no equipment needed, and P0's
-acceptance criterion has no "if gym access" clause ("Generated plans
-include at least one strength/stability session per week"). `buildTrailPlan`
-must **always** place a conditioning day, regardless of `gymAccess`:
+Computed once outside the day-by-day loop (same place `runLongDay`/
+`bikeLongDay` are computed today, `planEngine.js:385-386`). Inside the loop,
+the existing `runAllowed && activeDaysForWeek('run', ...)` branch
+(`planEngine.js:485-489`) gets an `if (trail) { … } else { … existing … }`
+split:
 
 ```js
-const conditioningDay = pickConditioningDay(preferences.conditioningDay, [longDay, hillDay, ...easyDays]);
+if (trail) {
+  if (dayKey === trailAssignment.longDay) entries.push(buildTrailLongEntry(weekNum, phase, runLongSeries[weekNum - 1] || 0));
+  else if (dayKey === trailAssignment.hillDay) entries.push(buildTrailHillEntry(weekNum, phase));
+  else if (trailAssignment.easyDays.includes(dayKey)) entries.push(buildTrailEasyEntry(weekNum, phase));
+} else {
+  // existing runAllowed / activeDaysForWeek / buildRunEntry branch, unchanged
+}
 ```
 
-(`pickConditioningDay` already defaults to a mid-week day avoiding a given
-list when no explicit preference is set — reused verbatim, just without the
-`gymAccess ? ... : null` guard `buildTrainingPlan` wraps it in.)
+Trail does **not** use `activeDaysForWeek`'s Foundation-frequency ramp-down
+(`foundationCapFor`, `planEngine.js:406-414`) — that ramp is triathlon-only
+today (`if (!triathlon ...) return Infinity`) and stays that way; trail's
+3–4 selected days run every week of the plan, at the durations §B.2–B.4
+already ramp, with no separate day-count reduction in early Foundation.
 
-Reuses `buildConditioningEntry`/`selectConditioningExercises`
-(`planEngine.js:309`, `data/conditioningLibrary.js`) unchanged — but the
-exercise catalog needs one addition per the product spec's explicit list
-("squats, lunges, step-ups; ankle-strengthening"). `squat`, `lunge`,
-`calf_raise`, and `single_leg_balance` (ankle) already exist in
+`buildTrailLongEntry` mirrors `buildTrailHillEntry`'s shape:
+```js
+function buildTrailLongEntry(weekNum, phase, minutes) {
+  return { type: 'run', label: 'Run', sessionType: 'Long run', duration: minutesDuration(minutes), flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
+}
+```
+(`sessionType: 'Long run'` deliberately reuses `RUN_LONG_TERM`'s exact
+string, `planEngine.js:41`, so the existing `'Long run'` glossary term
+(`data/planGlossary.js:18` — "pace matters far less than time on feet",
+already terrain-agnostic) resolves for trail's long run with no new entry.)
+
+### B.6 Strength & stability — unconditional in every generated plan, not just trail's
+
+**This is the one change in this spec that isn't trail-specific — flagging
+prominently per `CLAUDE.md`, since it changes existing behaviour for 10K,
+Half Marathon, Marathon, and every triathlon distance, not just the new
+race type.** Per product direction, conditioning must be included in *all*
+generated plans. Today, `conditioningDay` in `buildTrainingPlan` is only
+computed `if (gymAccess)` (`planEngine.js:387-389`):
+
+```js
+// current
+const conditioningDay = gymAccess
+  ? pickConditioningDay(preferences.conditioningDay, [runLongDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean))
+  : null;
+```
+
+Remove the `gymAccess` gate entirely — the exercise catalog
+(`data/conditioningLibrary.js`) is already 100% bodyweight (squats,
+lunges, glute bridges, balance work — nothing requires gym equipment), so
+there was never a real dependency on `gymAccess` here, just an
+over-cautious gate:
+
+```js
+// new — unconditional
+const conditioningDay = pickConditioningDay(preferences.conditioningDay, [runLongDay, trailAssignment?.hillDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean));
+```
+
+`gymAccess` itself is untouched everywhere else (gym-split generation,
+`hasGym`, `generateActivitySchedule`) — this only removes its effect on
+whether a *generated endurance plan* includes a conditioning day.
+Downstream: `buildConditioningEntry`/`selectConditioningExercises`
+(`planEngine.js:309`, `data/conditioningLibrary.js`) are otherwise
+unchanged — but the catalog needs one addition per the product spec's
+explicit list ("squats, lunges, step-ups; ankle-strengthening"). `squat`,
+`lunge`, `calf_raise`, and `single_leg_balance` (ankle) already exist in
 `CONDITIONING_EXERCISES`; **step-ups do not**. Add:
 
 ```js
 { id: 'step_up', name: 'Step-up', targetsAreas: ['Quad', 'Knee', 'Hip'] },
 ```
 
-No other catalog change needed — `selectConditioningExercises` already
-picks a mixed circuit and will include this now that it exists.
+**Practical consequence worth calling out in the PR description:**
+existing users' *already-generated* plans in `training_plans` are
+unaffected (this is a generation-time change, no backfill) — but the next
+time any user redoes onboarding for any race type, their regenerated plan
+will now include a conditioning day even if `gymAccess` is off, which is a
+visible behaviour change beyond trail running. This is exactly the kind of
+change `CLAUDE.md` asks to flag explicitly rather than let ride silently
+inside a feature that's nominally "just trail running."
 
 ### B.7 Holidays / one-off events / injury
 
 Reuse the existing holiday-day-lookup and one-off-event handling
 (`holidayByDate`, `applyOneOffEvents`) unchanged — they operate on the
 generic `sessions` map keyed by date, not on discipline-specific logic, so
-they apply to a trail plan's single running discipline exactly as they do
-to `buildTrainingPlan`'s. `applyOneOffEvents`'s recovery-day logic already
-falls back to `realType = original.find(e => e.type !== 'rest')?.type ||
-'run'` — for a trail plan this resolves to `'run'` naturally (§B.0), no
-change needed.
+they apply to trail's single running discipline exactly as they do to every
+other race type's. `applyOneOffEvents`'s recovery-day logic already falls
+back to `realType = original.find(e => e.type !== 'rest')?.type || 'run'`
+— for a trail plan this resolves to `'run'` naturally (§B.0), no change
+needed.
 
 ### B.8 Output contract
 
-Same `{ meta, phases, sessions }` shape `buildTrainingPlan` produces —
-required so `mergeEventPlanFromCutoff`, Weekly Overview, and everything
-else downstream of an applied plan need zero changes (per the precedent set
-in `deterministic-endurance-plan-generator.md` §B.6).
+Same `{ meta, phases, sessions }` shape every other race type already
+produces — this is what makes "no App.jsx changes" (§A) true. One field
+needs an explicit guard:
 
-- `meta.raceType`: `'Trail Running'` (used only for display/identification —
-  nothing keys scheduling logic off it, unlike the event-plan engine, since
-  there's exactly one trail "type").
-- `meta.eventDistances`: omit (leave `undefined`/`null`) — every read site
-  already treats it as optional (`eventPlan.meta?.eventDistances ? ... :
-  ''`, `AboutScreen.jsx`) since a time-on-feet plan has no fixed distance by
-  design (Non-Goal).
-- `meta.sourceFileName: 'Generated by Forma'` and `meta.planHealth` — set
-  exactly as `buildTrainingPlan` does, so the existing
-  `existingPlanIsEngineGenerated` marker check in `App.jsx`'s
-  `handleGoalsSetupComplete` (`App.jsx:550`) treats a trail plan as safe to
-  regenerate on redo, same as an event-race plan.
-- `meta.glossary`: `glossaryForTerms(usedTerms)` — reuse verbatim. Add one
-  new glossary term to `data/planGlossary.js` (do **not** reuse the
-  existing `'Hill repeats'` term — that one's `discipline: 'Bike'` and its
-  description is bike-specific; reusing the same term string for trail
-  would silently show the wrong description on a trail plan's glossary
-  since `glossaryForTerms` matches by exact term string across one flat
-  list):
+- `meta.eventDistances`: the existing line
+  (`planEngine.js:512-514`) is `triathlon ? ... : \`${RUN_RACE_DISTANCES_KM[raceType]}km\``
+  — `RUN_RACE_DISTANCES_KM['Trail Running']` is `undefined`, which would
+  silently produce the string `"undefinedkm"` for every trail plan.
+  **Edge case to fix, not just an omission:**
   ```js
-  { term: 'Trail hill repeats', discipline: 'Trail Run', description: 'Repeated hard uphill efforts (60–90s) with an easy jog or walk back down as recovery — builds the climbing strength and leg power trail terrain demands.' },
+  const eventDistances = trail ? null : (triathlon ? ... : `${RUN_RACE_DISTANCES_KM[raceType]}km`);
   ```
-  `'Easy run'` and `'Long run'` (already in the glossary,
-  `data/planGlossary.js:12,18`) are reused as-is — both descriptions are
-  already terrain-agnostic ("pace matters far less than time on feet" is,
-  if anything, more true for trail than for the road running it was
-  originally written for).
-- `meta.planHealth`: reuse `computePlanHealth` unchanged — it's a generic
-  function over `sessions`/`phases`, no discipline-specific assumptions.
-- `meta.overview`/`meta.planMix`: adapt `buildOverview`/`buildPlanMix`
-  (`planEngine.js:698,729`) with trail-appropriate copy (no
-  triathlon/warm-up-per-discipline branching needed — one discipline, one
-  warm-up/cool-down reference line: "5min brisk walk/easy jog + leg swings,
+  Every read site already treats this as optional (`eventPlan.meta?.
+  eventDistances ? ... : ''`, `AboutScreen.jsx`) since a time-on-feet plan
+  has no fixed distance by design (Non-Goal) — `null` is safe.
+- `meta.raceType`: `'Trail Running'`, same field every race type already
+  sets — no special handling.
+- `meta.sourceFileName`/`meta.planHealth`/`meta.glossary`: computed exactly
+  as today, unchanged — `computePlanHealth`, `collectUsedTerms`,
+  `glossaryForTerms` are all generic over `sessions`/`phases`, no
+  discipline-specific assumptions to update.
+- **One new glossary term** — do **not** reuse the existing `'Hill
+  repeats'` term (`data/planGlossary.js:33`, `discipline: 'Bike'`, bike-
+  specific description); `glossaryForTerms` matches by exact term string
+  across one flat list, so reusing that string for trail would silently
+  show the wrong (bike) description on a trail plan's glossary:
+  ```js
+  { term: 'Trail hill repeats', discipline: 'Trail', description: 'Repeated hard uphill efforts (60–90s) with an easy jog or walk back down as recovery — builds the climbing strength and leg power trail terrain demands.' },
+  ```
+- `buildOverview`/`buildPlanMix` (`planEngine.js:698,729`): add a trail
+  branch with appropriate copy (one discipline, no triathlon warm-up-per-
+  leg branching needed) — e.g. *"5min brisk walk/easy jog + leg swings and
   dynamic drills on flat ground before climbing onto trail; walk the last
-  5min of any session to cool down, especially after the hill workout.").
+  5min of any session to cool down, especially after the hill workout."*
 
-## C. `App.jsx` wiring
+## C. `App.jsx` — no changes required
 
-Mirrors the existing `event_race` wiring in `handleGoalsSetupComplete`
-(`App.jsx:503`) almost exactly:
-
-```js
-const trailGoalCfg = gp.goals?.find(g => g.type === 'trail_running')?.config;
-if (!blockScheduleApply && !generatedPlan && trailGoalCfg?.startDate && trailGoalCfg?.planWeeks) {
-  try {
-    generatedPlan = buildTrailPlan({
-      startDate: trailGoalCfg.startDate,
-      planWeeks: trailGoalCfg.planWeeks,
-      fitnessLevel: trailGoalCfg.fitnessLevel,
-      disciplineDays: gp.disciplineDays,
-      baselines: { trail: newIntake.runBaseline }, // longestEffortMinutes lives inside runBaseline, see §A.8
-      preferences: newIntake.preferences,
-      holidays: newIntake.availability?.holidays,
-      oneOffEvents: newIntake.availability?.oneOffEvents,
-      injury: newIntake.injury,
-    });
-  } catch (e) {
-    console.warn('Forma: trail plan engine could not generate a plan from these answers', e);
-  }
-}
-```
-
-`!generatedPlan` guards against both goal types somehow both reaching this
-point despite §A.5's picker-level block (defence in depth, not the primary
-mechanism — event_race generation runs first in source order and simply
-wins if the picker guard is ever bypassed). Everything after this
-(`suppressGenericSchedule`, `mergeEventPlanFromCutoff`, cutoff-date pruning
-of `eventOverrides`/`preselectedQueues`/`planSessionsDone`/
-`sequencingDecisions`) is goal-type-agnostic already — no further change
-needed in `App.jsx`.
-
-`isTrailGoal`/`isTrailRace`-style discipline gating in
-`generateActivitySchedule`/`getAutoSplitDays` (the generic non-plan
-scheduler) doesn't need any change: `suppressGenericSchedule` is already
-`blockScheduleApply || !!generatedPlan`, and a trail plan sets
-`generatedPlan` exactly like an event-race plan does, so the generic
-scheduler already skips scheduling anything on top of it.
+Confirmed by construction (§A, §B.8): `handleGoalsSetupComplete`
+(`App.jsx:503`) already calls `buildTrainingPlan` for any
+`isEngineSupportedRaceType(eventGoalCfg.raceType)` with the exact same
+argument shape trail needs (`disciplineDays`, `baselines.run`,
+`preferences`, `holidays`, `oneOffEvents`, `injury`, ...) — every one of
+those fields already flows through unchanged from §A's onboarding
+additions. `existingPlanIsEngineGenerated`, `mergeEventPlanFromCutoff`,
+`suppressGenericSchedule` are all generic over "is there a generated plan,"
+never over which race type produced it. **Verify this during
+implementation rather than assuming it — but no edit to `App.jsx` should be
+needed for this feature.**
 
 ## D. Session logging — optional km, already built
 
@@ -506,47 +586,55 @@ new integration code.
 
 **No new Supabase tables. No new columns. No migration.**
 
-- `user_goals.goals` (jsonb array) — `trail_running` goal objects nest into
-  the existing generic `{ type, config }` shape the array already holds for
-  every other goal type; no schema change, since the column has no
-  per-type constraint.
-- `user_goals.discipline_days` (jsonb) — gains a `trail` key alongside the
-  existing `run`/`swim`/`bike` keys. Already an open jsonb object.
+- `user_goals.discipline_days` (jsonb) — trail sessions use the existing
+  `run` key, same as 10K/Half/Marathon. No new key.
 - `user_intake.preferences` (jsonb) — gains a `hillDay` key. Already an
   open jsonb object (`utils/supabase.js:339,364`).
 - `user_intake.run_baseline` (jsonb) — gains a `longestEffortMinutes` key,
   additive alongside the existing `longestEffortKm`/`time5k`/etc. keys.
 - `training_plans` — no shape change; a trail plan is written into the
-  existing `training_type: 'event'` row using the same `meta`/`phases`/
-  `sessions` columns an event-race plan uses (see §B.8 on why mutual
-  exclusivity at the picker, §A.5, matters given this shared slot).
+  existing `training_type: 'event'` row through the same `meta`/`phases`/
+  `sessions` columns every other race type already uses. Because trail is
+  a `raceType` value, not a competing goal type, there's no new "which
+  plan wins" ambiguity to resolve — it's mutually exclusive with every
+  *other* race type in exactly the same way 10K and Marathon already are
+  (picking a new `raceType` replaces the previous plan on redo, unchanged
+  existing behaviour).
 - `gym_sessions` — no shape change; `distance`/`distanceUnit`/`rpe` on a
   completed trail session round-trip through the existing generic `raw`
   jsonb field exactly as they do for any other activity session.
 
 ## Edge cases handled
 
-- Athlete picks 5+ or fewer than 3 trail days — blocked at `canAdvance`
-  (§A.6), same "block advancing with a clear message" pattern the existing
-  per-discipline day picker already uses for triathlon.
-- Athlete selects both `event_race` and `trail_running` — blocked at goal
-  selection (§A.5), not left to resolve silently at generation time.
+- Athlete picks 5+ or fewer than 3 days for a Trail Running race — blocked
+  at `canAdvance` (§A.3), same "block advancing with a clear message"
+  pattern the existing per-discipline day picker already uses for
+  triathlon.
+- `meta.eventDistances` for a trail plan — explicitly set to `null` (§B.8),
+  not left to fall through to the `undefinedkm` bug the naive reuse of the
+  existing ternary would produce.
 - Athlete leaves `longestEffortMinutes` blank — falls back to
   `fitnessRatio(fitnessLevel)`, same "true beginner for ramp purposes"
-  behaviour the existing engine already gives baseline-less athletes
-  (`planEngine.js:352` for the precedent).
-- Holiday/one-off event lands on a trail hill-workout day — handled
+  behaviour the existing engine already gives baseline-less athletes for
+  every other discipline (`planEngine.js:352` for the precedent).
+- Holiday/one-off event lands on the trail hill-workout day — handled
   identically to any other day by the existing generic holiday/one-off-event
   machinery (§B.7); no trail-specific holiday behaviour needed since
   there's only one discipline to substitute/absorb.
-- Redoing onboarding with an already-active trail plan — same
-  `existingPlanIsEngineGenerated` "safe to replace" path an event-race redo
-  already gets (§B.8, §C); redoing with an active *uploaded* plan still
-  leaves it untouched, same as today.
-- A trail plan mid-flight when the athlete's `gymAccess` toggle is off —
-  the strength/stability day still appears (§B.6) — this is the one place
-  behaviour deliberately *diverges* from the existing conditioning pattern,
-  and is the detail most worth double-checking in review.
+- Redoing onboarding with an already-active trail plan, or switching from
+  Trail Running to a different race type (or vice versa) — same
+  `existingPlanIsEngineGenerated` "safe to replace" path any race-type
+  change already gets today (§B.8, §C); redoing with an active *uploaded*
+  plan still leaves it untouched, same as today.
+- A race date that yields fewer than ~10 or more than ~16 weeks — falls
+  into the existing `compressed`/`noFoundation` `phaseMode` warning copy
+  (`determinePhaseMode`, `buildOverview`), same UX every other race type
+  already gets for an aggressive or generous timeline, no new UI needed.
+- Every generated plan across every race type now includes a conditioning
+  day regardless of `gymAccess` (§B.6) — worth a dedicated regression check
+  that existing 10K/Half/Marathon/Triathlon plan generation still produces
+  correct output with this gate removed, since it's the one change in this
+  spec that isn't trail-specific.
 
 ## Explicitly out of scope (P1 / P2 — do not build in this pass)
 
@@ -558,9 +646,12 @@ new integration code.
 - Optional elevation-gain field alongside km logging.
 - Onboarding explainer copy for "why time, not pace/distance."
 - GPX import, route/terrain mapping, Strava trail-segment matching.
-- Pace-zone calculation or guidance for trail running, at all.
-- Race-specific taper/peak phasing for trail ultras (this plan has no race
-  day, no taper phase — see §B.1).
+- Pace-zone calculation or guidance for trail running, at all — a target/
+  cutoff time may be captured (§A.2) but is never converted into pace
+  guidance for trail, unlike the road-running race types.
+- A distinct Taper *phase*/volume-cut block for trail (§B.1) — the plan
+  still ends on race day, it just doesn't get a separate reduced-volume
+  block beforehand in this pass.
 - Requiring elevation gain as an input.
 - Any change to `utils/trainingPlanImport.js` (uploaded `.xlsx` plans) —
   unaffected, separate code path.
@@ -573,40 +664,51 @@ new integration code.
 
 ## Files this touches
 
-- `src/screens/GoalsSetupScreen.jsx` — new goal type, config step, baseline
-  step, day-picker generalization, mutual-exclusivity guard, `canAdvance`
-  additions, `preferences.hillDay` field (§A).
-- `src/utils/planEngine.js` — new `buildTrailPlan()` export, new local
-  builder functions (`assignTrailDays`, `buildTrailLongEntry`,
-  `buildTrailHillEntry`, `buildTrailEasyEntry`), `buildWeeklySeries`
-  gains an optional `growthCap` param (§B).
-- `src/utils/planEngine.test.js` — Vitest coverage for `buildTrailPlan`:
-  phase structure has no Taper, long-run series grows ≤15%/week and hits
-  the fitness-level peak, hill workout always has 6–8 reps depending on
-  phase, easy-run count matches `trailDays.length - 2`, conditioning day is
-  present regardless of `gymAccess`, output shape matches
-  `buildTrainingPlan`'s contract (`meta`/`phases`/`sessions`).
+- `src/screens/GoalsSetupScreen.jsx` — `RACE_TYPES` gains `'Trail Running'`,
+  `canAdvance`'s `day_picker` case gains the 3–4-day rule, `run_baseline`
+  step gains the trail-only time-on-feet field, preferences step gains
+  `hillDay` (§A). No change to `buildSteps`, `disciplinesForRaceType`,
+  `isTriathlonGoal`, or the `config_event_race`/`day_picker` rendering
+  beyond the one new field noted above — the existing generic rendering
+  already handles a new `RACE_TYPES` entry.
+- `src/utils/planEngine.js` — `SUPPORTED_RACE_TYPES` gains `'Trail
+  Running'`, new `isTrailRaceType()` export, `TAPER_TABLE`/`WEEKS_TABLE`/
+  `PEAK_VOLUME_TABLE` gain a `'Trail Running'` row each, `computePhases`
+  gains a trail branch, `buildWeeklySeries` gains an optional `growthCap`
+  param, new local builders (`assignTrailDays`, `buildTrailLongEntry`,
+  `buildTrailHillEntry`, `buildTrailEasyEntry`), `buildTrainingPlan`'s
+  run-series and day-by-day-loop sections gain `if (trail)` branches,
+  `eventDistances` gains the `null` guard, conditioning-day computation
+  loses its `gymAccess` gate (§B — this last change affects every race
+  type, not just trail).
+- `src/utils/planEngine.test.js` — Vitest coverage: trail plan has no Taper
+  phase and ends with a Race Day entry on the chosen race date; long-run
+  series grows ≤15%/week and reaches the fitness-level peak; hill workout
+  always has 6–8 reps depending on phase; easy-run count matches
+  `trailDays.length - 2`; `meta.eventDistances` is `null` for trail;
+  conditioning day is present regardless of `gymAccess`, for trail **and**
+  for at least one existing race type (regression coverage for §B.6's
+  cross-cutting change).
 - `src/data/conditioningLibrary.js` — add the `step_up` exercise (§B.6).
 - `src/data/planGlossary.js` — add the `'Trail hill repeats'` term (§B.8).
-- `src/App.jsx` — `handleGoalsSetupComplete` gains the `buildTrailPlan` call
-  (§C). No other function in this file needs to change.
 - `tests/e2e/smoke.spec.js` — one smoke assertion for selecting Trail
-  Running as a goal and reaching a generated plan, per
+  Running as a race type and reaching a generated plan, per
   `tests/e2e/README.md`'s existing pattern for onboarding-flow assertions.
-- `docs/PROJECT_CONTEXT.md` §6/§7.4 — brief mention that `trail_running` is
-  a second goal type the deterministic engine supports, alongside
-  `event_race`, once this ships (keeps the "read first" doc accurate, per
-  `CLAUDE.md`).
+- `docs/PROJECT_CONTEXT.md` §7.4 — brief mention that `SUPPORTED_RACE_TYPES`
+  now includes `'Trail Running'`, and that conditioning is no longer
+  `gymAccess`-gated in generated plans (keeps the "read first" doc
+  accurate, per `CLAUDE.md`).
+- **`src/App.jsx` — confirmed no change needed** (§C); listed here so it
+  isn't mistaken for an oversight.
 
-## Open questions carried over from the product spec (unresolved here, by design)
+## Open questions carried over from the product spec
 
-These are called out in the product spec's own "Open Questions" section and
-are genuinely product decisions, not engineering ones — this technical spec
-does not resolve them:
+One of the two open questions the product spec raised is resolved by this
+revision (see "Revision note" above — brand-new users see Trail Running
+immediately, no gating). The other remains a genuine product decision, not
+an engineering one:
 
-- Should `trail_running` be available to brand-new users at signup, or
-  gated behind having completed at least one existing plan?
 - Should logged km ever feed back into future plan adjustments, or stay a
   pure personal record (per Non-Goals, current default: pure record, no
-  feedback loop — `buildTrailPlan` never reads a previously-logged
-  `distance` value for anything)?
+  feedback loop — the trail-specific builders in §B never read a
+  previously-logged `distance` value for anything)?
