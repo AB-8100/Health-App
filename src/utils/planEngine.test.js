@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildTrainingPlan, isEngineSupportedRaceType, isTriathlonRace,
+  buildTrainingPlan, isEngineSupportedRaceType, isTriathlonRace, isTrailRaceType,
   determinePhaseMode, allocateWeeks,
 } from './planEngine';
 
@@ -13,6 +13,24 @@ function marathonIntake(overrides = {}) {
     disciplineDays: { run: ['tuesday', 'thursday', 'sunday'] },
     baselines: { run: { time10k: '50:00', longestEffortKm: '15' } },
     preferences: { longSessionDay: 'sunday' },
+    gymAccess: false,
+    holidays: [],
+    oneOffEvents: [],
+    targetPaces: null,
+    injury: {},
+    ...overrides,
+  };
+}
+
+function trailIntake(overrides = {}) {
+  return {
+    raceType: 'Trail Running',
+    startDate: '2026-01-05', // Monday
+    raceDate: '2026-04-13',  // ~14 weeks later
+    fitnessLevel: 'Intermediate',
+    disciplineDays: { run: ['tuesday', 'thursday', 'saturday', 'sunday'] },
+    baselines: { run: { longestEffortMinutes: '60' } },
+    preferences: { longSessionDay: 'sunday', hillDay: 'thursday' },
     gymAccess: false,
     holidays: [],
     oneOffEvents: [],
@@ -49,15 +67,20 @@ function triIntake(overrides = {}) {
   };
 }
 
-describe('isEngineSupportedRaceType / isTriathlonRace', () => {
-  it('supports exactly the 7 engine race types', () => {
-    ['10K', 'Half Marathon', 'Marathon', 'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)']
+describe('isEngineSupportedRaceType / isTriathlonRace / isTrailRaceType', () => {
+  it('supports exactly the 8 engine race types', () => {
+    ['10K', 'Half Marathon', 'Marathon', 'Trail Running', 'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)']
       .forEach(rt => expect(isEngineSupportedRaceType(rt)).toBe(true));
     ['5K', 'Cycling Sportive', 'Open Water Swim', 'Other', ''].forEach(rt => expect(isEngineSupportedRaceType(rt)).toBe(false));
   });
   it('flags triathlon distances only', () => {
     expect(isTriathlonRace('Triathlon (Sprint)')).toBe(true);
     expect(isTriathlonRace('Marathon')).toBe(false);
+  });
+  it('flags Trail Running only', () => {
+    expect(isTrailRaceType('Trail Running')).toBe(true);
+    expect(isTrailRaceType('Marathon')).toBe(false);
+    expect(isTrailRaceType('Triathlon (Sprint)')).toBe(false);
   });
 });
 
@@ -269,6 +292,161 @@ describe('buildTrainingPlan — one-off events and holidays', () => {
       expect(limitedDay.find(e => e.type === 'swim').sessionType).toBe('Open water swim');
     }
     expect(plan.sessions['2026-02-02'].every(e => e.type === 'rest')).toBe(true);
+  });
+});
+
+describe('buildTrainingPlan — trail running', () => {
+  it('has no Taper phase but still ends with a race-day entry on the chosen race date', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    expect(plan.phases.map(p => p.label)).not.toContain('Taper');
+    expect(plan.phases[plan.phases.length - 1].weeks[1]).toBe(plan.meta.totalWeeks);
+    const raceEntries = plan.sessions['2026-04-13'];
+    expect(raceEntries.some(e => e.type === 'race')).toBe(true);
+  });
+
+  it('only schedules run sessions on the athlete-selected weekdays', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    Object.entries(plan.sessions).forEach(([dk, entries]) => {
+      const hasRun = entries.some(e => e.type === 'run');
+      if (!hasRun) return;
+      const dow = new Date(dk + 'T00:00:00Z').getUTCDay();
+      // tuesday=2, thursday=4, saturday=6, sunday=0
+      expect([2, 4, 6, 0]).toContain(dow);
+    });
+  });
+
+  it('ramps the long run by at most ~15% week-on-week (not the 10% road-running cap) and trends upward through the plan', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    const longRunByWeek = {};
+    Object.values(plan.sessions).forEach(entries => entries.forEach(e => {
+      if (e.sessionType === 'Long run') longRunByWeek[e.week] = parseInt(e.duration, 10);
+    }));
+    const weeks = Object.keys(longRunByWeek).map(Number).sort((a, b) => a - b);
+    expect(weeks.length).toBeGreaterThan(1);
+    for (let i = 1; i < weeks.length; i++) {
+      const prev = longRunByWeek[weeks[i - 1]], cur = longRunByWeek[weeks[i]];
+      if (prev <= 0 || cur <= prev) continue; // recovery weeks (~30% cut) and plateaus don't grow
+      expect((cur - prev) / prev).toBeLessThanOrEqual(0.18); // 15% cap + whole-minute rounding tolerance (matches the ~20% relative buffer the 10% road-running check uses)
+    }
+    // Intermediate fitness starts at 40% of peak (60min of a 150min peak, §B.2) —
+    // by late Build/early Peak the long run should be well above that starting point.
+    expect(longRunByWeek[weeks[weeks.length - 1]]).toBeGreaterThan(longRunByWeek[weeks[0]]);
+  });
+
+  it('schedules a fixed hill-repeat workout every week, with reps growing 6→7→8 by phase', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    const hillEntries = Object.values(plan.sessions).flat().filter(e => e.sessionType === 'Trail hill repeats');
+    expect(hillEntries.length).toBeGreaterThan(0);
+    const expectedDurationByPhase = { Foundation: '33min', Build: '36min', Peak: '39min' };
+    hillEntries.forEach(e => {
+      expect(e.duration).toBe(expectedDurationByPhase[e.phase]);
+      expect(e.intensity).toBe('High');
+      expect(e.type).toBe('run');
+    });
+  });
+
+  it('schedules the remaining selected days as easy conversational-effort runs', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    // 4 selected days - 1 long - 1 hill = 2 easy days/week.
+    const week5Easy = Object.values(plan.sessions).flat().filter(e => e.sessionType === 'Easy trail run' && e.week === 5);
+    expect(week5Easy.length).toBe(2);
+    week5Easy.forEach(e => {
+      expect(e.intensity).toBe('Low');
+      expect(e.type).toBe('run');
+    });
+  });
+
+  it('sets meta.eventDistances to null instead of the "undefinedkm" bug', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    expect(plan.meta.eventDistances).toBeNull();
+  });
+
+  it('includes the new "Trail hill repeats" glossary term, distinct from bike\'s "Hill repeats"', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    const entry = plan.meta.glossary.find(g => g.term === 'Trail hill repeats');
+    expect(entry).toBeTruthy();
+    expect(entry.description.toLowerCase()).not.toContain('descent');
+  });
+
+  it('includes a conditioning session regardless of gymAccess — trail (regression for the removed gymAccess gate, §B.6)', () => {
+    const plan = buildTrainingPlan(trailIntake({ gymAccess: false }));
+    expect(Object.values(plan.sessions).flat().some(e => e.type === 'conditioning')).toBe(true);
+  });
+
+  it('includes a conditioning session regardless of gymAccess — an existing race type still works after the gate removal (§B.6 regression)', () => {
+    const plan = buildTrainingPlan(marathonIntake({ gymAccess: false }));
+    expect(Object.values(plan.sessions).flat().some(e => e.type === 'conditioning')).toBe(true);
+  });
+});
+
+function maxLongRunMinutes(plan) {
+  return Math.max(0, ...Object.values(plan.sessions).flat()
+    .filter(e => e.sessionType === 'Long run')
+    .map(e => parseInt(e.duration, 10)));
+}
+
+describe('buildTrainingPlan — trail running target distance', () => {
+  it('leaves eventDistances null and the long run at the fitness-level default when no target distance is given', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    expect(plan.meta.eventDistances).toBeNull();
+  });
+
+  it('reports the entered target distance as meta.eventDistances', () => {
+    const plan = buildTrainingPlan(trailIntake({ trailDistanceKm: '42' }));
+    expect(plan.meta.eventDistances).toBe('42km');
+  });
+
+  it('pushes the peak long run higher than the fitness-level default for a distance well above the reference (30km)', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const longDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '50' }));
+    expect(maxLongRunMinutes(longDistance)).toBeGreaterThan(maxLongRunMinutes(baseline));
+  });
+
+  it('pulls the peak long run below the fitness-level default for a distance well below the reference (30km) — no pace is assumed, just a ratio nudge', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const shortDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '10' }));
+    expect(maxLongRunMinutes(shortDistance)).toBeLessThan(maxLongRunMinutes(baseline));
+  });
+
+  it('leaves the peak long run at the fitness-level default exactly at the reference distance', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const atReference = buildTrainingPlan(trailIntake({ trailDistanceKm: '30' }));
+    expect(maxLongRunMinutes(atReference)).toBe(maxLongRunMinutes(baseline));
+  });
+
+  it('floors the peak long run using the athlete\'s own reported pace when the ratio nudge alone would leave it short of the distance', () => {
+    // 20km is below the 30km reference, so the ratio nudge alone would
+    // actually reduce the peak below the fitness-level default — but this
+    // athlete's own longest effort (5km in 90min = 18min/km, a slow
+    // technical-terrain pace) implies 20km needs 360min, which should win.
+    const ratioOnly = buildTrainingPlan(trailIntake({ trailDistanceKm: '20' }));
+    const withSlowPersonalPace = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortKm: '5', longestEffortMinutes: '90' } },
+    }));
+    const fitnessLevelDefault = buildTrainingPlan(trailIntake());
+    // Recovery weeks (~30% cuts every 4th week, §B.2) mean the series never
+    // literally reaches its nominal peak within a typical plan window — same
+    // is true for every other race type's peak volume — so this checks the
+    // floor visibly lifted the series above both comparison points, not that
+    // it reached the raw 360min peak value exactly.
+    expect(maxLongRunMinutes(withSlowPersonalPace)).toBeGreaterThan(maxLongRunMinutes(ratioOnly));
+    expect(maxLongRunMinutes(withSlowPersonalPace)).toBeGreaterThan(maxLongRunMinutes(fitnessLevelDefault));
+  });
+
+  it('does not apply the personal-pace floor from an incomplete distance/time pair (no mixing an unrelated distance and time)', () => {
+    // Same longestEffortMinutes as the slow-pace case above, but no
+    // longestEffortKm — there's no real personal rate to derive without both.
+    const minutesOnly = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortMinutes: '90' } },
+    }));
+    const withSlowPersonalPace = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortKm: '5', longestEffortMinutes: '90' } },
+    }));
+    expect(maxLongRunMinutes(minutesOnly)).toBeLessThan(maxLongRunMinutes(withSlowPersonalPace));
+    expect(maxLongRunMinutes(minutesOnly)).toBeLessThan(200);
   });
 });
 

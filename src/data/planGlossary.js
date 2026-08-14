@@ -16,6 +16,7 @@ const PLAN_GLOSSARY = [
   { term: 'Fartlek', discipline: 'Run', description: 'Swedish for "speed play" — unstructured bursts of faster running mixed into an easy run, varying pace and duration by feel rather than a fixed interval structure.' },
   { term: 'Race pace run', discipline: 'Run', description: 'Running at (or close to) the pace you’re targeting for race day, in shorter intervals or continuous efforts, to rehearse exactly how that effort should feel.' },
   { term: 'Long run', discipline: 'Run', description: 'Your longest run of the week, run at an easy, sustainable pace. Builds endurance and race-day durability — pace matters far less than time on feet.' },
+  { term: 'Trail hill repeats', discipline: 'Trail', description: 'Repeated hard uphill efforts (60–90s) with an easy jog or walk back down as recovery — builds the climbing strength and leg power trail terrain demands.' },
 
   // ── Swim ──
   { term: 'Technique drills', discipline: 'Swim', description: 'Short repeats focused on stroke mechanics (e.g. catch-up drill, single-arm swimming) rather than fitness — swum slowly and deliberately.' },

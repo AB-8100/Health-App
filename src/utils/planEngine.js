@@ -19,12 +19,14 @@
 //   },
 //   disciplineRanking,        ['bike','run','swim'] strongest→weakest, triathlon only
 //   baselines: { run: {...}, swim: {...}, bike: {...} },
-//   preferences: { longSessionDay, secondDisciplineDay, conditioningDay },
-//   gymAccess,
+//   preferences: { longSessionDay, secondDisciplineDay, conditioningDay, hillDay (trail only) },
+//   gymAccess,                accepted but no longer read here — conditioning is
+//                              unconditional in every generated plan (§B.6)
 //   holidays: [{ label, from, to, days?: { 'YYYY-MM-DD': { limited: bool, disciplines: [...] } } }],
 //   oneOffEvents: [{ label, date }],
 //   cutoffTimes: { swim, bike, run } (seconds, triathlon only, optional),
 //   targetPaces: { swim, transition, bike, run } (seconds per leg) | { run } for running-only,
+//   trailDistanceKm,          race distance in km, Trail Running only — sizes the peak long run
 //   injury: { pastInjuries, currentNiggles, healthConditions, avoidExercises, aggravatingFactors },
 // }
 
@@ -35,7 +37,7 @@ import { glossaryForTerms } from '../data/planGlossary';
 import { selectConditioningExercises } from '../data/conditioningLibrary';
 
 export const SUPPORTED_RACE_TYPES = [
-  '10K', 'Half Marathon', 'Marathon',
+  '10K', 'Half Marathon', 'Marathon', 'Trail Running',
   'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)',
 ];
 
@@ -45,6 +47,10 @@ export function isEngineSupportedRaceType(raceType) {
 
 export function isTriathlonRace(raceType) {
   return TRIATHLON_LEG_DISTANCES_KM[raceType] !== undefined;
+}
+
+export function isTrailRaceType(raceType) {
+  return raceType === 'Trail Running';
 }
 
 // ── STEP 1: taper / peak volume / minimum-weeks tables ──────────────────────
@@ -60,11 +66,13 @@ const TAPER_TABLE = {
   '10K':                        { days: 6,  volumeCut: 0.35 },
   'Half Marathon':              { days: 12, volumeCut: 0.35 },
   'Marathon':                   { days: 18, volumeCut: 0.45 },
+  'Trail Running':              { days: 0,  volumeCut: 0 },
 };
 
 // Triathlon: peak session sizes before taper. Running: peak long run / peak
 // weekly mileage. Brick peak durations scale between the sprint/full anchor
-// points given in the reference rules.
+// points given in the reference rules. Trail: peak long-run time-on-feet by
+// fitness level (minutes, not distance — trail's long run is duration-based).
 const PEAK_VOLUME_TABLE = {
   'Triathlon (Sprint)':         { swimM: 875,  bikeMin: 75,  runMin: 40,  brickBikeMin: 45,  brickRunMin: 25 },
   'Triathlon (Olympic)':        { swimM: 1900, bikeMin: 105, runMin: 65,  brickBikeMin: 90,  brickRunMin: 30 },
@@ -73,6 +81,7 @@ const PEAK_VOLUME_TABLE = {
   '10K':                        { longRunKm: 9,    weeklyKm: 40 },
   'Half Marathon':              { longRunKm: 19.5, weeklyKm: 57.5 },
   'Marathon':                   { longRunKm: 30.5, weeklyKm: 80 },
+  'Trail Running':              { longRunMinByFitness: { 'Beginner': 90, 'Intermediate': 150, 'Fit but new to this': 120 } },
 };
 
 const WEEKS_TABLE = {
@@ -83,6 +92,7 @@ const WEEKS_TABLE = {
   '10K':                        { min: 6,  recMin: 8,  recMax: 12 },
   'Half Marathon':              { min: 10, recMin: 12, recMax: 16 },
   'Marathon':                   { min: 16, recMin: 16, recMax: 20 },
+  'Trail Running':              { min: 10, recMin: 12, recMax: 16 },
 };
 
 // Discipline-frequency-in-Foundation ramp, keyed by rank within the athlete's
@@ -156,7 +166,22 @@ export function allocateWeeks(total, weights) {
   return floors;
 }
 
+// Trail has no distinct Taper phase (§B.1) — the full totalWeeks is
+// allocated across Foundation/Build/Peak (or Build/Peak when phaseMode isn't
+// 'full'), so the plan still runs straight through to race day without a
+// separate reduced-volume block beforehand.
+function computeTrailPhases(totalWeeks, phaseMode) {
+  const labels = phaseMode === 'full' ? ['Foundation', 'Build', 'Peak'] : ['Build', 'Peak'];
+  const weights = phaseMode === 'full' ? [0.35, 0.35, 0.30] : [0.6, 0.4];
+  const weeks = allocateWeeks(totalWeeks, weights);
+  const phases = [];
+  let cursor = 1;
+  labels.forEach((label, i) => { phases.push({ label, weeks: [cursor, cursor + weeks[i] - 1] }); cursor += weeks[i]; });
+  return phases.map((p, i) => ({ ...p, color: colorForPhase(p.label, i) }));
+}
+
 function computePhases(raceType, totalWeeks, phaseMode) {
+  if (raceType === 'Trail Running') return computeTrailPhases(totalWeeks, phaseMode);
   const taperWeeks = Math.max(1, Math.min(totalWeeks - 1, Math.ceil(TAPER_TABLE[raceType].days / 7)));
   const nonTaperWeeks = Math.max(1, totalWeeks - taperWeeks);
 
@@ -252,7 +277,7 @@ function fitnessRatio(level) {
 // value (post recovery-cut/growth-cap), not the nominal peak — if a recovery
 // week happens to land on the final non-taper week, taper should ease off
 // from where training really was, not jump back up to an uncut peak first.
-function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut }) {
+function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut, growthCap = 1.10 }) {
   const values = [];
   for (let w = 1; w <= nonTaperWeeks; w++) {
     const idx = w - 1;
@@ -262,7 +287,7 @@ function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, r
     }
     const t = nonTaperWeeks <= 1 ? 1 : (w - 1) / (nonTaperWeeks - 1);
     const raw = startValue + (peakValue - startValue) * t;
-    values.push(idx === 0 ? raw : Math.min(raw, values[idx - 1] * 1.10));
+    values.push(idx === 0 ? raw : Math.min(raw, values[idx - 1] * growthCap));
   }
 
   const lastNonTaperValue = values[nonTaperWeeks - 1] ?? peakValue;
@@ -300,6 +325,91 @@ function buildSwimEntry({ weekNum, phase, weeklyMeters, rotationIdx }) {
   return { type: 'swim', label: 'Swim', sessionType: archetype.sessionType, duration: swimDuration(weeklyMeters), flag: '', intensity: archetype.intensity, week: weekNum, phase: phase.label };
 }
 
+// ── Trail Running target-distance sizing ─────────────────────────────────────
+// The athlete enters a target race distance (km) at onboarding (§A, the
+// "How far is your race?" field on the race-type step). No pace is ever
+// assumed anywhere in this — trail's long run stays a pure duration, and
+// this never converts the entered km into a time via any assumed speed.
+// Instead, distance nudges the generic fitness-level peak minutes (§B.2) up
+// or down as a plain ratio against a reference "medium" trail race length:
+// a race well above the reference gets a longer peak long run than the
+// fitness-level default, one well below it gets a shorter one — both
+// intentional (a 10K trail race doesn't need the same peak long run as a
+// 50K just because the athlete picked "Intermediate" fitness).
+const TRAIL_REFERENCE_DISTANCE_KM = 30;
+const TRAIL_DISTANCE_STEP_KM = 10;
+const TRAIL_DISTANCE_STEP_PCT = 0.15; // ±15% of the fitness-level peak per 10km away from the reference
+const TRAIL_LONG_RUN_MIN_MIN = 45;
+const TRAIL_LONG_RUN_MAX_MIN = 600; // 10hr sanity ceiling for very long ultra distances
+
+function trailDistanceAdjustedPeakMinutes(fitnessPeakMin, trailDistanceKm) {
+  if (!(trailDistanceKm > 0)) return fitnessPeakMin;
+  const steps = (trailDistanceKm - TRAIL_REFERENCE_DISTANCE_KM) / TRAIL_DISTANCE_STEP_KM;
+  const multiplier = 1 + steps * TRAIL_DISTANCE_STEP_PCT;
+  return clamp(Math.round(fitnessPeakMin * multiplier), TRAIL_LONG_RUN_MIN_MIN, TRAIL_LONG_RUN_MAX_MIN);
+}
+
+// The ratio nudge above has no floor tied to whether its result is actually
+// enough time to cover the entered distance — a "Beginner" default nudged
+// down for a below-reference distance could still land well short of what
+// that distance takes to cover at any real pace. Rather than assume a pace,
+// use the athlete's own reported rate on their longest continuous run/hike
+// (§A run_baseline — distance and time paired as one question, same
+// effort) as a floor: dividing their own reported minutes by their own
+// reported km is a real personal rate, not an app-invented assumption.
+// Falls back to null (no floor applied) if either half of that pair is
+// missing, rather than mixing an unrelated distance and time together.
+function trailPersonalPaceFloorMinutes(trailDistanceKm, runBaselines) {
+  const effortKm = Number(runBaselines?.longestEffortKm);
+  const effortMinutes = Number(runBaselines?.longestEffortMinutes);
+  if (!(trailDistanceKm > 0) || !(effortKm > 0) || !(effortMinutes > 0)) return null;
+  const personalMinPerKm = effortMinutes / effortKm;
+  return Math.min(trailDistanceKm * personalMinPerKm, TRAIL_LONG_RUN_MAX_MIN);
+}
+
+// ── Trail Running session builders (§B.2-B.5) ───────────────────────────────
+// Trail's long run reuses RUN_LONG_TERM's exact sessionType string so the
+// existing 'Long run' glossary term resolves for it — no new entry needed.
+function buildTrailLongEntry(weekNum, phase, minutes) {
+  return { type: 'run', label: 'Run', sessionType: RUN_LONG_TERM, duration: minutesDuration(minutes), flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
+}
+
+// Fixed structure, not a rotation-table lookup — the product spec prescribes
+// one specific workout, not variety: 15min warm-up + 6-8 uphill reps (60-90s
+// effort + jog/walk recovery), reps increasing by phase.
+const TRAIL_HILL_REPS = { Foundation: 6, Build: 7, Peak: 8 };
+
+function buildTrailHillEntry(weekNum, phase) {
+  const reps = TRAIL_HILL_REPS[phase.label] || 6;
+  const duration = minutesDuration(15 + reps * 3); // 15min warm-up + ~3min/rep (60-90s effort + jog/walk recovery down)
+  return {
+    type: 'run', label: 'Run', sessionType: 'Trail hill repeats',
+    duration, flag: '', intensity: 'High', week: weekNum, phase: phase.label,
+  };
+}
+
+// Conversational-effort easy runs — flat duration per phase, no rotation or
+// progression series. Cue is the existing 'Easy run' glossary term.
+const TRAIL_EASY_MIN = { Foundation: 30, Build: 35, Peak: 35 };
+
+function buildTrailEasyEntry(weekNum, phase) {
+  return {
+    type: 'run', label: 'Run', sessionType: 'Easy trail run',
+    duration: minutesDuration(TRAIL_EASY_MIN[phase.label] || 30),
+    flag: '', intensity: 'Low', week: weekNum, phase: phase.label,
+  };
+}
+
+// One long day, one hill day, and 1-2 easy days from the athlete's 3-4
+// selected running days (§A.3) — computed once outside the day-by-day loop.
+function assignTrailDays(trailDays, preferences) {
+  const longDay = pickAnchorDay(trailDays, preferences.longSessionDay, 'sunday');
+  const remaining = trailDays.filter(d => d !== longDay);
+  const hillDay = pickAnchorDay(remaining, preferences.hillDay, remaining[0]);
+  const easyDays = remaining.filter(d => d !== hillDay);
+  return { longDay, hillDay, easyDays };
+}
+
 // Conditioning doubles as injury-prevention/support work (per user decision):
 // exercises targeting a declared past-injury area are prioritized into the
 // circuit, and anything the athlete flagged to avoid is excluded outright
@@ -324,6 +434,7 @@ export function buildTrainingPlan(intake) {
     throw new Error(`planEngine: unsupported race type "${raceType}"`);
   }
   const triathlon = isTriathlonRace(raceType);
+  const trail = isTrailRaceType(raceType);
   const startDate = parseUTCDate(intake.startDate || toDateKey(new Date()));
   const raceDate = parseUTCDate(intake.raceDate);
   const totalDays = Math.max(1, diffDays(startDate, raceDate));
@@ -339,7 +450,6 @@ export function buildTrainingPlan(intake) {
   const baselines = intake.baselines || {};
   const disciplineDays = intake.disciplineDays || {};
   const preferences = intake.preferences || {};
-  const gymAccess = !!intake.gymAccess;
   const targetPaces = intake.targetPaces || null;
   const holidays = intake.holidays || [];
   const oneOffEvents = intake.oneOffEvents || [];
@@ -348,14 +458,37 @@ export function buildTrainingPlan(intake) {
   // ── weekly value series per discipline ──
   const runPaceSecPerKm = estimateRunPaceSecPerKm(baselines, targetPaces, raceType);
   const runDays = disciplineDays.run || [];
-  const runPeakMin = triathlon ? peak.runMin : (peak.longRunKm * runPaceSecPerKm) / 60;
-  const runFitness = baselines.run?.longestEffortKm
-    ? clamp((baselines.run.longestEffortKm * runPaceSecPerKm / 60) / runPeakMin, 0.15, 0.75)
-    : fitnessRatio(fitnessLevel);
-  const runLongSeries = runDays.length ? buildWeeklySeries({
-    startValue: runPeakMin * runFitness, peakValue: runPeakMin,
-    totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut: taperInfo.volumeCut,
-  }) : [];
+  let runLongSeries;
+  if (trail) {
+    // Time-on-feet, not pace-based: peak long run is a duration by fitness
+    // level, ramping at 10-15%/week (not the 10% road-running cap) straight
+    // through to race day — no taper volume-cut (§B.1/§B.2). The entered
+    // target race distance nudges that fitness-level peak up or down (see
+    // trailDistanceAdjustedPeakMinutes above), then the athlete's own
+    // reported pace on their longest effort — not an assumed one — acts as
+    // a floor so the peak is never short of what's needed to actually cover
+    // the distance at a pace they've demonstrated (trailPersonalPaceFloorMinutes).
+    const fitnessPeakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
+    const ratioNudgedMin = trailDistanceAdjustedPeakMinutes(fitnessPeakMin, Number(intake.trailDistanceKm));
+    const personalFloorMin = trailPersonalPaceFloorMinutes(Number(intake.trailDistanceKm), baselines.run);
+    const peakMin = personalFloorMin ? Math.max(ratioNudgedMin, personalFloorMin) : ratioNudgedMin;
+    const trailFitness = baselines.run?.longestEffortMinutes
+      ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
+      : fitnessRatio(fitnessLevel);
+    runLongSeries = runDays.length ? buildWeeklySeries({
+      startValue: peakMin * trailFitness, peakValue: peakMin,
+      totalWeeks, nonTaperWeeks: totalWeeks, recoveryWeeks, taperVolumeCut: 0, growthCap: 1.15,
+    }) : [];
+  } else {
+    const runPeakMin = triathlon ? peak.runMin : (peak.longRunKm * runPaceSecPerKm) / 60;
+    const runFitness = baselines.run?.longestEffortKm
+      ? clamp((baselines.run.longestEffortKm * runPaceSecPerKm / 60) / runPeakMin, 0.15, 0.75)
+      : fitnessRatio(fitnessLevel);
+    runLongSeries = runDays.length ? buildWeeklySeries({
+      startValue: runPeakMin * runFitness, peakValue: runPeakMin,
+      totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut: taperInfo.volumeCut,
+    }) : [];
+  }
   const runShortSeries = runLongSeries.map(v => Math.round(v * 0.6));
 
   let bikeLongSeries = [], bikeShortSeries = [], swimSeries = [];
@@ -384,9 +517,13 @@ export function buildTrainingPlan(intake) {
 
   const runLongDay = pickAnchorDay(runDays, triathlon ? null : preferences.longSessionDay, 'sunday');
   const bikeLongDay = triathlon ? pickAnchorDay(disciplineDays.bike || [], preferences.longSessionDay, 'sunday') : null;
-  const conditioningDay = gymAccess
-    ? pickConditioningDay(preferences.conditioningDay, [runLongDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean))
-    : null;
+  const trailAssignment = trail ? assignTrailDays(runDays, preferences) : null;
+  // Conditioning (strength/stability) is now unconditional in every
+  // generated plan, not gated on gymAccess (§B.6) — the exercise catalog is
+  // 100% bodyweight, so there was never a real dependency on gym access
+  // here. This affects every race type this engine generates, not just
+  // trail — see PR description.
+  const conditioningDay = pickConditioningDay(preferences.conditioningDay, [runLongDay, trailAssignment?.hillDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean));
   const conditioningExercises = selectConditioningExercises({
     areas: (injury.pastInjuries || []).map(p => p.area),
     avoidIds: injury.avoidExerciseIds || [],
@@ -482,7 +619,14 @@ export function buildTrainingPlan(intake) {
           entries.push(entry);
         }
       }
-      if (runAllowed && activeDaysForWeek('run', weekNum, runDays, runLongDay).includes(dayKey) && !entries.some(e => e.type === 'run')) {
+      if (trail) {
+        // Same runAllowed gate a limited holiday applies to any other race
+        // type's running (§B.7) — trail's single discipline is 'run', so it
+        // respects the same day-level discipline restriction.
+        if (runAllowed && dayKey === trailAssignment.longDay) entries.push(buildTrailLongEntry(weekNum, phase, runLongSeries[weekNum - 1] || 0));
+        else if (runAllowed && dayKey === trailAssignment.hillDay) entries.push(buildTrailHillEntry(weekNum, phase));
+        else if (runAllowed && trailAssignment.easyDays.includes(dayKey)) entries.push(buildTrailEasyEntry(weekNum, phase));
+      } else if (runAllowed && activeDaysForWeek('run', weekNum, runDays, runLongDay).includes(dayKey) && !entries.some(e => e.type === 'run')) {
         const idx = runRotation.get('i') || 0; runRotation.set('i', idx + 1);
         entries.push(buildRunEntry({ isLong: dayKey === runLongDay, weekNum, phase, weeklyMinutes: { long: runLongSeries[weekNum - 1] || 0, short: runShortSeries[weekNum - 1] || 0 }, rotationIdx: idx }));
       } else if (runAllowed && holiday?.limited && holiday.disciplines.includes('run') && !runDays.includes(dayKey) && !entries.length) {
@@ -509,15 +653,23 @@ export function buildTrainingPlan(intake) {
 
   applyOneOffEvents(sessions, oneOffByDate, startDate, raceDate);
 
-  const eventDistances = triathlon
-    ? Object.entries(TRIATHLON_LEG_DISTANCES_KM[raceType]).map(([, km]) => `${km}km`).join(' / ')
-    : `${RUN_RACE_DISTANCES_KM[raceType]}km`;
+  // A trail plan's distance now comes from the athlete's own entered target
+  // (§A trailDistanceKm) rather than a fixed per-race-type table — unlike
+  // RUN_RACE_DISTANCES_KM, trail races vary in distance event-to-event, so
+  // there's no table to look up. Falls back to null (not "undefinedkm") if
+  // somehow missing, since every read site already treats this as optional.
+  const trailDistanceKmNum = trail ? Number(intake.trailDistanceKm) : null;
+  const eventDistances = trail
+    ? (trailDistanceKmNum > 0 ? `${trailDistanceKmNum}km` : null)
+    : (triathlon
+      ? Object.entries(TRIATHLON_LEG_DISTANCES_KM[raceType]).map(([, km]) => `${km}km`).join(' / ')
+      : `${RUN_RACE_DISTANCES_KM[raceType]}km`);
 
   const planHealth = computePlanHealth(sessions, phases, holidayByDate, oneOffByDate);
   const usedTerms = collectUsedTerms(sessions);
   const glossary = glossaryForTerms(usedTerms);
-  const overview = buildOverview({ raceType, triathlon, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks });
-  const planMix = buildPlanMix({ triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [] });
+  const overview = buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks });
+  const planMix = buildPlanMix({ trail, triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [], trailDistanceKm: trailDistanceKmNum });
 
   return {
     meta: {
@@ -685,6 +837,7 @@ function collectUsedTerms(sessions) {
     else if (e.flag?.includes('Brick')) terms.add('Brick');
     else if (e.type === 'conditioning') terms.add('Conditioning circuit');
     else if (e.sessionType === 'Open water swim') terms.add('Open water / sea swim');
+    else if (e.sessionType === 'Trail hill repeats') terms.add('Trail hill repeats');
     else {
       const lib = [...Object.values(RUN_LIBRARY), ...Object.values(SWIM_LIBRARY), ...Object.values(BIKE_LIBRARY)].flat();
       const match = lib.find(a => a.sessionType === e.sessionType);
@@ -695,7 +848,7 @@ function collectUsedTerms(sessions) {
   return [...terms];
 }
 
-function buildOverview({ raceType, triathlon, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks }) {
+function buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks }) {
   const lines = [];
   const phaseSummary = phases.map(p => `${p.label} (weeks ${p.weeks[0]}–${p.weeks[1]})`).join(', ');
   lines.push(`This ${totalWeeks}-week plan for ${raceType} runs through ${phaseSummary}.`);
@@ -708,6 +861,8 @@ function buildOverview({ raceType, triathlon, phases, phaseMode, holidays, oneOf
 
   lines.push(triathlon
     ? 'Warm-up/cool-down reference — Swim: 100–150m easy mixed swimming + shoulder circles, cool down 100m easy. Bike: 5–10min easy spin with spin-ups in the final 2min, cool down 5min easy. Run: 5min brisk walk/jog + dynamic drills, cool down 5min walk + static stretches.'
+    : trail
+    ? 'Warm-up/cool-down reference — 5min brisk walk/easy jog + leg swings and dynamic drills on flat ground before climbing onto trail; walk the last 5min of any session to cool down, especially after the hill workout.'
     : 'Warm-up/cool-down reference — 5min brisk walk/easy jog + leg swings, walking lunges, high knees before each run; 5min walk + static stretches (calves, hamstrings, quads, hip flexors, glutes) after.');
 
   if (holidays.length) {
@@ -726,8 +881,13 @@ function buildOverview({ raceType, triathlon, phases, phaseMode, holidays, oneOf
   return lines.join('\n\n');
 }
 
-function buildPlanMix({ triathlon, runDays, bikeDays, swimDays }) {
+function buildPlanMix({ trail, triathlon, runDays, bikeDays, swimDays, trailDistanceKm }) {
   const parts = [];
+  if (trail && runDays.length) {
+    const distanceNote = trailDistanceKm > 0 ? ` toward being able to cover your ${trailDistanceKm}km race distance` : '';
+    parts.push(`Your ${runDays.length} run${runDays.length === 1 ? '' : 's'} a week mix a time-on-feet long run${distanceNote} with a weekly hill-repeat session and ${runDays.length > 2 ? 'easy conversational-effort runs' : 'an easy conversational-effort run'}, building climbing strength and endurance through to race day.`);
+    return parts.join(' ');
+  }
   if (runDays.length) {
     parts.push(`Your ${runDays.length} run${runDays.length === 1 ? '' : 's'} a week mix an easy run with a long run and a rotating tempo/fartlek session, building toward race-pace intervals in Peak.`);
   }

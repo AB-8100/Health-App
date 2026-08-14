@@ -590,6 +590,7 @@ function App() {
           oneOffEvents: newIntake.availability?.oneOffEvents,
           cutoffTimes: eventGoalCfg.cutoffTimes,
           targetPaces: newIntake.targetPaces,
+          trailDistanceKm: eventGoalCfg.trailDistanceKm,
           injury: newIntake.injury,
         });
       } catch (e) {
