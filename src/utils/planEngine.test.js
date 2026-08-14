@@ -450,6 +450,45 @@ describe('buildTrainingPlan — trail running target distance', () => {
   });
 });
 
+function week1LongRunMinutes(plan) {
+  const entry = Object.values(plan.sessions).flat().find(e => e.sessionType === 'Long run' && e.week === 1);
+  return entry ? parseInt(entry.duration, 10) : null;
+}
+
+describe('buildTrainingPlan — trail long run informed by reported race baseline times', () => {
+  it('uses a reported 5K/10K time as evidence of continuous-running ability instead of ignoring it when the trail-specific field is left blank', () => {
+    const withoutRaceTimes = buildTrainingPlan(trailIntake({ baselines: { run: {} } }));
+    const withRaceTimes = buildTrainingPlan(trailIntake({ baselines: { run: { time5k: '30:00', time10k: '60:00' } } }));
+    expect(week1LongRunMinutes(withRaceTimes)).toBeGreaterThan(week1LongRunMinutes(withoutRaceTimes));
+  });
+
+  it('prefers the explicit trail "longest continuous effort" field over a derived race time when both are present', () => {
+    const explicitOnly = buildTrainingPlan(trailIntake({ baselines: { run: { longestEffortMinutes: '20' } } }));
+    const explicitAndRaceTime = buildTrainingPlan(trailIntake({ baselines: { run: { longestEffortMinutes: '20', time10k: '60:00' } } }));
+    expect(week1LongRunMinutes(explicitAndRaceTime)).toBe(week1LongRunMinutes(explicitOnly));
+  });
+
+  it('moderates week 1 below the athlete\'s full demonstrated effort when that effort is close to the fitness-level peak — a first trail long run should be a comfortable starting point, not a repeat of their hardest recent effort', () => {
+    const plan = buildTrainingPlan(trailIntake({ fitnessLevel: 'Beginner', baselines: { run: { time10k: '60:00' } } }));
+    expect(week1LongRunMinutes(plan)).toBeLessThan(60);
+    expect(week1LongRunMinutes(plan)).toBeGreaterThan(15);
+  });
+});
+
+describe('buildTrainingPlan — trail long run is never shorter than that week\'s easy run', () => {
+  it('holds across every week, including a compressed no-Foundation timeline with no fitness signal at all', () => {
+    const plan = buildTrainingPlan(trailIntake({ raceDate: '2026-03-23', baselines: { run: {} } }));
+    const byWeek = {};
+    Object.values(plan.sessions).flat().forEach(e => {
+      if (e.sessionType === 'Long run') (byWeek[e.week] ||= {}).long = parseInt(e.duration, 10);
+      if (e.sessionType === 'Easy trail run') (byWeek[e.week] ||= {}).easy = parseInt(e.duration, 10);
+    });
+    const weeks = Object.values(byWeek).filter(w => w.long != null && w.easy != null);
+    expect(weeks.length).toBeGreaterThan(0);
+    weeks.forEach(({ long, easy }) => expect(long).toBeGreaterThanOrEqual(easy));
+  });
+});
+
 describe('buildTrainingPlan — plan health', () => {
   it('computes a plan-health summary as verifiable properties, not a self-report', () => {
     const plan = buildTrainingPlan(marathonIntake());

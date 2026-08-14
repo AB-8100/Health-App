@@ -259,6 +259,21 @@ function parseDuration(str) {
   return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
 }
 
+// Longest continuous running effort proven by a completed race time — used by
+// trail's long-run sizing (below) as a fallback when the trail-specific
+// "longest continuous run/hike" question is left blank. Finishing any of
+// these distances nonstop is itself evidence of a continuous effort of that
+// many minutes, so this is a real measured signal, not a guess — checked
+// longest-first since a longer proven effort is stronger evidence.
+function longestRaceEffortMinutes(run) {
+  const candidates = [run?.timeMarathon, run?.timeHalfMarathon, run?.time10k, run?.time5k];
+  for (const time of candidates) {
+    const secs = parseDuration(time);
+    if (secs) return secs / 60;
+  }
+  return null;
+}
+
 const FITNESS_RATIO_DEFAULT = {
   'Beginner': 0.20, 'Intermediate': 0.38, 'Fit but new to this': 0.32,
 };
@@ -368,10 +383,21 @@ function trailPersonalPaceFloorMinutes(trailDistanceKm, runBaselines) {
 }
 
 // ── Trail Running session builders (§B.2-B.5) ───────────────────────────────
+// Conversational-effort easy runs — flat duration per phase, no rotation or
+// progression series. Cue is the existing 'Easy run' glossary term. Defined
+// ahead of buildTrailLongEntry so the long-run floor below can reference it.
+const TRAIL_EASY_MIN = { Foundation: 30, Build: 35, Peak: 35 };
+
 // Trail's long run reuses RUN_LONG_TERM's exact sessionType string so the
 // existing 'Long run' glossary term resolves for it — no new entry needed.
+// A "long run" generating shorter than that week's easy run is a
+// contradiction regardless of how the volume series landed there (a low
+// fitness signal, a recovery-week cut, a compressed no-Foundation plan
+// starting straight into Build-level easy-run minutes, ...) — floor it at
+// the easy run's duration for the same phase.
 function buildTrailLongEntry(weekNum, phase, minutes) {
-  return { type: 'run', label: 'Run', sessionType: RUN_LONG_TERM, duration: minutesDuration(minutes), flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
+  const floored = Math.max(minutes, TRAIL_EASY_MIN[phase.label] || TRAIL_EASY_MIN.Foundation);
+  return { type: 'run', label: 'Run', sessionType: RUN_LONG_TERM, duration: minutesDuration(floored), flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
 }
 
 // Fixed structure, not a rotation-table lookup — the product spec prescribes
@@ -387,10 +413,6 @@ function buildTrailHillEntry(weekNum, phase) {
     duration, flag: '', intensity: 'High', week: weekNum, phase: phase.label,
   };
 }
-
-// Conversational-effort easy runs — flat duration per phase, no rotation or
-// progression series. Cue is the existing 'Easy run' glossary term.
-const TRAIL_EASY_MIN = { Foundation: 30, Build: 35, Peak: 35 };
 
 function buildTrailEasyEntry(weekNum, phase) {
   return {
@@ -472,8 +494,23 @@ export function buildTrainingPlan(intake) {
     const ratioNudgedMin = trailDistanceAdjustedPeakMinutes(fitnessPeakMin, Number(intake.trailDistanceKm));
     const personalFloorMin = trailPersonalPaceFloorMinutes(Number(intake.trailDistanceKm), baselines.run);
     const peakMin = personalFloorMin ? Math.max(ratioNudgedMin, personalFloorMin) : ratioNudgedMin;
-    const trailFitness = baselines.run?.longestEffortMinutes
-      ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
+    // Prefers the trail-specific "longest continuous effort" question;
+    // falls back to the longest completed race time when that's left blank
+    // (§ longestRaceEffortMinutes) so a reported 5K/10K/etc. time actually
+    // informs the plan instead of being silently ignored, instead of
+    // collapsing to the generic fitness-level bucket (0.20/0.32/0.38) —
+    // used as a last resort only when neither real signal is available.
+    // Upper-bounded at 0.5 (rather than the 0.75 an unmoderated ratio would
+    // allow) so week 1 doesn't start right up near the athlete's proven max
+    // — a first trail long run should be a comfortable starting point the
+    // plan ramps up from, not a repeat of their hardest recent effort. The
+    // ratio mechanism itself is otherwise untouched, which is what lets
+    // buildWeeklySeries's week-1→peak ramp keep tracking the distance-
+    // adjusted peak (peakMin) over subsequent weeks rather than every plan
+    // collapsing onto the same trajectory regardless of target distance.
+    const demonstratedMinutes = Number(baselines.run?.longestEffortMinutes) || longestRaceEffortMinutes(baselines.run);
+    const trailFitness = demonstratedMinutes
+      ? clamp(demonstratedMinutes / peakMin, 0.15, 0.5)
       : fitnessRatio(fitnessLevel);
     runLongSeries = runDays.length ? buildWeeklySeries({
       startValue: peakMin * trailFitness, peakValue: peakMin,
