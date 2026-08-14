@@ -396,16 +396,22 @@ describe('buildTrainingPlan — trail running target distance', () => {
     expect(plan.meta.eventDistances).toBe('42km');
   });
 
-  it('pushes the peak long run higher than the fitness-level default when the target distance demands more time', () => {
+  it('pushes the peak long run higher than the fitness-level default for a distance well above the reference (30km)', () => {
     const baseline = buildTrainingPlan(trailIntake());
     const longDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '50' }));
     expect(maxLongRunMinutes(longDistance)).toBeGreaterThan(maxLongRunMinutes(baseline));
   });
 
-  it('does not shrink the long run below the fitness-level default for a short target distance', () => {
+  it('pulls the peak long run below the fitness-level default for a distance well below the reference (30km) — no pace is assumed, just a ratio nudge', () => {
     const baseline = buildTrainingPlan(trailIntake());
     const shortDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '10' }));
-    expect(maxLongRunMinutes(shortDistance)).toBe(maxLongRunMinutes(baseline));
+    expect(maxLongRunMinutes(shortDistance)).toBeLessThan(maxLongRunMinutes(baseline));
+  });
+
+  it('leaves the peak long run at the fitness-level default exactly at the reference distance', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const atReference = buildTrainingPlan(trailIntake({ trailDistanceKm: '30' }));
+    expect(maxLongRunMinutes(atReference)).toBe(maxLongRunMinutes(baseline));
   });
 });
 

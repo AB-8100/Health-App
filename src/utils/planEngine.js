@@ -327,28 +327,26 @@ function buildSwimEntry({ weekNum, phase, weeklyMeters, rotationIdx }) {
 
 // ── Trail Running target-distance sizing ─────────────────────────────────────
 // The athlete enters a target race distance (km) at onboarding (§A, the
-// "How far is your race?" field on the race-type step). Trail's long run is
-// still a duration, not a distance, prescribed to the athlete (§B.2 — pace
-// varies too much by terrain to plan against) — but the *peak* duration the
-// long run ramps to should be big enough that, at a conservative trail
-// effort pace, the athlete could actually cover the race distance, not just
-// whatever the generic fitness-level default happens to be.
-//
-// TRAIL_PACE_SEC_PER_KM is a deliberately slow, conservative planning
-// assumption (8:00/km — mixed running/hiking effort on technical terrain,
-// well off any road-running pace), used only to size the peak long run, never
-// surfaced to the athlete as a pace target. TRAIL_LONG_RUN_DISTANCE_FRACTION
-// mirrors the existing road-running tables' own pattern of peaking the long
-// run below full race distance (e.g. Marathon's 30.5km peak long run is
-// ~72% of the 42.195km race) rather than training all the way to it.
-const TRAIL_PACE_SEC_PER_KM = 480;
-const TRAIL_LONG_RUN_DISTANCE_FRACTION = 0.8;
+// "How far is your race?" field on the race-type step). No pace is ever
+// assumed anywhere in this — trail's long run stays a pure duration, and
+// this never converts the entered km into a time via any assumed speed.
+// Instead, distance nudges the generic fitness-level peak minutes (§B.2) up
+// or down as a plain ratio against a reference "medium" trail race length:
+// a race well above the reference gets a longer peak long run than the
+// fitness-level default, one well below it gets a shorter one — both
+// intentional (a 10K trail race doesn't need the same peak long run as a
+// 50K just because the athlete picked "Intermediate" fitness).
+const TRAIL_REFERENCE_DISTANCE_KM = 30;
+const TRAIL_DISTANCE_STEP_KM = 10;
+const TRAIL_DISTANCE_STEP_PCT = 0.15; // ±15% of the fitness-level peak per 10km away from the reference
+const TRAIL_LONG_RUN_MIN_MIN = 45;
 const TRAIL_LONG_RUN_MAX_MIN = 600; // 10hr sanity ceiling for very long ultra distances
 
-function trailDistancePeakMinutes(trailDistanceKm) {
-  if (!(trailDistanceKm > 0)) return null;
-  const minutes = (trailDistanceKm * TRAIL_PACE_SEC_PER_KM / 60) * TRAIL_LONG_RUN_DISTANCE_FRACTION;
-  return Math.min(minutes, TRAIL_LONG_RUN_MAX_MIN);
+function trailDistanceAdjustedPeakMinutes(fitnessPeakMin, trailDistanceKm) {
+  if (!(trailDistanceKm > 0)) return fitnessPeakMin;
+  const steps = (trailDistanceKm - TRAIL_REFERENCE_DISTANCE_KM) / TRAIL_DISTANCE_STEP_KM;
+  const multiplier = 1 + steps * TRAIL_DISTANCE_STEP_PCT;
+  return clamp(Math.round(fitnessPeakMin * multiplier), TRAIL_LONG_RUN_MIN_MIN, TRAIL_LONG_RUN_MAX_MIN);
 }
 
 // ── Trail Running session builders (§B.2-B.5) ───────────────────────────────
@@ -446,15 +444,11 @@ export function buildTrainingPlan(intake) {
   if (trail) {
     // Time-on-feet, not pace-based: peak long run is a duration by fitness
     // level, ramping at 10-15%/week (not the 10% road-running cap) straight
-    // through to race day — no taper volume-cut (§B.1/§B.2). When the
-    // athlete has entered a target race distance, the peak is pushed up
-    // further if the distance-derived estimate needs more time than the
-    // generic fitness-level default — the long run has to build toward
-    // actually covering that distance, not just whatever a beginner/
-    // intermediate/fit default would prescribe.
+    // through to race day — no taper volume-cut (§B.1/§B.2). The entered
+    // target race distance then nudges that fitness-level peak up or down
+    // (see trailDistanceAdjustedPeakMinutes above) — no pace is assumed.
     const fitnessPeakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
-    const distancePeakMin = trailDistancePeakMinutes(Number(intake.trailDistanceKm));
-    const peakMin = distancePeakMin ? Math.max(fitnessPeakMin, distancePeakMin) : fitnessPeakMin;
+    const peakMin = trailDistanceAdjustedPeakMinutes(fitnessPeakMin, Number(intake.trailDistanceKm));
     const trailFitness = baselines.run?.longestEffortMinutes
       ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
       : fitnessRatio(fitnessLevel);
