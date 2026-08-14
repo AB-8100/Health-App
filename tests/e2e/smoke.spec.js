@@ -153,6 +153,64 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('selecting Trail Running as a race type reaches a generated plan', async ({ page }) => {
+    // features/specs/trail-running-support.md §A/§B — Trail Running is a
+    // RACE_TYPES entry like 10K/Marathon, not a separate goal type, so this
+    // walks the same merged onboarding flow the "Redo my goals" test above
+    // opens, but drives it through to a completed, generated plan.
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    const redoButton = page.getByRole('button', { name: /redo my goals/i });
+    await expect(redoButton).toBeVisible();
+    await redoButton.click();
+    await page.getByRole('button', { name: /^continue$/i }).click();
+    await expect(page.getByText(/what are your goals/i)).toBeVisible();
+
+    // Click through to "Race details." — the test account is already past
+    // onboarding with an event_race goal (other smoke tests above rely on an
+    // existing generated plan), so this is at most a couple of steps away.
+    for (let i = 0; i < 5; i++) {
+      if (await page.getByText(/^Race details\.$/).isVisible().catch(() => false)) break;
+      await page.getByRole('button', { name: /^continue →$/i }).click();
+    }
+    await expect(page.getByText(/^Race details\.$/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Trail Running', exact: true }).click();
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    // Day picker — deterministically select exactly 3 running days
+    // regardless of whatever the account's previous race type had picked,
+    // using the data-selected state each day toggle now carries.
+    await expect(page.getByText(/your training setup/i)).toBeVisible();
+    const desiredDays = ['tuesday', 'thursday', 'saturday'];
+    for (const day of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']) {
+      const toggle = page.getByTestId(`day-toggle-run-${day}`);
+      const selected = (await toggle.getAttribute('data-selected')) === 'true';
+      const want = desiredDays.includes(day);
+      if (selected !== want) await toggle.click();
+    }
+    await expect(page.getByText(/pick 3 or 4 days for trail running/i)).not.toBeVisible();
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    // Run baseline — trail-only time-on-feet field.
+    await expect(page.getByText(/^Run baseline\.$/)).toBeVisible();
+    await page.getByPlaceholder('e.g. 90').fill('75');
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    // Availability / preferences / injury are all optional past this point —
+    // click straight through to completion.
+    for (let i = 0; i < 6; i++) {
+      if (await page.getByText(/your plan is ready/i).isVisible().catch(() => false)) break;
+      await page.getByRole('button', { name: /^continue →$/i }).click();
+    }
+    await expect(page.getByText(/your plan is ready/i)).toBeVisible();
+    await expect(page.getByText(/trail running/i).first()).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+
+    await page.getByRole('button', { name: /^enter forma →$/i }).click();
+    await expect(page.getByText(/mon|tue|wed|thu|fri|sat|sun/i).first()).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('About screen shows a standalone Glossary section irrespective of plan state', async ({ page }) => {
     // The Glossary bar always renders data/planGlossary.js's full static
     // list — unlike Training plan's collapsible "Plan overview", it does not

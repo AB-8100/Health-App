@@ -254,17 +254,25 @@ Three ways an event training plan gets built, all producing the same
 
 1. **Deterministic engine (`utils/planEngine.js`)** — the shipped path for a
    new/redone `event_race` goal with an engine-supported race type (10K,
-   Half Marathon, Marathon, or one of the 4 triathlon distances). Pure
-   data-table + arithmetic rules engine (taper lengths, phase splits,
-   peak-volume targets, discipline-frequency ramp, brick/holiday/one-off-event
-   handling, computed 10%-rule/80-20-rule plan-health checks) — no API call,
-   generates instantly on onboarding completion. `meta` additionally carries
-   `planMix` (a plain-language session-methodology summary) and `planHealth`
+   Half Marathon, Marathon, Trail Running, or one of the 4 triathlon
+   distances — `SUPPORTED_RACE_TYPES`). Pure data-table + arithmetic rules
+   engine (taper lengths, phase splits, peak-volume targets,
+   discipline-frequency ramp, brick/holiday/one-off-event handling, computed
+   10%-rule/80-20-rule plan-health checks) — no API call, generates instantly
+   on onboarding completion. `meta` additionally carries `planMix` (a
+   plain-language session-methodology summary) and `planHealth`
    (`{ tenPercentRule, eightyTwentyRule, summary }`), surfaced in
    `AboutScreen.jsx`'s "Plan overview" section and, per-session, as a
    glossary info icon in `SessionDetailScreen.jsx` (matched against
    `meta.glossary`, `data/planGlossary.js`'s full dictionary filtered to
-   terms the plan actually uses).
+   terms the plan actually uses). Trail Running is a race type like any
+   other (not a separate goal type) — it swaps in a time-on-feet long run
+   (10–15%/week ramp, no distance target), a fixed weekly hill-repeat
+   workout, and 1–2 easy conversational runs, with no distinct Taper phase
+   (the plan still ends on race day). A generated plan's conditioning/
+   strength-stability session is unconditional for every race type as of
+   trail running's addition — no longer gated on `gymAccess` (see
+   `features/specs/trail-running-support.md` §B.6).
 2. **Uploaded `.xlsx`** — a user can upload a training plan (e.g. an
    18-week triathlon plan) from the About screen. Parsed **without a full
    XLSX library** — a hand-rolled reader pulls just `workbook.xml`,

@@ -16,7 +16,7 @@ import themes from '../data/themes';
 import {
   formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
 } from '../utils/raceTargets';
-import { isEngineSupportedRaceType, buildTrainingPlan } from '../utils/planEngine';
+import { isEngineSupportedRaceType, buildTrainingPlan, isTrailRaceType } from '../utils/planEngine';
 import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
 import { PlanOverviewSection } from './AboutScreen';
 
@@ -48,12 +48,12 @@ export const GOAL_TYPES = [
   { id: 'micro_target',       label: 'Micro Target',       sub: 'A specific, measurable goal',           icon: '🎯' },
 ];
 
-// Only the 7 race types the deterministic engine has rules for — 5K, Cycling
+// Only the race types the deterministic engine has rules for — 5K, Cycling
 // Sportive, Open Water Swim, and Other are deliberately not offered here
 // (see the spec's "Scope" section); an existing saved goal with one of those
 // types still works via the basic scheduler, it just can't be re-selected.
 const RACE_TYPES = [
-  '10K', 'Half Marathon', 'Marathon',
+  '10K', 'Half Marathon', 'Marathon', 'Trail Running',
   'Triathlon (Sprint)', 'Triathlon (Olympic)', 'Triathlon (70.3 / Half)', 'Triathlon (Full / Ironman)',
 ];
 
@@ -112,13 +112,13 @@ const DEFAULT_CONFIG = {
 };
 
 const EMPTY_INTAKE = {
-  runBaseline:  { time5k: '', time10k: '', timeHalfMarathon: '', timeMarathon: '', longestEffortKm: '', canRunContinuously60min: null },
+  runBaseline:  { time5k: '', time10k: '', timeHalfMarathon: '', timeMarathon: '', longestEffortKm: '', canRunContinuously60min: null, longestEffortMinutes: '' },
   swimBaseline: { time400m: '', longestSessionM: '', openWaterExperience: '', wetsuitExperience: '' },
   bikeBaseline: { ftpWatts: '', longestRideKm: '', bikeType: '' },
   disciplineRanking: [],
   targetPaces: null,
   availability: { holidays: [], oneOffEvents: [] },
-  preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '' },
+  preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '', hillDay: '' },
   injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExerciseIds: [], aggravatingFactors: '' },
 };
 
@@ -299,6 +299,13 @@ export function GoalsSetupScreen({
     if (current === 'config_general_fitness') return (goalConfigs['general_fitness']?.activities || []).length >= 1;
     if (current === 'day_picker') {
       if (isRaceGoal(selectedGoals)) {
+        // Trail Running needs exactly 3-4 running days (1 long + 1 hill +
+        // 1-2 easy) — stricter than the generic "at least one day" rule
+        // every other race type uses.
+        if (isTrailRaceType(eventCfg.raceType)) {
+          const n = (disciplineDays.run || []).length;
+          return n >= 3 && n <= 4;
+        }
         // Every discipline the race needs must have at least one day selected
         // — block advancing rather than silently degrading to no sessions.
         return raceDisciplines.every(d => (disciplineDays[d] || []).length >= 1);
@@ -844,7 +851,7 @@ export function GoalsSetupScreen({
                         const key = DAY_KEYS[i];
                         const on = days.includes(key);
                         return (
-                          <button key={key} onClick={() => toggleDisciplineDay(disc, key)} style={{
+                          <button key={key} data-testid={`day-toggle-${disc}-${key}`} data-selected={on} onClick={() => toggleDisciplineDay(disc, key)} style={{
                             padding: '10px 0', borderRadius: 10, fontSize: 10.5, fontWeight: 600,
                             background: on ? t.accent : t.surface, color: on ? t.accentText : t.text3,
                             border: `1.5px solid ${on ? t.accent : t.border}`, fontFamily: t.sans, cursor: 'pointer',
@@ -852,8 +859,14 @@ export function GoalsSetupScreen({
                         );
                       })}
                     </div>
-                    {!days.length && (
-                      <div style={{ fontSize: 10.5, color: t.rose || '#BE3B2E', marginTop: 6 }}>Pick at least one day for {meta.label.toLowerCase()}.</div>
+                    {isTrailRaceType(eventCfg.raceType) ? (
+                      (days.length < 3 || days.length > 4) && (
+                        <div style={{ fontSize: 10.5, color: t.rose || '#BE3B2E', marginTop: 6 }}>Pick 3 or 4 days for trail running — 1 long run, 1 hill workout, and 1–2 easy runs.</div>
+                      )
+                    ) : (
+                      !days.length && (
+                        <div style={{ fontSize: 10.5, color: t.rose || '#BE3B2E', marginTop: 6 }}>Pick at least one day for {meta.label.toLowerCase()}.</div>
+                      )
                     )}
                   </GField>
                 );
@@ -938,6 +951,12 @@ export function GoalsSetupScreen({
             <DQField label="Can you run continuously for 60 minutes?" t={t}>
               <YesNoRow value={intake.runBaseline.canRunContinuously60min} onChange={v => patchIntake('runBaseline', { canRunContinuously60min: v })} t={t} />
             </DQField>
+            {isTrailRaceType(eventCfg.raceType) && (
+              <DQField label="Roughly how long is the longest continuous run or hike you've done recently? (minutes)" t={t}>
+                <input type="number" inputMode="numeric" min="0" max="600" step="5" value={intake.runBaseline.longestEffortMinutes}
+                  onChange={e => patchIntake('runBaseline', { longestEffortMinutes: e.target.value })} placeholder="e.g. 90" style={inputSt(t)} />
+              </DQField>
+            )}
           </div>
         )}
 
@@ -1061,6 +1080,11 @@ export function GoalsSetupScreen({
             <DQField label="Second session day" hint="Second key session of the week. Default: Saturday." t={t}>
               <DaySelect value={intake.preferences.secondDisciplineDay} onChange={v => patchIntake('preferences', { secondDisciplineDay: v })} t={t} />
             </DQField>
+            {isTrailRaceType(eventCfg.raceType) && (
+              <DQField label="Hill workout day" hint="Which of your selected days fits your weekly hill-repeat session." t={t}>
+                <DaySelect value={intake.preferences.hillDay} onChange={v => patchIntake('preferences', { hillDay: v })} t={t} />
+              </DQField>
+            )}
             {gymAccess && (
               <DQField label="Conditioning day" hint="Won't be placed on the same day as a long or high-intensity session unless chosen here." t={t}>
                 <DaySelect value={intake.preferences.conditioningDay} onChange={v => patchIntake('preferences', { conditioningDay: v })} t={t} />

@@ -30,6 +30,7 @@ export const CONDITIONING_EXERCISES = [
 
   { id: 'squat',           name: 'Bodyweight squat',      targetsAreas: ['Quad', 'Knee', 'Hip'] },
   { id: 'lunge',           name: 'Reverse lunge',          targetsAreas: ['Quad', 'Knee', 'Hip'] },
+  { id: 'step_up',         name: 'Step-up',                targetsAreas: ['Quad', 'Knee', 'Hip'] },
   { id: 'plank',           name: 'Plank',                  targetsAreas: ['Lower back'] },
   { id: 'hip_hinge',       name: 'Bodyweight hip hinge',   targetsAreas: ['Hamstring', 'Lower back'] },
   { id: 'jumping_jacks',   name: 'Jumping jacks',          targetsAreas: [] },
