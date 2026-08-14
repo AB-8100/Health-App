@@ -964,17 +964,29 @@ export function GoalsSetupScreen({
             <DQField label="10K time" hint="e.g. 53:00" t={t}><TimeInput value={intake.runBaseline.time10k} onChange={v => patchIntake('runBaseline', { time10k: v })} placeholder="mm:ss" t={t} /></DQField>
             <DQField label="Half marathon time" hint="e.g. 1:58:00" t={t}><TimeInput value={intake.runBaseline.timeHalfMarathon} onChange={v => patchIntake('runBaseline', { timeHalfMarathon: v })} placeholder="h:mm:ss" t={t} /></DQField>
             <DQField label="Marathon time" hint="e.g. 4:12:00" t={t}><TimeInput value={intake.runBaseline.timeMarathon} onChange={v => patchIntake('runBaseline', { timeMarathon: v })} placeholder="h:mm:ss" t={t} /></DQField>
-            <DQField label="Longest single run recently (km)" t={t}>
-              <input type="number" inputMode="decimal" min="0" max="200" step="0.5" value={intake.runBaseline.longestEffortKm}
-                onChange={e => patchIntake('runBaseline', { longestEffortKm: e.target.value })} placeholder="e.g. 18" style={inputSt(t)} />
-            </DQField>
+            {!isTrailRaceType(eventCfg.raceType) && (
+              <DQField label="Longest single run recently (km)" t={t}>
+                <input type="number" inputMode="decimal" min="0" max="200" step="0.5" value={intake.runBaseline.longestEffortKm}
+                  onChange={e => patchIntake('runBaseline', { longestEffortKm: e.target.value })} placeholder="e.g. 18" style={inputSt(t)} />
+              </DQField>
+            )}
             <DQField label="Can you run continuously for 60 minutes?" t={t}>
               <YesNoRow value={intake.runBaseline.canRunContinuously60min} onChange={v => patchIntake('runBaseline', { canRunContinuously60min: v })} t={t} />
             </DQField>
             {isTrailRaceType(eventCfg.raceType) && (
-              <DQField label="Roughly how long is the longest continuous run or hike you've done recently? (minutes)" t={t}>
-                <input type="number" inputMode="numeric" min="0" max="600" step="5" value={intake.runBaseline.longestEffortMinutes}
-                  onChange={e => patchIntake('runBaseline', { longestEffortMinutes: e.target.value })} placeholder="e.g. 90" style={inputSt(t)} />
+              <DQField label="Your longest continuous run or hike recently" hint="Same outing, roughly is fine — used to size your long run so it actually builds toward your race distance." t={t}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <div style={miniLabelSt(t)}>Distance (km)</div>
+                    <input type="number" inputMode="decimal" min="0" max="200" step="0.5" value={intake.runBaseline.longestEffortKm}
+                      onChange={e => patchIntake('runBaseline', { longestEffortKm: e.target.value })} placeholder="e.g. 15" style={inputSt(t)} />
+                  </div>
+                  <div>
+                    <div style={miniLabelSt(t)}>Time (minutes)</div>
+                    <input type="number" inputMode="numeric" min="0" max="600" step="5" value={intake.runBaseline.longestEffortMinutes}
+                      onChange={e => patchIntake('runBaseline', { longestEffortMinutes: e.target.value })} placeholder="e.g. 120" style={inputSt(t)} />
+                  </div>
+                </div>
               </DQField>
             )}
           </div>

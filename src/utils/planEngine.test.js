@@ -413,6 +413,41 @@ describe('buildTrainingPlan — trail running target distance', () => {
     const atReference = buildTrainingPlan(trailIntake({ trailDistanceKm: '30' }));
     expect(maxLongRunMinutes(atReference)).toBe(maxLongRunMinutes(baseline));
   });
+
+  it('floors the peak long run using the athlete\'s own reported pace when the ratio nudge alone would leave it short of the distance', () => {
+    // 20km is below the 30km reference, so the ratio nudge alone would
+    // actually reduce the peak below the fitness-level default — but this
+    // athlete's own longest effort (5km in 90min = 18min/km, a slow
+    // technical-terrain pace) implies 20km needs 360min, which should win.
+    const ratioOnly = buildTrainingPlan(trailIntake({ trailDistanceKm: '20' }));
+    const withSlowPersonalPace = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortKm: '5', longestEffortMinutes: '90' } },
+    }));
+    const fitnessLevelDefault = buildTrainingPlan(trailIntake());
+    // Recovery weeks (~30% cuts every 4th week, §B.2) mean the series never
+    // literally reaches its nominal peak within a typical plan window — same
+    // is true for every other race type's peak volume — so this checks the
+    // floor visibly lifted the series above both comparison points, not that
+    // it reached the raw 360min peak value exactly.
+    expect(maxLongRunMinutes(withSlowPersonalPace)).toBeGreaterThan(maxLongRunMinutes(ratioOnly));
+    expect(maxLongRunMinutes(withSlowPersonalPace)).toBeGreaterThan(maxLongRunMinutes(fitnessLevelDefault));
+  });
+
+  it('does not apply the personal-pace floor from an incomplete distance/time pair (no mixing an unrelated distance and time)', () => {
+    // Same longestEffortMinutes as the slow-pace case above, but no
+    // longestEffortKm — there's no real personal rate to derive without both.
+    const minutesOnly = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortMinutes: '90' } },
+    }));
+    const withSlowPersonalPace = buildTrainingPlan(trailIntake({
+      trailDistanceKm: '20',
+      baselines: { run: { longestEffortKm: '5', longestEffortMinutes: '90' } },
+    }));
+    expect(maxLongRunMinutes(minutesOnly)).toBeLessThan(maxLongRunMinutes(withSlowPersonalPace));
+    expect(maxLongRunMinutes(minutesOnly)).toBeLessThan(200);
+  });
 });
 
 describe('buildTrainingPlan — plan health', () => {

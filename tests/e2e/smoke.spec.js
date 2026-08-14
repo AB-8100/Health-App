@@ -196,9 +196,10 @@ test.describe('core screens render without error', () => {
     await expect(page.getByText(/pick 3 or 4 days for trail running/i)).not.toBeVisible();
     await page.getByRole('button', { name: /^continue →$/i }).click();
 
-    // Run baseline — trail-only time-on-feet field.
+    // Run baseline — trail-only paired distance/time field (same effort).
     await expect(page.getByText(/^Run baseline\.$/)).toBeVisible();
-    await page.getByPlaceholder('e.g. 90').fill('75');
+    await page.getByPlaceholder('e.g. 15').fill('15');
+    await page.getByPlaceholder('e.g. 120').fill('120');
     await page.getByRole('button', { name: /^continue →$/i }).click();
 
     // Availability / preferences / injury are all optional past this point —

@@ -349,6 +349,24 @@ function trailDistanceAdjustedPeakMinutes(fitnessPeakMin, trailDistanceKm) {
   return clamp(Math.round(fitnessPeakMin * multiplier), TRAIL_LONG_RUN_MIN_MIN, TRAIL_LONG_RUN_MAX_MIN);
 }
 
+// The ratio nudge above has no floor tied to whether its result is actually
+// enough time to cover the entered distance — a "Beginner" default nudged
+// down for a below-reference distance could still land well short of what
+// that distance takes to cover at any real pace. Rather than assume a pace,
+// use the athlete's own reported rate on their longest continuous run/hike
+// (§A run_baseline — distance and time paired as one question, same
+// effort) as a floor: dividing their own reported minutes by their own
+// reported km is a real personal rate, not an app-invented assumption.
+// Falls back to null (no floor applied) if either half of that pair is
+// missing, rather than mixing an unrelated distance and time together.
+function trailPersonalPaceFloorMinutes(trailDistanceKm, runBaselines) {
+  const effortKm = Number(runBaselines?.longestEffortKm);
+  const effortMinutes = Number(runBaselines?.longestEffortMinutes);
+  if (!(trailDistanceKm > 0) || !(effortKm > 0) || !(effortMinutes > 0)) return null;
+  const personalMinPerKm = effortMinutes / effortKm;
+  return Math.min(trailDistanceKm * personalMinPerKm, TRAIL_LONG_RUN_MAX_MIN);
+}
+
 // ── Trail Running session builders (§B.2-B.5) ───────────────────────────────
 // Trail's long run reuses RUN_LONG_TERM's exact sessionType string so the
 // existing 'Long run' glossary term resolves for it — no new entry needed.
@@ -445,10 +463,15 @@ export function buildTrainingPlan(intake) {
     // Time-on-feet, not pace-based: peak long run is a duration by fitness
     // level, ramping at 10-15%/week (not the 10% road-running cap) straight
     // through to race day — no taper volume-cut (§B.1/§B.2). The entered
-    // target race distance then nudges that fitness-level peak up or down
-    // (see trailDistanceAdjustedPeakMinutes above) — no pace is assumed.
+    // target race distance nudges that fitness-level peak up or down (see
+    // trailDistanceAdjustedPeakMinutes above), then the athlete's own
+    // reported pace on their longest effort — not an assumed one — acts as
+    // a floor so the peak is never short of what's needed to actually cover
+    // the distance at a pace they've demonstrated (trailPersonalPaceFloorMinutes).
     const fitnessPeakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
-    const peakMin = trailDistanceAdjustedPeakMinutes(fitnessPeakMin, Number(intake.trailDistanceKm));
+    const ratioNudgedMin = trailDistanceAdjustedPeakMinutes(fitnessPeakMin, Number(intake.trailDistanceKm));
+    const personalFloorMin = trailPersonalPaceFloorMinutes(Number(intake.trailDistanceKm), baselines.run);
+    const peakMin = personalFloorMin ? Math.max(ratioNudgedMin, personalFloorMin) : ratioNudgedMin;
     const trailFitness = baselines.run?.longestEffortMinutes
       ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
       : fitnessRatio(fitnessLevel);
