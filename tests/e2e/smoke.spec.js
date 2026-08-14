@@ -175,6 +175,11 @@ test.describe('core screens render without error', () => {
     await expect(page.getByText(/^Race details\.$/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Trail Running', exact: true }).click();
+
+    // Target race distance — required to advance once Trail Running is
+    // selected (drives the peak long-run sizing, see planEngine.js).
+    await expect(page.getByTestId('trail-distance-bubble')).toBeVisible();
+    await page.getByPlaceholder('e.g. 42').fill('42');
     await page.getByRole('button', { name: /^continue →$/i }).click();
 
     // Day picker — deterministically select exactly 3 running days

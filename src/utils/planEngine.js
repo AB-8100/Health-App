@@ -26,6 +26,7 @@
 //   oneOffEvents: [{ label, date }],
 //   cutoffTimes: { swim, bike, run } (seconds, triathlon only, optional),
 //   targetPaces: { swim, transition, bike, run } (seconds per leg) | { run } for running-only,
+//   trailDistanceKm,          race distance in km, Trail Running only — sizes the peak long run
 //   injury: { pastInjuries, currentNiggles, healthConditions, avoidExercises, aggravatingFactors },
 // }
 
@@ -324,6 +325,32 @@ function buildSwimEntry({ weekNum, phase, weeklyMeters, rotationIdx }) {
   return { type: 'swim', label: 'Swim', sessionType: archetype.sessionType, duration: swimDuration(weeklyMeters), flag: '', intensity: archetype.intensity, week: weekNum, phase: phase.label };
 }
 
+// ── Trail Running target-distance sizing ─────────────────────────────────────
+// The athlete enters a target race distance (km) at onboarding (§A, the
+// "How far is your race?" field on the race-type step). Trail's long run is
+// still a duration, not a distance, prescribed to the athlete (§B.2 — pace
+// varies too much by terrain to plan against) — but the *peak* duration the
+// long run ramps to should be big enough that, at a conservative trail
+// effort pace, the athlete could actually cover the race distance, not just
+// whatever the generic fitness-level default happens to be.
+//
+// TRAIL_PACE_SEC_PER_KM is a deliberately slow, conservative planning
+// assumption (8:00/km — mixed running/hiking effort on technical terrain,
+// well off any road-running pace), used only to size the peak long run, never
+// surfaced to the athlete as a pace target. TRAIL_LONG_RUN_DISTANCE_FRACTION
+// mirrors the existing road-running tables' own pattern of peaking the long
+// run below full race distance (e.g. Marathon's 30.5km peak long run is
+// ~72% of the 42.195km race) rather than training all the way to it.
+const TRAIL_PACE_SEC_PER_KM = 480;
+const TRAIL_LONG_RUN_DISTANCE_FRACTION = 0.8;
+const TRAIL_LONG_RUN_MAX_MIN = 600; // 10hr sanity ceiling for very long ultra distances
+
+function trailDistancePeakMinutes(trailDistanceKm) {
+  if (!(trailDistanceKm > 0)) return null;
+  const minutes = (trailDistanceKm * TRAIL_PACE_SEC_PER_KM / 60) * TRAIL_LONG_RUN_DISTANCE_FRACTION;
+  return Math.min(minutes, TRAIL_LONG_RUN_MAX_MIN);
+}
+
 // ── Trail Running session builders (§B.2-B.5) ───────────────────────────────
 // Trail's long run reuses RUN_LONG_TERM's exact sessionType string so the
 // existing 'Long run' glossary term resolves for it — no new entry needed.
@@ -419,8 +446,15 @@ export function buildTrainingPlan(intake) {
   if (trail) {
     // Time-on-feet, not pace-based: peak long run is a duration by fitness
     // level, ramping at 10-15%/week (not the 10% road-running cap) straight
-    // through to race day — no taper volume-cut (§B.1/§B.2).
-    const peakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
+    // through to race day — no taper volume-cut (§B.1/§B.2). When the
+    // athlete has entered a target race distance, the peak is pushed up
+    // further if the distance-derived estimate needs more time than the
+    // generic fitness-level default — the long run has to build toward
+    // actually covering that distance, not just whatever a beginner/
+    // intermediate/fit default would prescribe.
+    const fitnessPeakMin = PEAK_VOLUME_TABLE['Trail Running'].longRunMinByFitness[fitnessLevel] ?? 90;
+    const distancePeakMin = trailDistancePeakMinutes(Number(intake.trailDistanceKm));
+    const peakMin = distancePeakMin ? Math.max(fitnessPeakMin, distancePeakMin) : fitnessPeakMin;
     const trailFitness = baselines.run?.longestEffortMinutes
       ? clamp(baselines.run.longestEffortMinutes / peakMin, 0.15, 0.75)
       : fitnessRatio(fitnessLevel);
@@ -602,19 +636,23 @@ export function buildTrainingPlan(intake) {
 
   applyOneOffEvents(sessions, oneOffByDate, startDate, raceDate);
 
-  // A time-on-feet trail plan has no fixed race distance by design (Non-Goal) —
-  // RUN_RACE_DISTANCES_KM['Trail Running'] is undefined, which would otherwise
-  // silently produce "undefinedkm" (§B.8). Every read site already treats
-  // this field as optional.
-  const eventDistances = trail ? null : (triathlon
-    ? Object.entries(TRIATHLON_LEG_DISTANCES_KM[raceType]).map(([, km]) => `${km}km`).join(' / ')
-    : `${RUN_RACE_DISTANCES_KM[raceType]}km`);
+  // A trail plan's distance now comes from the athlete's own entered target
+  // (§A trailDistanceKm) rather than a fixed per-race-type table — unlike
+  // RUN_RACE_DISTANCES_KM, trail races vary in distance event-to-event, so
+  // there's no table to look up. Falls back to null (not "undefinedkm") if
+  // somehow missing, since every read site already treats this as optional.
+  const trailDistanceKmNum = trail ? Number(intake.trailDistanceKm) : null;
+  const eventDistances = trail
+    ? (trailDistanceKmNum > 0 ? `${trailDistanceKmNum}km` : null)
+    : (triathlon
+      ? Object.entries(TRIATHLON_LEG_DISTANCES_KM[raceType]).map(([, km]) => `${km}km`).join(' / ')
+      : `${RUN_RACE_DISTANCES_KM[raceType]}km`);
 
   const planHealth = computePlanHealth(sessions, phases, holidayByDate, oneOffByDate);
   const usedTerms = collectUsedTerms(sessions);
   const glossary = glossaryForTerms(usedTerms);
   const overview = buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks });
-  const planMix = buildPlanMix({ trail, triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [] });
+  const planMix = buildPlanMix({ trail, triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [], trailDistanceKm: trailDistanceKmNum });
 
   return {
     meta: {
@@ -826,10 +864,11 @@ function buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays
   return lines.join('\n\n');
 }
 
-function buildPlanMix({ trail, triathlon, runDays, bikeDays, swimDays }) {
+function buildPlanMix({ trail, triathlon, runDays, bikeDays, swimDays, trailDistanceKm }) {
   const parts = [];
   if (trail && runDays.length) {
-    parts.push(`Your ${runDays.length} run${runDays.length === 1 ? '' : 's'} a week mix a time-on-feet long run with a weekly hill-repeat session and ${runDays.length > 2 ? 'easy conversational-effort runs' : 'an easy conversational-effort run'}, building climbing strength and endurance through to race day.`);
+    const distanceNote = trailDistanceKm > 0 ? ` toward being able to cover your ${trailDistanceKm}km race distance` : '';
+    parts.push(`Your ${runDays.length} run${runDays.length === 1 ? '' : 's'} a week mix a time-on-feet long run${distanceNote} with a weekly hill-repeat session and ${runDays.length > 2 ? 'easy conversational-effort runs' : 'an easy conversational-effort run'}, building climbing strength and endurance through to race day.`);
     return parts.join(' ');
   }
   if (runDays.length) {

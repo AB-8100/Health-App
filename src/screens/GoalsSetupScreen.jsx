@@ -104,6 +104,7 @@ const DEFAULT_CONFIG = {
     hasCutoffTime: null,
     cutoffTimeHours: '', cutoffTimeMinutes: '', cutoffTimeSeconds: null,
     cutoffTimes: null, // { swim, bike, run } seconds — per-discipline, triathlon only (§A.10)
+    trailDistanceKm: '', // race distance in km — Trail Running only, sizes the peak long run
   },
   strength_programme: { focus: '' },
   sport_activity:     { sportType: '', daysPerWeek: 2, intensity: 'Moderate' },
@@ -276,6 +277,7 @@ export function GoalsSetupScreen({
         oneOffEvents: intake.availability?.oneOffEvents,
         cutoffTimes: eventCfg.cutoffTimes,
         targetPaces: intake.targetPaces,
+        trailDistanceKm: eventCfg.trailDistanceKm,
         injury: intake.injury,
       });
     } catch (e) {
@@ -288,6 +290,7 @@ export function GoalsSetupScreen({
     if (current === 'select') return selectedGoals.length >= 1;
     if (current === 'config_event_race') {
       if (!(eventCfg.raceType && eventCfg.raceDate && eventCfg.startDate && eventCfg.fitnessLevel)) return false;
+      if (isTrailRaceType(eventCfg.raceType) && !(Number(eventCfg.trailDistanceKm) > 0)) return false;
       if (eventCfg.hasTargetTime === null || eventCfg.hasTargetTime === undefined) return false;
       if (eventCfg.hasTargetTime && !(eventCfg.targetTimeSeconds > 0)) return false;
       if (eventCfg.hasCutoffTime === null || eventCfg.hasCutoffTime === undefined) return false;
@@ -611,6 +614,23 @@ export function GoalsSetupScreen({
                   );
                 })}
               </div>
+              {isTrailRaceType(eventCfg.raceType) && (
+                <div data-testid="trail-distance-bubble" style={{
+                  marginTop: 10, padding: '12px 14px', borderRadius: 12,
+                  background: t.surface2, border: `1px solid ${t.border}`,
+                }}>
+                  <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.4 }}>
+                    How far is your race (km)? We'll build your long run toward being able to cover that distance, on top of the hill and easy trail sessions.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="number" inputMode="decimal" min="0" max="500" step="1"
+                      value={eventCfg.trailDistanceKm || ''}
+                      onChange={e => updateConfig('event_race', { trailDistanceKm: e.target.value })}
+                      placeholder="e.g. 42" style={{ ...inputSt(t), flex: 1 }} />
+                    <span style={{ fontSize: 12.5, color: t.text3, fontWeight: 600 }}>km</span>
+                  </div>
+                </div>
+              )}
             </GField>
 
             <GField label="Start date" t={t}>

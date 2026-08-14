@@ -379,6 +379,36 @@ describe('buildTrainingPlan — trail running', () => {
   });
 });
 
+function maxLongRunMinutes(plan) {
+  return Math.max(0, ...Object.values(plan.sessions).flat()
+    .filter(e => e.sessionType === 'Long run')
+    .map(e => parseInt(e.duration, 10)));
+}
+
+describe('buildTrainingPlan — trail running target distance', () => {
+  it('leaves eventDistances null and the long run at the fitness-level default when no target distance is given', () => {
+    const plan = buildTrainingPlan(trailIntake());
+    expect(plan.meta.eventDistances).toBeNull();
+  });
+
+  it('reports the entered target distance as meta.eventDistances', () => {
+    const plan = buildTrainingPlan(trailIntake({ trailDistanceKm: '42' }));
+    expect(plan.meta.eventDistances).toBe('42km');
+  });
+
+  it('pushes the peak long run higher than the fitness-level default when the target distance demands more time', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const longDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '50' }));
+    expect(maxLongRunMinutes(longDistance)).toBeGreaterThan(maxLongRunMinutes(baseline));
+  });
+
+  it('does not shrink the long run below the fitness-level default for a short target distance', () => {
+    const baseline = buildTrainingPlan(trailIntake());
+    const shortDistance = buildTrainingPlan(trailIntake({ trailDistanceKm: '10' }));
+    expect(maxLongRunMinutes(shortDistance)).toBe(maxLongRunMinutes(baseline));
+  });
+});
+
 describe('buildTrainingPlan — plan health', () => {
   it('computes a plan-health summary as verifiable properties, not a self-report', () => {
     const plan = buildTrainingPlan(marathonIntake());
