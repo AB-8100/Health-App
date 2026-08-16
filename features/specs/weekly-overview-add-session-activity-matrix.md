@@ -1,135 +1,242 @@
-# Weekly Overview "+ Add session" — activity matrix
+# Weekly Overview "+ Add session" — shared activity catalog
 
 Status: authored inline for a direct user request (no prior `features/ideas.md` →
-`backlog.md` pass). Kept to the same shape the automated spec pipeline produces
-(see `features/PLANNING.md`) so scope decisions are explicit and reviewable,
-per `CLAUDE.md`'s "do not implement a feature whose spec you have not read in
-full" rule.
+`backlog.md` pass), revised once after follow-up feedback widened the scope
+from a 5-item picker to an app-wide shared catalog. Kept to the same shape
+the automated spec pipeline produces (see `features/PLANNING.md`) so scope
+decisions are explicit and reviewable, per `CLAUDE.md`'s "do not implement a
+feature whose spec you have not read in full" rule.
+
+## Revision note
+
+The first draft of this spec narrowed the Weekly Overview's "+ Add session"
+picker to exactly the five types `utils/planEngine.js` generates (Bike, Run,
+Swim, Gym, Conditioning), removing `ref_activities` as its source. Follow-up
+feedback asked for two changes to that draft:
+
+1. **Yoga (and the rest of the general-fitness/sport activity list) should
+   stay available** — not narrowed away — but should come from **one shared
+   catalog** used consistently by the questionnaire (onboarding's General
+   Fitness / Sport Activity steps) *and* the Weekly Overview picker, instead
+   of each surface keeping its own separate, drifting list. A user's own
+   custom entries from onboarding (standing commitments — free-text sports
+   they told the app they already do) should also be selectable again from
+   the Weekly Overview picker.
+2. **A basic numbering system** (1, 2, 3...) for same-day sessions that
+   share a label, to remove the "two Bike cards collide" edge case the
+   first draft flagged as an accepted limitation rather than fixed.
+
+This revision keeps §A/§B/§C's core fix (a session's `type` must come from a
+curated, `SESSION_DISPLAY`-correct source, never `ref_activities.category`)
+but replaces the fixed 5-item list with a shared catalog (§A), and adds §D
+for the numbering fix.
 
 ## Context / why
 
-Investigation of a user bug report (session: same conversation, prior turn)
-found that the Weekly Overview's "+ Add session" panel
-(`AddSessionPanel`/`handleAddSession`, `src/screens/WeeklyOverviewScreen.jsx:362-467,678-696`)
-lets the user pick from every row in the Supabase `ref_activities` table and
-stores that row's `category` column directly as the new session's `type`:
-
-```js
-const typeKey = SESSION_DISPLAY[category] ? category : 'other';
-```
-
-`ref_activities.category` is a coarse **training-load bucket**
-(`endurance`, `team_sport`, `water_sport`, `mobility`, ...) used by
-`utils/overtrain.js`/`utils/sessionLoadEstimate.js` for load-conflict
-scoring — every cycling row in the seed data
+Investigation of a user bug report found that the Weekly Overview's
+"+ Add session" panel (`AddSessionPanel`/`handleAddSession`,
+`src/screens/WeeklyOverviewScreen.jsx:362-467,678-696`) stored
+`ref_activities.category` — a coarse **training-load bucket**
+(`endurance`, `team_sport`, `water_sport`, ...) meant for
+`utils/overtrain.js`'s load-conflict scoring — directly as a new session's
+display/analytics `type`. Every cycling row in the seed data
 (`supabase/seeds/forma_seed_data.json`) is tagged `category: "endurance"`,
-same as running, rowing, and hiking. Two consequences, both confirmed by
-reading the code (not just the symptom):
+so a manually-added "Cycling (moderate ride)" got the 🏃 running icon
+(`SESSION_DISPLAY.endurance`) instead of the 🚴 bike icon
+(`SESSION_DISPLAY.bike`) an event-plan-generated bike session gets, and
+built its own separate "Endurance" Analytics bucket instead of merging into
+the user's real "Bike" pace trend.
 
-1. **Wrong icon/colour.** `getSessionDisplay`/`SESSION_DISPLAY`
-   (`src/data/sessionDisplay.js`) key their emoji/colour lookup by `type`.
-   A manually-added "Cycling (moderate ride)" gets `type: 'endurance'` →
-   the 🏃 running icon on blue (`#0090FF`), not the 🚴 bike icon on orange
-   (`#D97706`) an event-plan-generated bike session gets (`type: 'bike'`,
-   set directly by `utils/planEngine.js`).
-2. **Analytics under- or mis-counts it.** `utils/analytics.js`'s pace
-   charts group by `type` (`pace:${type}`) — a session tagged `endurance`
-   builds its own separate "Endurance" bucket instead of merging into the
-   "Bike" bucket the user's other bike sessions build up, so logged
-   progress on manually-added rides looks disconnected from (or missing
-   from) the real bike pace trend.
+**While tracing every place this same category-vs-type confusion could
+recur (per the follow-up ask to align things app-wide), the same bug class
+turned up twice more, already shipping, unrelated to the Weekly Overview:**
 
-The fix agreed with the user: stop sourcing the picker from
-`ref_activities` (a load-scoring table, never meant to double as a
-display-type/analytics-type source) and instead offer exactly the
-discipline set the questionnaire's plan engine already produces — **Bike,
-Run, Swim, Gym, Conditioning** — so a manually-added session always carries
-one of the same `type` values `planEngine.js` generates, with no separate
-mapping step to get wrong. An optional second dropdown lets the user note
-*what kind* of bike/run/swim session it was (easy, long, interval, ...)
-without reintroducing a type that competes with the fixed discipline value.
+- `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS` — the table onboarding's
+  General Fitness step schedules from — maps `rowing`, `hiit`, `pilates`,
+  `climbing`, and `dancing` all to `type: 'other'`, even though
+  `SESSION_DISPLAY` already has a dedicated, correct entry for every one of
+  them (`row` 🚣, `hiit` ⚡, `pilates` 🤸, `climb` 🧗, `dance` 💃,
+  `data/sessionDisplay.js:15-19`) — those entries just aren't reachable
+  today because nothing points at them by the right key. A user who
+  schedules "Rowing" via onboarding gets the same generic ⚡ icon a
+  never-otherwise-classified activity gets, and its Analytics pace series
+  groups under `pace:other` alongside everything else that fell through to
+  the same fallback, not its own "Row" series.
+- The same file's `cycling`/`Cycling` entries (`ACTIVITY_DEFS.cycling`,
+  `DISCIPLINE_ACTIVITY_META.bike`, `SPORT_NAME_TO_TYPE.Cycling`) use
+  `type: 'cycle'`, while `utils/planEngine.js`'s event-race engine uses
+  `type: 'bike'` for the same discipline. Both render correctly (each has
+  its own `SESSION_DISPLAY` entry — different colours, `#9333EA` vs
+  `#D97706`) but `utils/analytics.js`'s pace-series bucketing keys are
+  exact-`type` (`pace:${type}`), so a general-fitness-generated cycling
+  session and an event-plan bike session **do not merge into the same pace
+  chart** even though both are, to the user, "my bike rides." This is the
+  same disconnect the original bug report described, just triggered by a
+  different onboarding path.
 
-## User story
+Both are fixed as part of building the shared catalog below (§A), not left
+as further "known limitations" — they're the same root cause the user
+already asked to fix, just discovered in two more places while aligning
+things.
 
-As a user adding a one-off session to my Weekly Overview, I want to pick
-from the same simple activity types my training plan already uses (Bike,
-Run, Swim, Gym, Conditioning), and optionally say what kind of effort it
-was, so the session gets the right icon and correctly contributes to my
-Analytics pace charts — the same as a session my plan generated.
+## A. `src/data/activityCatalog.js` — the one list everything selects from
 
-## A. Activity picker — five fixed options, no more `ref_activities` query
+**Decision:** a new file, `ACTIVITY_CATALOG`, becomes the single source of
+truth for "activities the app knows about." Every existing activity picker
+either reads from it directly or is reduced to a thin filtered view of it,
+instead of keeping its own independently-drifting list:
 
-**Decision:** `AddSessionPanel` drops its `ref_activities` fetch
-(`getRefActivities()`, the `refActivities`/`activitiesLoaded` state, and the
-`<select>`-or-free-text-fallback rendering) entirely and replaces it with a
-fixed button row, styled like the panel's existing Day picker
-(`AddSessionPanel`, `WeeklyOverviewScreen.jsx:396-409`):
+| Today | Becomes |
+|---|---|
+| `GoalsSetupScreen.jsx`'s `GENERAL_ACTIVITIES` (11 hardcoded entries, General Fitness step) | Reads `ACTIVITY_CATALOG.filter(a => a.group === 'fitness')` |
+| `GoalsSetupScreen.jsx`'s `SPORT_TYPES` (14 hardcoded sport names, Sport Activity step) | Reads `ACTIVITY_CATALOG.filter(a => a.group === 'sport').map(a => a.label)` |
+| `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS` | Derived from `ACTIVITY_CATALOG` (`type`/`label`/`duration` per entry; emoji/colour resolved via `getSessionDisplay`, not duplicated locally — see below) |
+| `utils/scheduleGeneration.js`'s `SPORT_NAME_TO_TYPE` | Derived from `ACTIVITY_CATALOG`'s `group: 'sport'` entries' own `type` field |
+| Weekly Overview's `AddSessionPanel` (this spec's actual target) | Reads the full `ACTIVITY_CATALOG`, grouped, **plus** the user's own onboarding entries (§A.3) |
 
 ```js
-const ACTIVITY_TYPES = [
-  { type: 'bike',         label: 'Bike' },
-  { type: 'run',          label: 'Run' },
-  { type: 'swim',         label: 'Swim' },
-  { type: 'gym',          label: 'Gym' },
-  { type: 'conditioning', label: 'Conditioning' },
+// src/data/activityCatalog.js
+// Single source of truth for every activity picker in the app (onboarding's
+// General Fitness / Sport Activity steps, Weekly Overview's + Add session
+// panel). `type` must always be a key SESSION_DISPLAY (sessionDisplay.js)
+// has a real entry for — that's what actually drives icon/colour and
+// Analytics pace-series bucketing everywhere a session renders. Adding a
+// new activity means adding both a row here AND (if none of the existing
+// keys fit) a SESSION_DISPLAY entry — never inventing a `type` on the fly
+// at a call site, which is the exact mistake this file exists to prevent.
+export const ACTIVITY_CATALOG = [
+  // ── group: 'training' — same types utils/planEngine.js's event-race engine emits.
+  { id: 'bike',         type: 'bike',         label: 'Bike',         group: 'training' },
+  { id: 'run',          type: 'run',          label: 'Run',          group: 'training' },
+  { id: 'swim',         type: 'swim',         label: 'Swim',         group: 'training' },
+  { id: 'gym',          type: 'gym',          label: 'Gym',          group: 'training' },
+  { id: 'conditioning', type: 'conditioning', label: 'Conditioning', group: 'training' },
+
+  // ── group: 'fitness' — was GoalsSetupScreen.jsx's GENERAL_ACTIVITIES / scheduleGeneration.js's ACTIVITY_DEFS.
+  { id: 'yoga',      type: 'yoga',    label: 'Yoga',     group: 'fitness', duration: 60 },
+  { id: 'walking',   type: 'walk',    label: 'Walking',  group: 'fitness', duration: 60 },
+  { id: 'rowing',    type: 'row',     label: 'Rowing',   group: 'fitness', duration: 45 }, // fix: was 'other'
+  { id: 'hiit',      type: 'hiit',    label: 'HIIT',     group: 'fitness', duration: 30 }, // fix: was 'other'
+  { id: 'pilates',   type: 'pilates', label: 'Pilates',  group: 'fitness', duration: 45 }, // fix: was 'other'
+  { id: 'climbing',  type: 'climb',   label: 'Climbing', group: 'fitness', duration: 90 }, // fix: was 'other'
+  { id: 'dancing',   type: 'dance',   label: 'Dancing',  group: 'fitness', duration: 60 }, // fix: was 'other'
+
+  // ── group: 'sport' — was GoalsSetupScreen.jsx's SPORT_TYPES / scheduleGeneration.js's SPORT_NAME_TO_TYPE.
+  { id: 'football',     type: 'team_sport',   label: 'Football',     group: 'sport' },
+  { id: 'basketball',   type: 'team_sport',   label: 'Basketball',   group: 'sport' },
+  { id: 'tennis',        type: 'racket_sport', label: 'Tennis',       group: 'sport' },
+  { id: 'rugby',         type: 'team_sport',   label: 'Rugby',        group: 'sport' },
+  { id: 'hockey',        type: 'team_sport',   label: 'Hockey',       group: 'sport' },
+  { id: 'volleyball',    type: 'team_sport',   label: 'Volleyball',   group: 'sport' },
+  { id: 'martial_arts',  type: 'combat',       label: 'Martial Arts', group: 'sport' },
+  { id: 'crossfit',      type: 'other',        label: 'CrossFit',     group: 'sport' }, // unchanged — no existing fit
+  { id: 'golf',          type: 'other',        label: 'Golf',         group: 'sport' }, // unchanged — no existing fit
+  // 'Swimming'/'Synchronised Swimming'/'Cycling'/'Running' from the old
+  // SPORT_TYPES list are dropped as separate sport rows — they're just the
+  // 'training' group's swim/bike/run entries, picking them there instead
+  // means the Sport Activity step's "which sport" step and the Weekly
+  // Overview picker both resolve to the exact same catalog row, not two
+  // different-`type` entries for the same real-world activity.
 ];
+
+export function catalogByGroup(group) {
+  return ACTIVITY_CATALOG.filter(a => a.group === group);
+}
 ```
 
-These five `type` values are exactly what they need to be for every
-downstream consumer to already do the right thing with no further change:
+**Cross-cutting alignment fix, flagged prominently per `CLAUDE.md`** (this
+changes existing behaviour beyond the Weekly Overview, same as
+trail-running-support.md §B.6 flagged its one non-trail-specific change):
+every `cycle`-typed entry in `scheduleGeneration.js`
+(`ACTIVITY_DEFS.cycling`, `DISCIPLINE_ACTIVITY_META.bike`,
+`SPORT_NAME_TO_TYPE.Cycling`) switches to `type: 'bike'`, matching
+`planEngine.js`'s convention. **Practical consequence to call out in the PR
+description:** any user whose Weekly Overview currently shows a
+general-fitness-generated cycling session gets a colour change on that
+card next time it's regenerated (purple `#9333EA` → orange `#D97706`) —
+existing already-saved `activities`/`eventOverrides` entries are
+untouched (no migration/backfill), this only affects newly-generated
+schedules going forward, same "generation-time change, no backfill" pattern
+`trail-running-support.md` used for its own cross-cutting change.
 
-- `SESSION_DISPLAY['bike'|'run'|'swim'|'gym'|'conditioning']`
-  (`data/sessionDisplay.js:8-25`) already has a correct emoji/colour entry
-  for each — identical to what an event-plan-generated session of that type
-  gets.
-- `utils/analytics.js`'s `DISCIPLINE_FOR_TYPE`/`SPEED_TYPES`/pace-bucketing
-  already treat `'bike'`/`'run'`/`'swim'` as first-class discipline keys —
-  a manually-added bike ride now buckets into the exact same `pace:bike`
-  series an event-plan bike session does.
-- `SessionDetailScreen.jsx`'s `isGymType`/`isConditioning` checks
-  (`SessionDetailScreen.jsx:387-389`, matching on `sess.type`) already give
-  a `type: 'gym'` or `type: 'conditioning'` manual session the same
-  exercise-picker treatment ("Plan exercises" / pick-exercises-then-start)
-  a conditioning session gets anywhere else in the app — this already
-  works today for the rare case where `ref_activities.category` happened
-  to be `'gym'`/`'conditioning'`; after this change it works every time a
-  user picks those types, not by accident.
-- `utils/sessionLoadEstimate.js`'s Tier 4 fallback
-  (`FALLBACK_LOAD.cardio/leg/upper`, keyed by exactly
-  `swim/bike/run/conditioning/gym`) already resolves a session with no
-  `ref_activities` name-match by its `type` — this is the same fallback
-  path event-plan sessions already go through today (their `label` is
-  always the fixed "Bike"/"Run"/"Swim" string too, which also never
-  exact-matches a `ref_activities.name` row), so manually-added sessions
-  now get **identical** Sequencing Advisor treatment to plan-generated
-  ones, not degraded treatment.
+**Not touched:** `screens/GymPlanScreens.jsx`'s `DayActivitiesScreen` and
+its own `ACTIVITY_TYPES` list (`GymPlanScreens.jsx:3247-3256` — the
+recurring-per-weekday-activity editor reached from the Gym Hub tab, a
+different screen from Weekly Overview's "+ Add session"). Out of scope per
+the original ask, which named the questionnaire and the Weekly Overview
+picker specifically — not expanding to a third picker without a separate
+ask. Its own `cycle`-typed entry keeps that inconsistency for now.
 
-**Removed, not replaced:** the free-text fallback input that appeared when
-`ref_activities` was empty/unreachable. With no network call in this panel
-any more, that failure mode no longer exists.
+### A.1 The Weekly Overview picker itself
 
-## B. Optional "Specific type" — a small cross-discipline matrix, not a per-activity table
+`AddSessionPanel` drops its `ref_activities` fetch (`getRefActivities()`,
+the `refActivities`/`activitiesLoaded` state, the `<select>`-or-free-text
+fallback) entirely — no network call in this panel any more — and renders
+`ACTIVITY_CATALOG` grouped under three headings matching `group`:
+**Training** (Bike/Run/Swim/Gym/Conditioning), **Fitness** (Yoga/Walking/
+Rowing/HIIT/Pilates/Climbing/Dancing), **Sport** (Football/Basketball/
+Tennis/Rugby/Hockey/Volleyball/Martial Arts/CrossFit/Golf). Picking any
+catalog entry sets `type`/`label` straight from that row — no lookup step
+that could get the type wrong, by construction.
 
-**Decision:** a second, optional dropdown appears **only when Bike, Run, or
-Swim is selected** (Gym/Conditioning skip straight to the exercise-picker
-flow downstream, per §A, so a sub-type dropdown for those two would have no
-consumer). Its options come from one flat table — the "matrix" the user
-asked for — where each row is a single generic effort-type label and a set
-of which disciplines it applies to, so e.g. "Long" is defined once and
-reused for bike and run rather than duplicated as "Long ride" / "Long run"
-entries:
+### A.2 Bike / Run / Swim keep the §B specific-type dropdown; everything else doesn't
+
+Per the answered follow-up question: the optional "Specific type"
+matrix dropdown (§B, unchanged from the first draft — Easy/Recovery/Long/
+Tempo/Interval/Hill sprint/Race-pace/Technique) still appears **only** for
+the `training` group's Bike/Run/Swim rows. Every other catalog entry
+(Gym/Conditioning excepted, §C) is added exactly as picked — no dropdown,
+no name override, no extra step. This keeps the fitness/sport rows exactly
+as simple to add as they were meant to be, and avoids inventing subtype
+vocabulary for activities (Yoga, Football, CrossFit, ...) where "Easy/Long/
+Interval" doesn't obviously apply anyway.
+
+### A.3 Personalized entries — the user's own onboarding answers, surfaced back
+
+**Decision:** above the catalog groups, the panel shows a **"Yours"**
+section (hidden if empty) built from the app's already-loaded
+`goalsPayload` state (`App.jsx`'s top-level `goalsPayload`, currently not
+threaded into `WeeklyOverviewScreen` — a new prop, flagged per `CLAUDE.md`'s
+"say so explicitly" rule for anything touching shared root state):
+
+- `goalsPayload.standingCommitments` (array of `{ label, day, time,
+  countsTowardLoad }`, free-text `label` the user typed on the "Other
+  regular commitments" onboarding step, `GoalsSetupScreen.jsx:917-935`) —
+  each distinct `label` becomes a "Yours" chip.
+- `goalsPayload.goals.find(g => g.type === 'sport_activity')?.config
+  ?.sportType` — the single sport chosen on the Sport Activity step, if
+  any, as one more chip (skipped if it already matches a catalog `sport`
+  row by label, to avoid an exact duplicate — e.g. "Tennis" already exists
+  as a catalog row and wouldn't also show under "Yours").
+
+Each "Yours" chip resolves its `type` via `sportActivityDef()`
+(`utils/scheduleGeneration.js:112-114`, unchanged, already exported) — the
+same best-effort free-text-name → `type` function `standingCommitments`/
+`sport_activity` sessions already resolve through when the questionnaire's
+own generated schedule places them, so a "Yours" chip and the recurring
+session that same commitment already generates elsewhere in the week
+render with the *same* icon. Unmatched names (e.g. "Padel," not in
+`SPORT_NAME_TO_TYPE`) fall to `type: 'other'`, same fallback
+`sportActivityDef` already gives them today.
+
+## B. Optional "Specific type" — unchanged from the first draft
+
+*(No change from the previous revision — kept here for completeness.)*
+A second, optional dropdown for Bike/Run/Swim rows, sourced from one flat
+cross-discipline table instead of duplicating "Long"/"Easy"/etc. per
+discipline:
 
 ```js
-// New: src/data/sessionTypeMatrix.js
+// src/data/sessionTypeMatrix.js
 export const SESSION_TYPE_MATRIX = [
-  { id: 'easy',      label: 'Easy',       disciplines: ['bike', 'run', 'swim'] },
-  { id: 'recovery',  label: 'Recovery',   disciplines: ['bike', 'run', 'swim'] },
-  { id: 'long',      label: 'Long',       disciplines: ['bike', 'run', 'swim'] },
-  { id: 'tempo',     label: 'Tempo',      disciplines: ['bike', 'run', 'swim'] },
-  { id: 'interval',  label: 'Interval',   disciplines: ['bike', 'run', 'swim'] },
-  { id: 'hill',      label: 'Hill sprint',disciplines: ['bike', 'run'] },
-  { id: 'race_pace', label: 'Race-pace',  disciplines: ['bike', 'run', 'swim'] },
-  { id: 'technique', label: 'Technique',  disciplines: ['swim'] },
+  { id: 'easy',      label: 'Easy',        disciplines: ['bike', 'run', 'swim'] },
+  { id: 'recovery',  label: 'Recovery',    disciplines: ['bike', 'run', 'swim'] },
+  { id: 'long',      label: 'Long',        disciplines: ['bike', 'run', 'swim'] },
+  { id: 'tempo',     label: 'Tempo',       disciplines: ['bike', 'run', 'swim'] },
+  { id: 'interval',  label: 'Interval',    disciplines: ['bike', 'run', 'swim'] },
+  { id: 'hill',      label: 'Hill sprint', disciplines: ['bike', 'run'] },
+  { id: 'race_pace', label: 'Race-pace',   disciplines: ['bike', 'run', 'swim'] },
+  { id: 'technique', label: 'Technique',   disciplines: ['swim'] },
 ];
 
 export function sessionTypesForDiscipline(discipline) {
@@ -137,152 +244,184 @@ export function sessionTypesForDiscipline(discipline) {
 }
 ```
 
-Picking one sets the session's existing `sessionType` field — the same
-field `planEngine.js`-generated sessions already populate
-(`sessionType: archetype.sessionType`, `planEngine.js:327` etc.) and that
-`buildWeekData` already renders into a session card's `detail` line
-(`detail: [s.sessionType, s.duration, s.flag].filter(Boolean).join(' · ')`,
-`WeeklyOverviewScreen.jsx:114`) — no new display wiring needed. `label`
-stays the fixed discipline name ("Bike"/"Run"/"Swim") from §A; the effort
-type is carried in `sessionType` exactly like a plan-generated session's
-"Bike" card carries `sessionType: 'Tempo ride'` separately from its
-"Bike" label.
+Picking one sets the existing `sessionType` field (same field
+`planEngine.js`-generated sessions populate, already rendered into a
+session card's `detail` line by `buildWeekData`,
+`WeeklyOverviewScreen.jsx:114`) — `label` stays the fixed catalog name
+("Bike"/"Run"/"Swim"). Label choices deliberately overlap
+`SESSION_TYPE_INTENSITY` keywords (`data/sessionDisplay.js:52-56`) so the
+Sequencing Advisor's Tier 3 tag classification
+(`sessionLoadEstimate.js:219-230`) still fires for a manually-added
+session, same as the first draft reasoned through.
 
-**Label choices deliberately overlap `SESSION_TYPE_INTENSITY` keywords**
-(`data/sessionDisplay.js:52-56`, used by the Sequencing Advisor's Tier 3
-tag classification, `sessionLoadEstimate.js:219-230`) where possible —
-"Easy"/"Recovery"/"Tempo"/"Interval"/"Hill sprint"/"Race-pace" each contain
-one of that table's substrings, so a manually-added session with one of
-those picked gets the same tag-based load classification a matching
-event-plan session would. "Long" and "Technique" don't match any existing
-keyword and fall through to the Tier 4 fallback (§A) — a graceful
-degradation, not a break; not worth contorting the label text (e.g. "Long
-run"/"Long ride") to force a match, since that would reintroduce the
-per-discipline duplication this matrix exists to avoid.
+## C. Gym / Conditioning — optional name field, unchanged from the first draft
 
-This table is intentionally small and hand-picked, not derived from
-`data/planGlossary.js`'s existing per-discipline term list (e.g. "Easy
-run" / "Easy spin" as distinct terms) — that list is discipline-specific
-by design (feeds the plan glossary info-button's exact-string lookup,
-`SessionDetailScreen.jsx`'s `findGlossaryEntry`) and reusing it here would
-reintroduce exactly the "one row per discipline" duplication being
-removed. No glossary hookup for this dropdown's picks — out of scope, see
-below.
+*(No change.)* Picking Gym or Conditioning shows one optional free-text
+"Name" input (e.g. "Leg day," "Full Body (Gym)") instead of §B's dropdown,
+defaulting to the plain "Gym"/"Conditioning" label if left blank — matters
+most for Conditioning, since `utils/analytics.js`'s `repsActivityIdFor`
+groups conditioning sessions by that label (`conditioning:${s.workout}`),
+so "Football" and "Climbing" conditioning sessions need to stay
+distinguishable to build separate reps series.
 
-## C. Gym / Conditioning — optional name field instead of a sub-type dropdown
+## D. Same-day numbering — disambiguating sessions that share a label
 
-**Decision:** when Gym or Conditioning is selected, the panel shows one
-optional free-text input ("Name — optional, e.g. Leg day, Football") in
-place of the §B dropdown, defaulting to the plain "Gym"/"Conditioning"
-label if left blank:
+**Decision:** `handleAddSession` checks the target day's already-built
+session list (`weekData[dayIdx].sessions` — every gym/event-plan/activity/
+manually-added session already on that day, from `buildWeekData`) for
+existing entries whose `label` exactly matches the new session's candidate
+label (the catalog's fixed label, or the §C custom name). If none match,
+the label is used as-is — the common case (one "Bike" a day) stays exactly
+as clean as today. If one or more match, the new session's label gets a
+` N` suffix, where `N` is one more than the number of existing matches —
+so a second "Bike" that day becomes "Bike 2", a third "Bike 3", and so on:
 
-- Matches the existing comment in `SessionDetailScreen.jsx:383-386`
-  describing exactly this pattern for a manually-added one-off "gym-typed"
-  session (`"Full Body (Gym)"`/`"Leg Day (Gym)"`).
-- For Conditioning specifically, this also matters for Analytics:
-  `utils/analytics.js`'s `repsActivityIdFor` groups conditioning sessions
-  by their `workout` label (`conditioning:${s.workout}`), e.g. "Football"
-  vs "Climbing" stay separate reps series — a fixed "Conditioning" label
-  for every conditioning session would collapse them all into one bucket,
-  which is worse than today's behaviour, not neutral. Gym-type sessions
-  don't have this concern (`repsActivityIdFor` always returns the single
-  `'gym'` id regardless of label), so the field is cosmetic there, but
-  offered for both types for a consistent form.
+```js
+function withDisambiguatedLabel(candidateLabel, daySessions) {
+  const matches = daySessions.filter(s => s.label === candidateLabel).length;
+  return matches > 0 ? `${candidateLabel} ${matches + 1}` : candidateLabel;
+}
+```
+
+This directly closes the first draft's flagged "two same-day sessions
+collide" gap: `utils/sessionCompletion.js`'s `isSessionCompleted`/
+`findCompletedForActivity` match a completed entry to a scheduled one by
+exact `workout === label` string — once every same-day session has a
+distinct label, that matching is unambiguous again, with no change needed
+to `sessionCompletion.js` itself.
+
+**Scope of this fix, kept basic per the request:**
+
+- Only applied at the moment a new session is added via this panel —
+  doesn't retroactively renumber sessions already sitting in
+  `eventOverrides`/`activities` from before this change, or from
+  `planEngine.js`-generated collisions (which don't happen in practice —
+  the engine places at most one session per discipline per day).
+- Numbers aren't reclaimed/shifted on delete — deleting "Bike 1" from a day
+  that also has "Bike 2" leaves "Bike 2" as-is rather than renaming it back
+  to "Bike 1". A numbering gap is harmless (labels only need to be
+  *distinct* within a day for `sessionCompletion.js` to work, not
+  *sequential*); actively renumbering on delete would mean rewriting
+  `label` on an already-saved, possibly-already-completed session, which
+  risks breaking that session's own completion match — deliberately not
+  done.
+- Applies uniformly to every session source this panel can create — catalog
+  picks, §C's custom Gym/Conditioning name, and §A.3's "Yours" chips alike
+  — one rule, no per-type special-casing.
 
 ## Edge cases handled
 
-- **Two same-day sessions of the same discipline with no distinguishing
-  name** (this spec's own trigger case — a second "Bike" added on a day
-  that already has a plan "Bike" session) — `utils/sessionCompletion.js`'s
-  `isSessionCompleted`/`findCompletedForActivity` match a completed entry
-  to a scheduled one by exact `workout === label` string, with no
-  awareness of `sessionType`. Two "Bike" cards on the same day (one from
-  the plan, one manually added, both left at the default label) can
-  therefore both resolve to whichever one gets logged first. **This is a
-  pre-existing limitation of the label-matching design, not a regression
-  introduced here** — a plan-generated "Bike" and a second plan-generated
-  "Bike" would collide identically today if that ever happened, and even
-  today's `ref_activities`-sourced labels weren't guaranteed unique
-  (picking "Cycling (moderate ride)" twice in one day collides the same
-  way). Not fixed in this pass — a real fix means teaching
-  `sessionCompletion.js` to match by id/index instead of label, which is a
-  bigger change than this spec's scope and affects every session source,
-  not just manually-added ones. Flagging here so it's a known, accepted
-  trade-off rather than a silent gap.
-- **Existing `eventOverrides` entries created before this change** (any
-  `type` value from the old `ref_activities.category` list — `endurance`,
-  `team_sport`, `water_sport`, etc.) — untouched. This is a UI-input-surface
-  change only, no data migration: `SESSION_DISPLAY` keeps every category
-  key it has today so old entries keep rendering exactly as before; they
-  just can't be *created* that way going forward.
-- **No `ref_activities` fetch to fail any more** in this panel — the
-  previous "table unreachable → fall back to free text" branch is removed
-  because there's nothing to fail; `overtrain.js`'s own `getRefActivities()`
-  cache (used by the Sequencing Advisor, unrelated to this panel) is
+- **Existing `eventOverrides`/`activities` entries created before this
+  change** (old `ref_activities.category` types, or `type: 'cycle'`
+  cycling sessions) — untouched, no migration. `SESSION_DISPLAY` keeps
+  every key it has today so old entries keep rendering exactly as before;
+  they just aren't reachable from either picker going forward.
+- **No `ref_activities` fetch to fail any more** in this panel —
+  `overtrain.js`'s own `getRefActivities()` cache (Sequencing Advisor,
+  unrelated to this panel) is unaffected.
+- **A "Yours" chip whose free-text name doesn't match any
+  `SPORT_NAME_TO_TYPE` entry** (e.g. "Padel") — falls to `type: 'other'`,
+  same fallback behaviour the questionnaire's own generated schedule
+  already gives that commitment elsewhere; not a new failure mode.
+- **`goalsPayload` not yet loaded / user has no goals payload at all**
+  (e.g. account mid-migration, or the legacy single-screen onboarding
+  path) — the "Yours" section is simply hidden; the catalog groups render
   unaffected.
 - Duration stays a free-text field (unchanged) — not part of this spec's
   scope.
 
 ## Explicitly out of scope
 
-- `screens/GymPlanScreens.jsx`'s `DayActivitiesScreen`
-  (`ACTIVITY_TYPES` at `GymPlanScreens.jsx:3247-3256`, its own broader
-  gym/run/walk/swim/yoga/hike/cycle/other list for recurring per-weekday
-  activities) and `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS`
-  (used by onboarding's `general_fitness`/`sport_activity` auto-schedule,
-  broader still — yoga/hiit/walking/pilates/climbing/dancing) are
-  **separate pickers, not touched**. Both already have their own
-  `type` conventions (some use `'cycle'` instead of `'bike'` — a
-  pre-existing inconsistency, also out of scope) and are out of scope per
-  the user's request, which named the Weekly Overview's "+ Add session"
-  panel specifically. Not expanding this simplification to them without a
-  separate ask.
-- Reconciling the `'bike'` (planEngine) vs `'cycle'` (`ACTIVITY_DEFS`,
-  `DayActivitiesScreen`) naming split across the codebase — noted above,
-  not fixed here; `utils/analytics.js` already treats both as the same
-  discipline (`SPEED_TYPES`, `DISCIPLINE_FOR_TYPE`) so this split causes
-  no user-visible bug today, just inconsistent internal naming.
-- A glossary/info-button hookup for the §B specific-type picks (unlike
+- `DayActivitiesScreen`'s own `ACTIVITY_TYPES` list and its `cycle` typing
+  — separate screen, separate picker, not touched (§A).
+- A glossary/info-button hookup for §B's specific-type picks — unlike
   event-plan sessions' `sessionType`, these won't resolve against
-  `data/planGlossary.js` since that list's terms are discipline-specific
-  strings, e.g. "Easy run" not "Easy"). Not needed for this fix; a future
-  spec can add one if the info-icon UX is wanted here too.
-- Rewriting `utils/sessionCompletion.js`'s label-based matching to be
-  collision-proof (see Edge cases above) — a larger, cross-cutting change
-  outside this spec's scope.
+  `data/planGlossary.js` (discipline-specific term strings). Not needed for
+  this fix.
+- Rewriting `utils/sessionCompletion.js`'s matching to be id-based instead
+  of label-based — §D's numbering makes labels unique in the one place
+  they could collide from this panel, which is enough; a deeper rewrite of
+  the matching primitive itself is still out of scope.
+- Renumbering already-existing same-day duplicates, or resequencing on
+  delete (§D) — deliberately basic, per the request.
 - Any change to how a session is *logged* (`MarkCompleteSheet`,
   `ActivityTimerScreen`) — this spec only changes what a *scheduled*
-  manually-added session is tagged with before it's logged.
+  session is tagged with (and now numbered) before it's logged.
+- `SPORT_TYPES`' `CrossFit`/`Golf` gaining a more specific `type` than
+  `'other'` — no existing `SESSION_DISPLAY` entry fits either well, and
+  inventing new ones is a separate design decision, not an alignment fix.
 
 ## Data model implications
 
-None. `eventOverrides` (Supabase `training_plans.overrides`, jsonb) already
-stores arbitrary `{ type, label, sessionType, duration, flag, done,
-source }` session objects — this spec changes which values the client
-puts in `type`/`label`/`sessionType` when creating one from this panel, not
-the shape or storage location. No migration.
+None — no Supabase migration. `ref_activities` stays exactly what it is
+today (the Sequencing Advisor's load-scoring reference table); the new
+`ACTIVITY_CATALOG` is a static client-side data file, same pattern as the
+`GENERAL_ACTIVITIES`/`ACTIVITY_DEFS`/`SPORT_TYPES` consts it replaces.
+`eventOverrides`/`activities` keep their existing jsonb shapes — this spec
+only changes which values the client puts into `type`/`label`/`sessionType`
+when creating a session, never the storage shape.
+
+**Decision, worth flagging explicitly since it's the more consequential of
+two reasonable designs:** `ref_activities` (the actual Supabase table)
+was *not* chosen as the shared catalog, even though "come from the same
+table" could also have meant extending that table with a proper display
+`type` column and pointing every picker at it. Reasons: (1) every picker
+this spec touches is currently static/hardcoded already — moving to a
+DB-backed catalog would be a bigger, riskier change than the ask required;
+(2) it would need a migration (`ref_activities` gains a column, or a new
+table) and RLS review, which `CLAUDE.md` flags for mandatory human review
+regardless; (3) the "Yours" personalization (§A.3) is inherently
+per-user data already loaded in-memory (`goalsPayload`), not reference
+data, so it was never going to live in `ref_activities` regardless of
+which way the rest of the catalog went. If a DB-backed catalog is actually
+wanted (e.g. to manage the list without a code deploy), that's a follow-up
+worth its own spec, not folded in here.
 
 ## Files this touches
 
-- `src/screens/WeeklyOverviewScreen.jsx` — `AddSessionPanel` (rewritten
-  picker UI, drop the `ref_activities` fetch/state), `handleAddSession`
-  (build the session from `type`/optional name/optional `sessionType`
-  instead of a `category` lookup), drop the now-unused `getRefActivities`
-  import (`checkWeek`, still used, pulls its own copy from `overtrain.js`
+- `src/data/activityCatalog.js` (new) — `ACTIVITY_CATALOG`,
+  `catalogByGroup` (§A).
+- `src/data/activityCatalog.test.js` (new) — Vitest coverage: every
+  catalog row's `type` resolves to a real `SESSION_DISPLAY` entry (a
+  regression guard for the exact bug class this spec fixes — would have
+  caught the `rowing`/`hiit`/`pilates`/`climbing`/`dancing` → `'other'`
+  bug on its own); `catalogByGroup` filters correctly.
+- `src/data/sessionTypeMatrix.js` (new) — `SESSION_TYPE_MATRIX`,
+  `sessionTypesForDiscipline` (§B, unchanged from first draft).
+- `src/data/sessionTypeMatrix.test.js` (new) — Vitest coverage per §B.
+- `src/utils/scheduleGeneration.js` — `ACTIVITY_DEFS` and
+  `SPORT_NAME_TO_TYPE` become derived from `ACTIVITY_CATALOG` instead of
+  their own literals (§A); `cycling`/`Cycling`/`DISCIPLINE_ACTIVITY_META
+  .bike` switch from `type: 'cycle'` to `type: 'bike'` (flagged
+  cross-cutting change, §A).
+- `src/utils/scheduleGeneration.test.js` — regression coverage: a
+  general-fitness-generated rowing/HIIT/pilates/climbing/dancing session
+  now carries its correct `type`, not `'other'`; a general-fitness or
+  sport-activity cycling session now carries `type: 'bike'`, not
+  `'cycle'`.
+- `src/screens/GoalsSetupScreen.jsx` — `GENERAL_ACTIVITIES`/`SPORT_TYPES`
+  read from `ACTIVITY_CATALOG` instead of their own literals (§A); no
+  visible change to the onboarding UI itself (same ids, same labels, same
+  order preserved).
+- `src/screens/WeeklyOverviewScreen.jsx` — `AddSessionPanel` (catalog-
+  grouped picker UI + "Yours" section, drop the `ref_activities`
+  fetch/state), `handleAddSession` (build the session from
+  `type`/optional name/optional `sessionType`, apply §D's disambiguation
+  before saving), drop the now-unused `getRefActivities` import
+  (`checkWeek`, still used, pulls its own copy from `overtrain.js`
   internally).
-- `src/data/sessionTypeMatrix.js` (new) — the `SESSION_TYPE_MATRIX` table
-  and `sessionTypesForDiscipline` helper (§B).
-- `src/data/sessionTypeMatrix.test.js` (new) — Vitest coverage:
-  `sessionTypesForDiscipline` filters correctly per discipline (e.g. `'hill'`
-  excluded for swim, `'technique'` only for swim).
-- `src/screens/WeeklyOverviewScreen.test.js` — extend `buildWeekData`/
-  `handleAddSession`-adjacent coverage: a manually-added `type: 'bike'`
-  session resolves to `SESSION_DISPLAY.bike`'s emoji/colour and is
-  discoverable by `utils/analytics.js`'s `getActivityOptions` under the
-  same `pace:bike` id a plan-generated bike session uses (integration-style
-  check across the two modules, matching how the original bug was
-  diagnosed).
-- `tests/e2e/smoke.spec.js` — one smoke assertion: open "+ Add session",
-  pick Bike, optionally pick a specific type, save, confirm the new
-  session card renders the bike icon (not the previous default/other
-  icon), per `tests/e2e/README.md`.
+- `src/App.jsx` — thread `goalsPayload` into the `WeeklyOverviewScreen`
+  call (`App.jsx:1442`) as a new prop, for §A.3's "Yours" section. Called
+  out explicitly per `CLAUDE.md` — this is the one change in this spec
+  that touches root `App.jsx` state wiring, even though it's additive
+  (an existing state value gains one more consumer, nothing about how
+  `goalsPayload` itself is loaded/saved changes).
+- `src/screens/WeeklyOverviewScreen.test.js` — extend coverage: a
+  manually-added `type: 'bike'` session resolves to `SESSION_DISPLAY.bike`
+  and the same `pace:bike` Analytics id a plan-generated bike session
+  uses; `withDisambiguatedLabel`-style coverage for the numbering rule
+  (§D) — second same-label session on a day gets " 2", third gets " 3",
+  a session on a *different* day is unaffected.
+- `tests/e2e/smoke.spec.js` — one smoke assertion: open "+ Add session,"
+  pick Bike, save, confirm the bike icon renders; add a second Bike the
+  same day, confirm it's labelled "Bike 2," per `tests/e2e/README.md`.
