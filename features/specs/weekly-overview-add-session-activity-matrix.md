@@ -1,35 +1,40 @@
-# Weekly Overview "+ Add session" — shared activity catalog
+# Weekly Overview "+ Add session" — Supabase-backed activity catalog
 
 Status: authored inline for a direct user request (no prior `features/ideas.md` →
-`backlog.md` pass), revised once after follow-up feedback widened the scope
-from a 5-item picker to an app-wide shared catalog. Kept to the same shape
-the automated spec pipeline produces (see `features/PLANNING.md`) so scope
-decisions are explicit and reviewable, per `CLAUDE.md`'s "do not implement a
-feature whose spec you have not read in full" rule.
+`backlog.md` pass), revised twice after follow-up feedback — first widening
+scope from a 5-item picker to a shared catalog, then moving that catalog
+into Supabase. Kept to the same shape the automated spec pipeline produces
+(see `features/PLANNING.md`) so scope decisions are explicit and reviewable,
+per `CLAUDE.md`'s "do not implement a feature whose spec you have not read in
+full" rule.
 
-## Revision note
+**This spec now includes a Supabase migration — per `CLAUDE.md`'s escalation
+list ("any file in `supabase/migrations/`"), the PR implementing this
+should carry a `needs-human-review` label regardless of how mechanical the
+change looks.**
 
-The first draft of this spec narrowed the Weekly Overview's "+ Add session"
-picker to exactly the five types `utils/planEngine.js` generates (Bike, Run,
-Swim, Gym, Conditioning), removing `ref_activities` as its source. Follow-up
-feedback asked for two changes to that draft:
+## Revision history
 
-1. **Yoga (and the rest of the general-fitness/sport activity list) should
-   stay available** — not narrowed away — but should come from **one shared
-   catalog** used consistently by the questionnaire (onboarding's General
-   Fitness / Sport Activity steps) *and* the Weekly Overview picker, instead
-   of each surface keeping its own separate, drifting list. A user's own
-   custom entries from onboarding (standing commitments — free-text sports
-   they told the app they already do) should also be selectable again from
-   the Weekly Overview picker.
-2. **A basic numbering system** (1, 2, 3...) for same-day sessions that
-   share a label, to remove the "two Bike cards collide" edge case the
-   first draft flagged as an accepted limitation rather than fixed.
-
-This revision keeps §A/§B/§C's core fix (a session's `type` must come from a
-curated, `SESSION_DISPLAY`-correct source, never `ref_activities.category`)
-but replaces the fixed 5-item list with a shared catalog (§A), and adds §D
-for the numbering fix.
+1. **First draft:** narrowed the Weekly Overview's "+ Add session" picker to
+   the five types `utils/planEngine.js` generates (Bike, Run, Swim, Gym,
+   Conditioning), removing `ref_activities` as its source (it was supplying
+   a load-scoring `category`, not a display `type` — the original bug).
+2. **Second draft:** widened back out — Yoga and the rest of the
+   general-fitness/sport list needed to stay, sourced from **one shared
+   catalog** used by both the questionnaire and the Weekly Overview picker,
+   plus a personalized "Yours" section and a same-day numbering scheme.
+   That draft stored the catalog as a static client-side file
+   (`src/data/activityCatalog.js`) and explicitly flagged, as a callout, the
+   alternative of storing it in Supabase instead — reasoning that every
+   picker it touched was already static, so a DB-backed table was a bigger
+   change than the ask required.
+3. **This draft:** reverses that specific call — **the catalog (and the
+   §B specific-type matrix) lives in Supabase**, as two new read-only
+   reference tables alongside `ref_activities`/`ref_exercises`/
+   `ref_muscle_groups`. Everything else about the design (groups, the
+   optional specific-type dropdown, the "Yours" personalization, same-day
+   numbering) is unchanged from draft 2 — only *where the catalog data
+   lives* changes, from a hardcoded array to a fetched-and-cached table.
 
 ## Context / why
 
@@ -39,389 +44,333 @@ Investigation of a user bug report found that the Weekly Overview's
 `ref_activities.category` — a coarse **training-load bucket**
 (`endurance`, `team_sport`, `water_sport`, ...) meant for
 `utils/overtrain.js`'s load-conflict scoring — directly as a new session's
-display/analytics `type`. Every cycling row in the seed data
-(`supabase/seeds/forma_seed_data.json`) is tagged `category: "endurance"`,
-so a manually-added "Cycling (moderate ride)" got the 🏃 running icon
-(`SESSION_DISPLAY.endurance`) instead of the 🚴 bike icon
-(`SESSION_DISPLAY.bike`) an event-plan-generated bike session gets, and
-built its own separate "Endurance" Analytics bucket instead of merging into
-the user's real "Bike" pace trend.
+display/analytics `type`. A manually-added "Cycling (moderate ride)" got
+the 🏃 running icon (`SESSION_DISPLAY.endurance`) instead of the 🚴 bike
+icon (`SESSION_DISPLAY.bike`), and built its own separate "Endurance"
+Analytics bucket instead of merging into the user's real "Bike" pace trend.
 
-**While tracing every place this same category-vs-type confusion could
-recur (per the follow-up ask to align things app-wide), the same bug class
-turned up twice more, already shipping, unrelated to the Weekly Overview:**
+Tracing every place this same category-vs-type confusion could recur (per
+the second draft's "align things app-wide" ask) turned up the same bug
+class twice more, already shipping: `utils/scheduleGeneration.js`'s
+`ACTIVITY_DEFS` maps `rowing`/`hiit`/`pilates`/`climbing`/`dancing` all to
+`type: 'other'` even though `SESSION_DISPLAY` already has a correct,
+unused entry for each; and `cycling` uses `type: 'cycle'` while
+`planEngine.js` uses `type: 'bike'` for the same discipline, so a
+general-fitness-generated bike session and an event-plan bike session
+don't merge in Analytics even though the user experiences both as "my bike
+rides." Both are fixed as part of this catalog, not left as further
+"known limitations."
 
-- `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS` — the table onboarding's
-  General Fitness step schedules from — maps `rowing`, `hiit`, `pilates`,
-  `climbing`, and `dancing` all to `type: 'other'`, even though
-  `SESSION_DISPLAY` already has a dedicated, correct entry for every one of
-  them (`row` 🚣, `hiit` ⚡, `pilates` 🤸, `climb` 🧗, `dance` 💃,
-  `data/sessionDisplay.js:15-19`) — those entries just aren't reachable
-  today because nothing points at them by the right key. A user who
-  schedules "Rowing" via onboarding gets the same generic ⚡ icon a
-  never-otherwise-classified activity gets, and its Analytics pace series
-  groups under `pace:other` alongside everything else that fell through to
-  the same fallback, not its own "Row" series.
-- The same file's `cycling`/`Cycling` entries (`ACTIVITY_DEFS.cycling`,
-  `DISCIPLINE_ACTIVITY_META.bike`, `SPORT_NAME_TO_TYPE.Cycling`) use
-  `type: 'cycle'`, while `utils/planEngine.js`'s event-race engine uses
-  `type: 'bike'` for the same discipline. Both render correctly (each has
-  its own `SESSION_DISPLAY` entry — different colours, `#9333EA` vs
-  `#D97706`) but `utils/analytics.js`'s pace-series bucketing keys are
-  exact-`type` (`pace:${type}`), so a general-fitness-generated cycling
-  session and an event-plan bike session **do not merge into the same pace
-  chart** even though both are, to the user, "my bike rides." This is the
-  same disconnect the original bug report described, just triggered by a
-  different onboarding path.
+## A. Two new Supabase reference tables
 
-Both are fixed as part of building the shared catalog below (§A), not left
-as further "known limitations" — they're the same root cause the user
-already asked to fix, just discovered in two more places while aligning
-things.
+**Decision:** two new read-only reference tables, seeded and RLS'd exactly
+like `ref_activities`/`ref_exercises`/`ref_muscle_groups`
+(`supabase/migrations/20260623_create_reference_tables.sql`) — public
+`select`, no client-facing insert/update/delete, seeded via a service-role
+script, not by the client:
 
-## A. `src/data/activityCatalog.js` — the one list everything selects from
+```sql
+-- supabase/migrations/20260816_create_activity_catalog.sql
+create table if not exists public.activity_catalog (
+  id               bigint generated always as identity primary key,
+  catalog_id       text        not null unique,  -- stable short id, e.g. 'bike', 'yoga', 'football'
+  type             text        not null,          -- SESSION_DISPLAY key — drives icon/colour/analytics
+  label            text        not null,
+  group_name       text        not null,          -- 'training' | 'fitness' | 'sport'
+  duration_minutes int,                            -- default session length, nullable
+  sort_order       int         not null default 0
+);
 
-**Decision:** a new file, `ACTIVITY_CATALOG`, becomes the single source of
-truth for "activities the app knows about." Every existing activity picker
-either reads from it directly or is reduced to a thin filtered view of it,
-instead of keeping its own independently-drifting list:
+create table if not exists public.session_type_matrix (
+  id           bigint generated always as identity primary key,
+  type_id      text        not null unique,        -- e.g. 'easy', 'long', 'hill'
+  label        text        not null,
+  disciplines  text[]      not null default '{}',   -- subset of {'bike','run','swim'}
+  sort_order   int         not null default 0
+);
 
-| Today | Becomes |
-|---|---|
-| `GoalsSetupScreen.jsx`'s `GENERAL_ACTIVITIES` (11 hardcoded entries, General Fitness step) | Reads `ACTIVITY_CATALOG.filter(a => a.group === 'fitness')` |
-| `GoalsSetupScreen.jsx`'s `SPORT_TYPES` (14 hardcoded sport names, Sport Activity step) | Reads `ACTIVITY_CATALOG.filter(a => a.group === 'sport').map(a => a.label)` |
-| `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS` | Derived from `ACTIVITY_CATALOG` (`type`/`label`/`duration` per entry; emoji/colour resolved via `getSessionDisplay`, not duplicated locally — see below) |
-| `utils/scheduleGeneration.js`'s `SPORT_NAME_TO_TYPE` | Derived from `ACTIVITY_CATALOG`'s `group: 'sport'` entries' own `type` field |
-| Weekly Overview's `AddSessionPanel` (this spec's actual target) | Reads the full `ACTIVITY_CATALOG`, grouped, **plus** the user's own onboarding entries (§A.3) |
+alter table public.activity_catalog    enable row level security;
+alter table public.session_type_matrix enable row level security;
+
+create policy "Anyone can read activity_catalog"
+  on public.activity_catalog for select using (true);
+create policy "Anyone can read session_type_matrix"
+  on public.session_type_matrix for select using (true);
+
+select pg_notify('pgrst', 'reload schema');
+```
+
+`type` is validated only by convention (same as `ref_activities` today —
+no FK/enum, per `docs/PROJECT_CONTEXT.md`'s existing pattern) but must
+always be a value `SESSION_DISPLAY` (`data/sessionDisplay.js`) has a real
+entry for — a Vitest check against the seed JSON (§ below) is the actual
+guard, same role `activityCatalog.test.js` would have played for a static
+file in draft 2.
+
+**Why a new table instead of extending `ref_activities`:** `ref_activities`
+already carries many near-duplicate rows per discipline for load-scoring
+granularity (four separate cycling rows — easy/commute, moderate, long,
+indoor-intervals — each with different `leg_load`/`intensity_default`).
+The picker this spec builds wants one curated row per pickable activity,
+not that full expanded list re-surfaced (which would just reintroduce a
+long, granular dropdown — the thing draft 1 removed). Keeping it a
+separate table also means this migration can't accidentally change
+`ref_activities`' existing shape/RLS, which `utils/overtrain.js`'s
+Sequencing Advisor depends on unchanged.
+
+**Seed data** (`supabase/seeds/forma_seed_data.json` gains `activity_catalog`
+and `session_type_matrix` arrays; `scripts/seed-reference-data.js` gains a
+matching `upsert('activity_catalog', ..., 'catalog_id')` /
+`upsert('session_type_matrix', ..., 'type_id')` call, same idempotent
+upsert-by-unique-column pattern the script already uses for the other
+three tables):
+
+| `catalog_id` | `type` | `label` | `group_name` |
+|---|---|---|---|
+| `bike` | `bike` | Bike | training |
+| `run` | `run` | Run | training |
+| `swim` | `swim` | Swim | training |
+| `gym` | `gym` | Gym | training |
+| `conditioning` | `conditioning` | Conditioning | training |
+| `yoga` | `yoga` | Yoga | fitness |
+| `walking` | `walk` | Walking | fitness |
+| `rowing` | `row` | Rowing | fitness |
+| `hiit` | `hiit` | HIIT | fitness |
+| `pilates` | `pilates` | Pilates | fitness |
+| `climbing` | `climb` | Climbing | fitness |
+| `dancing` | `dance` | Dancing | fitness |
+| `football` | `team_sport` | Football | sport |
+| `basketball` | `team_sport` | Basketball | sport |
+| `tennis` | `racket_sport` | Tennis | sport |
+| `rugby` | `team_sport` | Rugby | sport |
+| `hockey` | `team_sport` | Hockey | sport |
+| `volleyball` | `team_sport` | Volleyball | sport |
+| `martial_arts` | `combat` | Martial Arts | sport |
+| `crossfit` | `other` | CrossFit | sport |
+| `golf` | `other` | Golf | sport |
+
+(`fitness`-group `duration_minutes` values match the old `ACTIVITY_DEFS`
+defaults — 60/60/45/30/45/90/60 respectively — carried into the seed row
+rather than hardcoded at a call site.)
+
+`session_type_matrix` seed rows: `easy`/Easy/`{bike,run,swim}`,
+`recovery`/Recovery/`{bike,run,swim}`, `long`/Long/`{bike,run,swim}`,
+`tempo`/Tempo/`{bike,run,swim}`, `interval`/Interval/`{bike,run,swim}`,
+`hill`/Hill sprint/`{bike,run}`, `race_pace`/Race-pace/`{bike,run,swim}`,
+`technique`/Technique/`{swim}` — unchanged content from draft 2's static
+`SESSION_TYPE_MATRIX`, just relocated.
+
+## A.1 Client fetch + cache — `utils/activityCatalog.js`
+
+**Decision:** a new `utils/` module (not `data/`, since it's now a fetcher,
+matching this codebase's existing `data/` = static vs. `utils/` = logic/
+fetch convention), modelled directly on `overtrain.js`'s
+`getRefActivities()` module-level cache (`_refCache`/`_refPending`):
 
 ```js
-// src/data/activityCatalog.js
-// Single source of truth for every activity picker in the app (onboarding's
-// General Fitness / Sport Activity steps, Weekly Overview's + Add session
-// panel). `type` must always be a key SESSION_DISPLAY (sessionDisplay.js)
-// has a real entry for — that's what actually drives icon/colour and
-// Analytics pace-series bucketing everywhere a session renders. Adding a
-// new activity means adding both a row here AND (if none of the existing
-// keys fit) a SESSION_DISPLAY entry — never inventing a `type` on the fly
-// at a call site, which is the exact mistake this file exists to prevent.
-export const ACTIVITY_CATALOG = [
-  // ── group: 'training' — same types utils/planEngine.js's event-race engine emits.
-  { id: 'bike',         type: 'bike',         label: 'Bike',         group: 'training' },
-  { id: 'run',          type: 'run',          label: 'Run',          group: 'training' },
-  { id: 'swim',         type: 'swim',         label: 'Swim',         group: 'training' },
-  { id: 'gym',          type: 'gym',          label: 'Gym',          group: 'training' },
-  { id: 'conditioning', type: 'conditioning', label: 'Conditioning', group: 'training' },
+// src/utils/activityCatalog.js
+import { supabase } from './supabase';
 
-  // ── group: 'fitness' — was GoalsSetupScreen.jsx's GENERAL_ACTIVITIES / scheduleGeneration.js's ACTIVITY_DEFS.
-  { id: 'yoga',      type: 'yoga',    label: 'Yoga',     group: 'fitness', duration: 60 },
-  { id: 'walking',   type: 'walk',    label: 'Walking',  group: 'fitness', duration: 60 },
-  { id: 'rowing',    type: 'row',     label: 'Rowing',   group: 'fitness', duration: 45 }, // fix: was 'other'
-  { id: 'hiit',      type: 'hiit',    label: 'HIIT',     group: 'fitness', duration: 30 }, // fix: was 'other'
-  { id: 'pilates',   type: 'pilates', label: 'Pilates',  group: 'fitness', duration: 45 }, // fix: was 'other'
-  { id: 'climbing',  type: 'climb',   label: 'Climbing', group: 'fitness', duration: 90 }, // fix: was 'other'
-  { id: 'dancing',   type: 'dance',   label: 'Dancing',  group: 'fitness', duration: 60 }, // fix: was 'other'
+let _catalogCache = null, _catalogPending = null;
+let _matrixCache  = null, _matrixPending  = null;
 
-  // ── group: 'sport' — was GoalsSetupScreen.jsx's SPORT_TYPES / scheduleGeneration.js's SPORT_NAME_TO_TYPE.
-  { id: 'football',     type: 'team_sport',   label: 'Football',     group: 'sport' },
-  { id: 'basketball',   type: 'team_sport',   label: 'Basketball',   group: 'sport' },
-  { id: 'tennis',        type: 'racket_sport', label: 'Tennis',       group: 'sport' },
-  { id: 'rugby',         type: 'team_sport',   label: 'Rugby',        group: 'sport' },
-  { id: 'hockey',        type: 'team_sport',   label: 'Hockey',       group: 'sport' },
-  { id: 'volleyball',    type: 'team_sport',   label: 'Volleyball',   group: 'sport' },
-  { id: 'martial_arts',  type: 'combat',       label: 'Martial Arts', group: 'sport' },
-  { id: 'crossfit',      type: 'other',        label: 'CrossFit',     group: 'sport' }, // unchanged — no existing fit
-  { id: 'golf',          type: 'other',        label: 'Golf',         group: 'sport' }, // unchanged — no existing fit
-  // 'Swimming'/'Synchronised Swimming'/'Cycling'/'Running' from the old
-  // SPORT_TYPES list are dropped as separate sport rows — they're just the
-  // 'training' group's swim/bike/run entries, picking them there instead
-  // means the Sport Activity step's "which sport" step and the Weekly
-  // Overview picker both resolve to the exact same catalog row, not two
-  // different-`type` entries for the same real-world activity.
-];
+export async function getActivityCatalog() {
+  if (_catalogCache) return _catalogCache;
+  if (_catalogPending) return _catalogPending;
+  _catalogPending = supabase.from('activity_catalog').select('*').order('sort_order')
+    .then(({ data, error }) => {
+      if (error) { console.warn('Forma: activity_catalog fetch failed', error); return FALLBACK_CATALOG; }
+      _catalogCache = data?.length ? data : FALLBACK_CATALOG;
+      _catalogPending = null;
+      return _catalogCache;
+    });
+  return _catalogPending;
+}
+// getSessionTypeMatrix() — identical shape, session_type_matrix / FALLBACK_MATRIX.
 
-export function catalogByGroup(group) {
-  return ACTIVITY_CATALOG.filter(a => a.group === group);
+export function catalogByGroup(rows, group) {
+  return rows.filter(r => r.group_name === group);
+}
+export function sessionTypesForDiscipline(rows, discipline) {
+  return rows.filter(r => r.disciplines.includes(discipline));
 }
 ```
 
-**Cross-cutting alignment fix, flagged prominently per `CLAUDE.md`** (this
-changes existing behaviour beyond the Weekly Overview, same as
-trail-running-support.md §B.6 flagged its one non-trail-specific change):
-every `cycle`-typed entry in `scheduleGeneration.js`
-(`ACTIVITY_DEFS.cycling`, `DISCIPLINE_ACTIVITY_META.bike`,
-`SPORT_NAME_TO_TYPE.Cycling`) switches to `type: 'bike'`, matching
-`planEngine.js`'s convention. **Practical consequence to call out in the PR
-description:** any user whose Weekly Overview currently shows a
-general-fitness-generated cycling session gets a colour change on that
-card next time it's regenerated (purple `#9333EA` → orange `#D97706`) —
-existing already-saved `activities`/`eventOverrides` entries are
-untouched (no migration/backfill), this only affects newly-generated
-schedules going forward, same "generation-time change, no backfill" pattern
-`trail-running-support.md` used for its own cross-cutting change.
+**Hardcoded fallback, same established pattern as
+`sessionLoadEstimate.js`'s `FALLBACK_LOAD`** (per
+`docs/PROJECT_CONTEXT.md` §7.6: "using the Supabase `ref_activities`
+reference table (with a hardcoded fallback table if that fetch fails)") —
+`FALLBACK_CATALOG`/`FALLBACK_MATRIX` are literal copies of the seed data
+above, baked into `activityCatalog.js`, used whenever the fetch errors or
+returns empty. **This is why the fetch failure isn't just logged and left
+empty like a normal reference-data miss would be** — unlike the Sequencing
+Advisor (where a missing `ref_activities` row just means one session gets
+generic-fallback load scoring), an empty activity picker during onboarding
+or on the Weekly Overview would block a core flow, so this one gets the
+same belt-and-braces treatment `FALLBACK_LOAD` already established for
+exactly that reason.
+
+## A.2 Consumers — everywhere `ACTIVITY_DEFS`/`GENERAL_ACTIVITIES`/`SPORT_TYPES`/`SPORT_NAME_TO_TYPE` lived
+
+| Today (static) | Becomes |
+|---|---|
+| `GoalsSetupScreen.jsx`'s `GENERAL_ACTIVITIES` | `catalogByGroup(catalog, 'fitness')`, `catalog` from `getActivityCatalog()` (fetched on mount, loading state while pending — see Edge cases) |
+| `GoalsSetupScreen.jsx`'s `SPORT_TYPES` | `catalogByGroup(catalog, 'sport').map(r => r.label)` |
+| `utils/scheduleGeneration.js`'s `ACTIVITY_DEFS` | These functions (`legacyGenerateActivitySchedule`, `goalAwareGenerateActivitySchedule`, `disciplineActivityDef`) stay **pure and synchronous** — they take the already-fetched catalog rows as a parameter instead of importing a module-level constant, so their existing "no Supabase import, fully testable" contract (`sessionLoadEstimate.js`'s stated reason for the equivalent split with `overtrain.js`) is preserved. Callers (`App.jsx`'s `handleGoalsSetupComplete`, `GoalsSetupScreen.jsx`'s live plan preview) pass in `getActivityCatalog()`'s already-resolved/cached result — by the time either runs, the catalog was already fetched to render the General Fitness/Sport Activity steps the user just completed, so this is a synchronous cache read in practice, never a fresh await. |
+| `utils/scheduleGeneration.js`'s `SPORT_NAME_TO_TYPE` | A lookup built from the fetched catalog's `group: 'sport'` rows (`label → type`), passed alongside the catalog rows for the same reason. |
+| Weekly Overview's `AddSessionPanel` | Fetches via `getActivityCatalog()`/`getSessionTypeMatrix()` directly (§A.3 unchanged: still reads `goalsPayload` client state for the "Yours" section, not Supabase — that data is per-user and already in memory, not reference data). |
+
+**Cross-cutting alignment fix, unchanged from draft 2, still flagged
+prominently:** the catalog's `cycling` row uses `type: 'bike'`, so every
+consumer above switches from `type: 'cycle'` to `type: 'bike'` for
+cycling — same practical consequence called out before (existing
+already-saved sessions untouched, no migration/backfill of *session* data;
+only newly-generated schedules pick up the new colour).
 
 **Not touched:** `screens/GymPlanScreens.jsx`'s `DayActivitiesScreen` and
-its own `ACTIVITY_TYPES` list (`GymPlanScreens.jsx:3247-3256` — the
-recurring-per-weekday-activity editor reached from the Gym Hub tab, a
-different screen from Weekly Overview's "+ Add session"). Out of scope per
-the original ask, which named the questionnaire and the Weekly Overview
-picker specifically — not expanding to a third picker without a separate
-ask. Its own `cycle`-typed entry keeps that inconsistency for now.
+its own `ACTIVITY_TYPES` list — a different screen, out of scope, same as
+draft 2.
 
-### A.1 The Weekly Overview picker itself
+### A.3 The Weekly Overview picker itself
 
-`AddSessionPanel` drops its `ref_activities` fetch (`getRefActivities()`,
-the `refActivities`/`activitiesLoaded` state, the `<select>`-or-free-text
-fallback) entirely — no network call in this panel any more — and renders
-`ACTIVITY_CATALOG` grouped under three headings matching `group`:
-**Training** (Bike/Run/Swim/Gym/Conditioning), **Fitness** (Yoga/Walking/
-Rowing/HIIT/Pilates/Climbing/Dancing), **Sport** (Football/Basketball/
-Tennis/Rugby/Hockey/Volleyball/Martial Arts/CrossFit/Golf). Picking any
-catalog entry sets `type`/`label` straight from that row — no lookup step
-that could get the type wrong, by construction.
+Same shape as draft 2: `AddSessionPanel` renders `activity_catalog` rows
+grouped under **Training** / **Fitness** / **Sport** headings, plus a
+**"Yours"** section built from `goalsPayload.standingCommitments` and the
+`sport_activity` goal's `sportType` (client state, already loaded — see
+draft 2's reasoning, unchanged). Picking a catalog row sets `type`/`label`
+straight from that row.
 
-### A.2 Bike / Run / Swim keep the §B specific-type dropdown; everything else doesn't
+## B. Optional "Specific type" — now `session_type_matrix`-backed
 
-Per the answered follow-up question: the optional "Specific type"
-matrix dropdown (§B, unchanged from the first draft — Easy/Recovery/Long/
-Tempo/Interval/Hill sprint/Race-pace/Technique) still appears **only** for
-the `training` group's Bike/Run/Swim rows. Every other catalog entry
-(Gym/Conditioning excepted, §C) is added exactly as picked — no dropdown,
-no name override, no extra step. This keeps the fitness/sport rows exactly
-as simple to add as they were meant to be, and avoids inventing subtype
-vocabulary for activities (Yoga, Football, CrossFit, ...) where "Easy/Long/
-Interval" doesn't obviously apply anyway.
+Unchanged in behaviour from draft 2: appears only for Bike/Run/Swim rows,
+fetched via `getSessionTypeMatrix()` and filtered with
+`sessionTypesForDiscipline(rows, discipline)`. Picking one still sets the
+existing `sessionType` field, rendered the same way
+(`WeeklyOverviewScreen.jsx:114`'s `detail` line) — only the data's storage
+location changed.
 
-### A.3 Personalized entries — the user's own onboarding answers, surfaced back
+## C. Gym / Conditioning — unchanged from draft 2
 
-**Decision:** above the catalog groups, the panel shows a **"Yours"**
-section (hidden if empty) built from the app's already-loaded
-`goalsPayload` state (`App.jsx`'s top-level `goalsPayload`, currently not
-threaded into `WeeklyOverviewScreen` — a new prop, flagged per `CLAUDE.md`'s
-"say so explicitly" rule for anything touching shared root state):
+Optional free-text "Name" field instead of §B's dropdown — no Supabase
+involvement either way, this section is unaffected by the move.
 
-- `goalsPayload.standingCommitments` (array of `{ label, day, time,
-  countsTowardLoad }`, free-text `label` the user typed on the "Other
-  regular commitments" onboarding step, `GoalsSetupScreen.jsx:917-935`) —
-  each distinct `label` becomes a "Yours" chip.
-- `goalsPayload.goals.find(g => g.type === 'sport_activity')?.config
-  ?.sportType` — the single sport chosen on the Sport Activity step, if
-  any, as one more chip (skipped if it already matches a catalog `sport`
-  row by label, to avoid an exact duplicate — e.g. "Tennis" already exists
-  as a catalog row and wouldn't also show under "Yours").
+## D. Same-day numbering — unchanged from draft 2
 
-Each "Yours" chip resolves its `type` via `sportActivityDef()`
-(`utils/scheduleGeneration.js:112-114`, unchanged, already exported) — the
-same best-effort free-text-name → `type` function `standingCommitments`/
-`sport_activity` sessions already resolve through when the questionnaire's
-own generated schedule places them, so a "Yours" chip and the recurring
-session that same commitment already generates elsewhere in the week
-render with the *same* icon. Unmatched names (e.g. "Padel," not in
-`SPORT_NAME_TO_TYPE`) fall to `type: 'other'`, same fallback
-`sportActivityDef` already gives them today.
-
-## B. Optional "Specific type" — unchanged from the first draft
-
-*(No change from the previous revision — kept here for completeness.)*
-A second, optional dropdown for Bike/Run/Swim rows, sourced from one flat
-cross-discipline table instead of duplicating "Long"/"Easy"/etc. per
-discipline:
-
-```js
-// src/data/sessionTypeMatrix.js
-export const SESSION_TYPE_MATRIX = [
-  { id: 'easy',      label: 'Easy',        disciplines: ['bike', 'run', 'swim'] },
-  { id: 'recovery',  label: 'Recovery',    disciplines: ['bike', 'run', 'swim'] },
-  { id: 'long',      label: 'Long',        disciplines: ['bike', 'run', 'swim'] },
-  { id: 'tempo',     label: 'Tempo',       disciplines: ['bike', 'run', 'swim'] },
-  { id: 'interval',  label: 'Interval',    disciplines: ['bike', 'run', 'swim'] },
-  { id: 'hill',      label: 'Hill sprint', disciplines: ['bike', 'run'] },
-  { id: 'race_pace', label: 'Race-pace',   disciplines: ['bike', 'run', 'swim'] },
-  { id: 'technique', label: 'Technique',   disciplines: ['swim'] },
-];
-
-export function sessionTypesForDiscipline(discipline) {
-  return SESSION_TYPE_MATRIX.filter(t => t.disciplines.includes(discipline));
-}
-```
-
-Picking one sets the existing `sessionType` field (same field
-`planEngine.js`-generated sessions populate, already rendered into a
-session card's `detail` line by `buildWeekData`,
-`WeeklyOverviewScreen.jsx:114`) — `label` stays the fixed catalog name
-("Bike"/"Run"/"Swim"). Label choices deliberately overlap
-`SESSION_TYPE_INTENSITY` keywords (`data/sessionDisplay.js:52-56`) so the
-Sequencing Advisor's Tier 3 tag classification
-(`sessionLoadEstimate.js:219-230`) still fires for a manually-added
-session, same as the first draft reasoned through.
-
-## C. Gym / Conditioning — optional name field, unchanged from the first draft
-
-*(No change.)* Picking Gym or Conditioning shows one optional free-text
-"Name" input (e.g. "Leg day," "Full Body (Gym)") instead of §B's dropdown,
-defaulting to the plain "Gym"/"Conditioning" label if left blank — matters
-most for Conditioning, since `utils/analytics.js`'s `repsActivityIdFor`
-groups conditioning sessions by that label (`conditioning:${s.workout}`),
-so "Football" and "Climbing" conditioning sessions need to stay
-distinguishable to build separate reps series.
-
-## D. Same-day numbering — disambiguating sessions that share a label
-
-**Decision:** `handleAddSession` checks the target day's already-built
-session list (`weekData[dayIdx].sessions` — every gym/event-plan/activity/
-manually-added session already on that day, from `buildWeekData`) for
-existing entries whose `label` exactly matches the new session's candidate
-label (the catalog's fixed label, or the §C custom name). If none match,
-the label is used as-is — the common case (one "Bike" a day) stays exactly
-as clean as today. If one or more match, the new session's label gets a
-` N` suffix, where `N` is one more than the number of existing matches —
-so a second "Bike" that day becomes "Bike 2", a third "Bike 3", and so on:
-
-```js
-function withDisambiguatedLabel(candidateLabel, daySessions) {
-  const matches = daySessions.filter(s => s.label === candidateLabel).length;
-  return matches > 0 ? `${candidateLabel} ${matches + 1}` : candidateLabel;
-}
-```
-
-This directly closes the first draft's flagged "two same-day sessions
-collide" gap: `utils/sessionCompletion.js`'s `isSessionCompleted`/
-`findCompletedForActivity` match a completed entry to a scheduled one by
-exact `workout === label` string — once every same-day session has a
-distinct label, that matching is unambiguous again, with no change needed
-to `sessionCompletion.js` itself.
-
-**Scope of this fix, kept basic per the request:**
-
-- Only applied at the moment a new session is added via this panel —
-  doesn't retroactively renumber sessions already sitting in
-  `eventOverrides`/`activities` from before this change, or from
-  `planEngine.js`-generated collisions (which don't happen in practice —
-  the engine places at most one session per discipline per day).
-- Numbers aren't reclaimed/shifted on delete — deleting "Bike 1" from a day
-  that also has "Bike 2" leaves "Bike 2" as-is rather than renaming it back
-  to "Bike 1". A numbering gap is harmless (labels only need to be
-  *distinct* within a day for `sessionCompletion.js` to work, not
-  *sequential*); actively renumbering on delete would mean rewriting
-  `label` on an already-saved, possibly-already-completed session, which
-  risks breaking that session's own completion match — deliberately not
-  done.
-- Applies uniformly to every session source this panel can create — catalog
-  picks, §C's custom Gym/Conditioning name, and §A.3's "Yours" chips alike
-  — one rule, no per-type special-casing.
+`handleAddSession` still disambiguates a new session's label against
+`weekData[dayIdx].sessions` (second same-label session that day → " 2",
+third → " 3", ...). Unaffected by where the catalog lives — this logic
+runs after a catalog row has already been picked, purely on the day's
+existing session labels.
 
 ## Edge cases handled
 
+- **`activity_catalog`/`session_type_matrix` fetch fails or is slow during
+  onboarding** — `FALLBACK_CATALOG`/`FALLBACK_MATRIX` (§A.1) render
+  immediately; onboarding's General Fitness/Sport Activity steps are never
+  blocked or empty waiting on a network round-trip. If the real fetch
+  later succeeds with different data than the fallback (e.g. an admin
+  edited the table), the UI already rendered from the fallback doesn't
+  retroactively update mid-step — acceptable, since the two are expected
+  to match exactly under normal operation; a genuinely edited catalog
+  taking effect on the next screen mount (not React memory that's already
+  rendered) is an acceptable staleness window for a "picker options".
 - **Existing `eventOverrides`/`activities` entries created before this
-  change** (old `ref_activities.category` types, or `type: 'cycle'`
-  cycling sessions) — untouched, no migration. `SESSION_DISPLAY` keeps
-  every key it has today so old entries keep rendering exactly as before;
-  they just aren't reachable from either picker going forward.
-- **No `ref_activities` fetch to fail any more** in this panel —
-  `overtrain.js`'s own `getRefActivities()` cache (Sequencing Advisor,
-  unrelated to this panel) is unaffected.
-- **A "Yours" chip whose free-text name doesn't match any
-  `SPORT_NAME_TO_TYPE` entry** (e.g. "Padel") — falls to `type: 'other'`,
-  same fallback behaviour the questionnaire's own generated schedule
-  already gives that commitment elsewhere; not a new failure mode.
-- **`goalsPayload` not yet loaded / user has no goals payload at all**
-  (e.g. account mid-migration, or the legacy single-screen onboarding
-  path) — the "Yours" section is simply hidden; the catalog groups render
-  unaffected.
-- Duration stays a free-text field (unchanged) — not part of this spec's
-  scope.
+  change** — untouched, no migration of *session* data, only of what
+  populates the pickers going forward.
+- **`goalsPayload` not yet loaded** for the "Yours" section — hidden,
+  same as draft 2.
+- **`utils/scheduleGeneration.js`'s pure functions called before the
+  catalog has ever been fetched** (a theoretical ordering bug, not an
+  expected runtime path since both onboarding steps that need it render
+  first) — callers must pass `FALLBACK_CATALOG`/`FALLBACK_MATRIX`
+  explicitly as the default parameter value in that case, so these
+  functions never throw or silently produce `undefined` defs; covered by
+  a unit test that calls them with no prior fetch.
+- Duration stays a free-text field on the add-session form (unchanged) —
+  the catalog's `duration_minutes` is only a default for onboarding-
+  generated sessions, not force-filled into the manual-add form.
 
 ## Explicitly out of scope
 
 - `DayActivitiesScreen`'s own `ACTIVITY_TYPES` list and its `cycle` typing
-  — separate screen, separate picker, not touched (§A).
-- A glossary/info-button hookup for §B's specific-type picks — unlike
-  event-plan sessions' `sessionType`, these won't resolve against
-  `data/planGlossary.js` (discipline-specific term strings). Not needed for
-  this fix.
+  — still a separate screen, not touched.
+- A glossary/info-button hookup for §B's specific-type picks — unchanged
+  from draft 2, still out of scope.
 - Rewriting `utils/sessionCompletion.js`'s matching to be id-based instead
-  of label-based — §D's numbering makes labels unique in the one place
-  they could collide from this panel, which is enough; a deeper rewrite of
-  the matching primitive itself is still out of scope.
+  of label-based — §D's numbering is still considered sufficient.
 - Renumbering already-existing same-day duplicates, or resequencing on
-  delete (§D) — deliberately basic, per the request.
-- Any change to how a session is *logged* (`MarkCompleteSheet`,
-  `ActivityTimerScreen`) — this spec only changes what a *scheduled*
-  session is tagged with (and now numbered) before it's logged.
-- `SPORT_TYPES`' `CrossFit`/`Golf` gaining a more specific `type` than
-  `'other'` — no existing `SESSION_DISPLAY` entry fits either well, and
-  inventing new ones is a separate design decision, not an alignment fix.
+  delete (§D) — unchanged, deliberately basic.
+- Any change to how a session is *logged* — unchanged.
+- `CrossFit`/`Golf` gaining a more specific `type` than `other` — unchanged,
+  no existing `SESSION_DISPLAY` entry fits either well.
+- An admin/in-app UI for editing `activity_catalog`/`session_type_matrix`
+  rows — same as `ref_activities` today, these are edited directly via the
+  Supabase SQL editor or by re-running the seed script, not from the app.
+- Real-time propagation of a catalog edit to already-open sessions — the
+  module-level cache (§A.1) is fetched once per page load, matching
+  `getRefActivities()`'s existing caching behaviour; a catalog change takes
+  effect on next app load, not live.
 
 ## Data model implications
 
-None — no Supabase migration. `ref_activities` stays exactly what it is
-today (the Sequencing Advisor's load-scoring reference table); the new
-`ACTIVITY_CATALOG` is a static client-side data file, same pattern as the
-`GENERAL_ACTIVITIES`/`ACTIVITY_DEFS`/`SPORT_TYPES` consts it replaces.
-`eventOverrides`/`activities` keep their existing jsonb shapes — this spec
-only changes which values the client puts into `type`/`label`/`sessionType`
-when creating a session, never the storage shape.
+**New migration, flagged for mandatory human review per `CLAUDE.md`:**
+`supabase/migrations/20260816_create_activity_catalog.sql` (§A) adds
+`activity_catalog` and `session_type_matrix`, both public-read/no-client-write,
+following `20260623_create_reference_tables.sql`'s exact RLS pattern and
+ending with `select pg_notify('pgrst', 'reload schema');` per
+`docs/PROJECT_CONTEXT.md` §9's requirement (a migration that skips this can
+leave PostgREST's schema cache stale and 400 on the new tables until its
+own reload timer fires).
 
-**Decision, worth flagging explicitly since it's the more consequential of
-two reasonable designs:** `ref_activities` (the actual Supabase table)
-was *not* chosen as the shared catalog, even though "come from the same
-table" could also have meant extending that table with a proper display
-`type` column and pointing every picker at it. Reasons: (1) every picker
-this spec touches is currently static/hardcoded already — moving to a
-DB-backed catalog would be a bigger, riskier change than the ask required;
-(2) it would need a migration (`ref_activities` gains a column, or a new
-table) and RLS review, which `CLAUDE.md` flags for mandatory human review
-regardless; (3) the "Yours" personalization (§A.3) is inherently
-per-user data already loaded in-memory (`goalsPayload`), not reference
-data, so it was never going to live in `ref_activities` regardless of
-which way the rest of the catalog went. If a DB-backed catalog is actually
-wanted (e.g. to manage the list without a code deploy), that's a follow-up
-worth its own spec, not folded in here.
+Seeding is manual, not CI-run, same as the existing reference tables
+(`docs/PROJECT_CONTEXT.md` §8): `scripts/seed-reference-data.js` gains two
+more `upsert(...)` calls, run once with `SUPABASE_URL`/
+`SUPABASE_SERVICE_KEY` after the migration lands.
+
+`eventOverrides`/`activities` (per-user session data) keep their existing
+jsonb shapes — unaffected; only the *source of picker options* moves.
 
 ## Files this touches
 
-- `src/data/activityCatalog.js` (new) — `ACTIVITY_CATALOG`,
-  `catalogByGroup` (§A).
-- `src/data/activityCatalog.test.js` (new) — Vitest coverage: every
-  catalog row's `type` resolves to a real `SESSION_DISPLAY` entry (a
-  regression guard for the exact bug class this spec fixes — would have
-  caught the `rowing`/`hiit`/`pilates`/`climbing`/`dancing` → `'other'`
-  bug on its own); `catalogByGroup` filters correctly.
-- `src/data/sessionTypeMatrix.js` (new) — `SESSION_TYPE_MATRIX`,
-  `sessionTypesForDiscipline` (§B, unchanged from first draft).
-- `src/data/sessionTypeMatrix.test.js` (new) — Vitest coverage per §B.
-- `src/utils/scheduleGeneration.js` — `ACTIVITY_DEFS` and
-  `SPORT_NAME_TO_TYPE` become derived from `ACTIVITY_CATALOG` instead of
-  their own literals (§A); `cycling`/`Cycling`/`DISCIPLINE_ACTIVITY_META
-  .bike` switch from `type: 'cycle'` to `type: 'bike'` (flagged
-  cross-cutting change, §A).
-- `src/utils/scheduleGeneration.test.js` — regression coverage: a
-  general-fitness-generated rowing/HIIT/pilates/climbing/dancing session
-  now carries its correct `type`, not `'other'`; a general-fitness or
-  sport-activity cycling session now carries `type: 'bike'`, not
-  `'cycle'`.
+- `supabase/migrations/20260816_create_activity_catalog.sql` (new) — §A.
+- `supabase/seeds/forma_seed_data.json` — gains `activity_catalog` and
+  `session_type_matrix` arrays (§A's seed tables).
+- `scripts/seed-reference-data.js` — two more `upsert(...)` calls.
+- `src/utils/activityCatalog.js` (new) — `getActivityCatalog()`,
+  `getSessionTypeMatrix()`, `catalogByGroup`, `sessionTypesForDiscipline`,
+  `FALLBACK_CATALOG`, `FALLBACK_MATRIX` (§A.1).
+- `src/utils/activityCatalog.test.js` (new) — Vitest coverage:
+  `FALLBACK_CATALOG` and `FALLBACK_MATRIX` rows all resolve to a real
+  `SESSION_DISPLAY` entry (the regression guard for this whole bug class);
+  `catalogByGroup`/`sessionTypesForDiscipline` filter correctly; a
+  simulated fetch failure falls back correctly.
+- `src/utils/scheduleGeneration.js` — `ACTIVITY_DEFS`/`SPORT_NAME_TO_TYPE`
+  removed as module-level constants; `legacyGenerateActivitySchedule`,
+  `goalAwareGenerateActivitySchedule`, `disciplineActivityDef`,
+  `sportActivityDef` gain a `catalog`/`sportTypeMap` parameter (defaulting
+  to `FALLBACK_CATALOG`-derived values) instead of importing the old
+  constants; `cycling` switches to `type: 'bike'` (cross-cutting, §A.2).
+- `src/utils/scheduleGeneration.test.js` — updated call sites (new
+  parameter), plus regression coverage for the `rowing`/`hiit`/`pilates`/
+  `climbing`/`dancing`/`cycling` type fixes.
 - `src/screens/GoalsSetupScreen.jsx` — `GENERAL_ACTIVITIES`/`SPORT_TYPES`
-  read from `ACTIVITY_CATALOG` instead of their own literals (§A); no
-  visible change to the onboarding UI itself (same ids, same labels, same
-  order preserved).
-- `src/screens/WeeklyOverviewScreen.jsx` — `AddSessionPanel` (catalog-
-  grouped picker UI + "Yours" section, drop the `ref_activities`
-  fetch/state), `handleAddSession` (build the session from
-  `type`/optional name/optional `sessionType`, apply §D's disambiguation
-  before saving), drop the now-unused `getRefActivities` import
-  (`checkWeek`, still used, pulls its own copy from `overtrain.js`
-  internally).
-- `src/App.jsx` — thread `goalsPayload` into the `WeeklyOverviewScreen`
-  call (`App.jsx:1442`) as a new prop, for §A.3's "Yours" section. Called
-  out explicitly per `CLAUDE.md` — this is the one change in this spec
-  that touches root `App.jsx` state wiring, even though it's additive
-  (an existing state value gains one more consumer, nothing about how
-  `goalsPayload` itself is loaded/saved changes).
-- `src/screens/WeeklyOverviewScreen.test.js` — extend coverage: a
-  manually-added `type: 'bike'` session resolves to `SESSION_DISPLAY.bike`
-  and the same `pace:bike` Analytics id a plan-generated bike session
-  uses; `withDisambiguatedLabel`-style coverage for the numbering rule
-  (§D) — second same-label session on a day gets " 2", third gets " 3",
-  a session on a *different* day is unaffected.
-- `tests/e2e/smoke.spec.js` — one smoke assertion: open "+ Add session,"
-  pick Bike, save, confirm the bike icon renders; add a second Bike the
-  same day, confirm it's labelled "Bike 2," per `tests/e2e/README.md`.
+  replaced by a `getActivityCatalog()` fetch + loading state on mount (new
+  `React.useEffect`, same pattern draft 1's `AddSessionPanel` originally
+  used for `ref_activities`); passes the resolved catalog down to
+  `generateActivitySchedule`/`previewPlan` call sites.
+- `src/screens/WeeklyOverviewScreen.jsx` — `AddSessionPanel` fetches
+  `getActivityCatalog()`/`getSessionTypeMatrix()` instead of importing a
+  static file; `handleAddSession` unchanged from draft 2 otherwise
+  (§D numbering, §A.3 "Yours").
+- `src/App.jsx` — thread `goalsPayload` into `WeeklyOverviewScreen`, same
+  one addition as draft 2 (§A.3).
+- `src/screens/WeeklyOverviewScreen.test.js` /
+  `src/screens/GoalsSetupScreen.test.js` — mock `utils/activityCatalog.js`
+  rather than reading a static import, otherwise same coverage goals as
+  draft 2.
+- `tests/e2e/smoke.spec.js` — same assertion as draft 2 (bike icon, same-day
+  numbering), now exercising the real fetch-or-fallback path against the
+  test Supabase project.
+- `docs/PROJECT_CONTEXT.md` §8/§13 — add `activity_catalog`/
+  `session_type_matrix` to the reference-tables list and file map, keeping
+  the "read first" doc accurate per `CLAUDE.md`.
