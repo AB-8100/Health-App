@@ -1821,10 +1821,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   todayMidnight.setHours(0, 0, 0, 0);
   const isViewDayPast = viewDayDate < todayMidnight;
 
-  const viewDayCompleted = completedSessions.find(s => {
+  const viewDayCompletedList = completedSessions.filter(s => {
     const sd = new Date(s.date);
     return sd >= viewDayDate && sd <= viewDayDateEnd;
   });
+  const viewDayCompleted = viewDayCompletedList[0] || null;
 
   // Resolve the viewed day's scheduled session
   const viewSlot = schedule[viewDayIdx];
@@ -2353,6 +2354,66 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6
               }}>View day activities ›</button>
             )}
+          </div>
+        )}
+
+        {/* [UI] Activities scheduled the same day as a gym split day (e.g. a
+            conditioning session) — the split-day focus card above only ever
+            showed the split day itself, so anything else scheduled that day
+            (conditioning included) never got its own gym-specific session
+            viewer on this tab. Only rendered for non-rest days, since a rest
+            day's activities already get the full card above. */}
+        {!isViewRest && viewDayActs.length > 0 && (
+          <div style={{
+            background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+            padding:'14px 16px', marginBottom:14
+          }}>
+            <div style={{
+              fontSize:9.5, letterSpacing:'.16em', textTransform:'uppercase',
+              color:t.text3, marginBottom:10, fontWeight:600
+            }}>
+              Also scheduled {WEEK_DAYS[viewDayIdx]}
+            </div>
+            {viewDayActs.map((act, i) => {
+              const actCompleted = findCompletedForActivity(act, viewDayCompletedList);
+              return (
+                <div key={i} style={{
+                  display:'flex', alignItems:'center', gap:10, padding:'9px 0',
+                  borderTop: i > 0 ? `1px solid ${t.border}` : 'none'
+                }}>
+                  <div style={{
+                    width:36, height:36, borderRadius:10, flexShrink:0,
+                    background:(act.color || t.accent) + '18',
+                    display:'flex', alignItems:'center', justifyContent:'center', fontSize:17
+                  }}>{act.emoji || '⚡'}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, color:t.text }}>{act.label}</div>
+                    {act.duration && (
+                      <div style={{ fontSize:10.5, color:t.text3, marginTop:1 }}>{act.duration} min</div>
+                    )}
+                  </div>
+                  {actCompleted ? (
+                    <button onClick={() => onViewSummary && onViewSummary(actCompleted)} style={{
+                      padding:'8px 12px', borderRadius:9, background:t.green+'18', color:t.green,
+                      border:`1px solid ${t.green}40`, fontFamily:t.sans, fontSize:11.5,
+                      fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>✓ Logged</button>
+                  ) : viewDayIdx === dayOfWeek ? (
+                    <button onClick={() => handleStartActivity(act)} style={{
+                      padding:'8px 12px', borderRadius:9, border:'none',
+                      background: act.color || t.accent, color:'#fff',
+                      fontFamily:t.sans, fontSize:11.5, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>Start</button>
+                  ) : (
+                    <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                      padding:'8px 12px', borderRadius:9, background:'transparent',
+                      border:`1px solid ${t.border2}`, color:t.text2,
+                      fontFamily:t.sans, fontSize:11.5, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>View ›</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
