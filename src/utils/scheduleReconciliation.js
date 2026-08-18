@@ -86,3 +86,25 @@ export function reconcileScheduleWithSplitIds(schedule, splitDayIds) {
     return id;
   });
 }
+
+// Resolves which split-day definition (per-day override applied) is
+// scheduled for a given weekday index (0=Mon..6=Sun) — the same
+// scheduleOverride resolution WeeklyOverviewScreen/GymPlanScreens use to
+// decide what a day's card shows. "Today's session" screens (Home screen's
+// quick-start card, App.jsx's startSession()) must resolve through this
+// too, rather than through an unrelated index, or they can show/launch a
+// different day's workout than what the Weekly view displays for today.
+export function getScheduledSplitDay(plan, split, dayIdx) {
+  if (!split?.days?.length || dayIdx == null) return null;
+  const splitDayIds = split.days.map(d => d.id);
+  const schedule = plan?.scheduleOverride
+    ? (isScheduleValidForSplit(plan.scheduleOverride, splitDayIds)
+        ? plan.scheduleOverride
+        : reconcileScheduleWithSplitIds(plan.scheduleOverride, splitDayIds))
+    : split.schedule;
+  const slot = schedule?.[dayIdx];
+  if (!slot || slot === REST) return null;
+  const baseDay = split.days.find(d => d.id === slot);
+  if (!baseDay) return null;
+  return plan?.overrides?.[baseDay.id] || baseDay;
+}

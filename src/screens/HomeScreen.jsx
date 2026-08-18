@@ -2,6 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { PulseDot, StackedRings, AnimatedNumber, BottomNav } from '../components/SharedUI';
 import { SPLITS, EX_LIB } from './GymPlanScreens';
+import { getScheduledSplitDay } from '../utils/scheduleReconciliation';
 
 // ────────────────────────────────────────────────────────────
 // Today's focus — rotates between workout / nutrition / self-care
@@ -118,7 +119,8 @@ function RefinedHome({ width = 390, height = 820, theme = 'light', onNav, onStar
   const accentEm = { color: t.accent, fontStyle:'normal' };
 
   const planSplit = plan && SPLITS && SPLITS[plan.splitDays];
-  const todayPlanDay = planSplit ? planSplit.days[(plan.todayIdx || 0) % planSplit.days.length] : null;
+  const dayOfWeek = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const todayPlanDay = planSplit ? getScheduledSplitDay(plan, planSplit, dayOfWeek) : null;
   const planExerciseIds = todayPlanDay
     ? [...(todayPlanDay.compound || []), ...(todayPlanDay.accessory || [])]
     : [];

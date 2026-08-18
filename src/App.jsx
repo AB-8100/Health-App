@@ -5,7 +5,7 @@ import { supabase, loadUserData, saveUserData, saveUserGoals, saveUserIntake, lo
 import { buildTrainingPlan, isEngineSupportedRaceType } from './utils/planEngine';
 import { isDuplicateSignupResponse } from './utils/authErrors';
 import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './utils/scheduleGeneration';
-import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from './utils/scheduleReconciliation';
+import { isScheduleValidForSplit, reconcileScheduleWithSplitIds, getScheduledSplitDay } from './utils/scheduleReconciliation';
 import {
   initFromCache, getSheetsStatus, getSheetId, getSheetUrl,
   connectGoogle, disconnectGoogle, reconnectGoogle,
@@ -796,8 +796,9 @@ function App() {
   const startSession = () => {
     const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
     if (!split || !split.days || !split.days.length) return;
-    const todayBase = split.days[(plan.todayIdx || 0) % split.days.length];
-    const today = (plan.overrides && plan.overrides[todayBase.id]) || todayBase;
+    const dayOfWeek = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+    const today = getScheduledSplitDay(plan, split, dayOfWeek);
+    if (!today) return;
 
     // A user can pre-select today's exercises ahead of time from the Weekly
     // Overview day detail — if they did, use that instead of the split day's
@@ -884,8 +885,8 @@ function App() {
     let workoutName = workout;
     if (!workoutName) {
       const split = plan.splitDays ? SPLITS[plan.splitDays] : null;
-      const todayBase = split?.days?.[(plan.todayIdx || 0) % split.days.length];
-      const today = (plan.overrides && todayBase && plan.overrides[todayBase.id]) || todayBase;
+      const dayOfWeek = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+      const today = getScheduledSplitDay(plan, split, dayOfWeek);
       workoutName = today ? today.name + ' day' : 'Session';
     }
     const completed = {
