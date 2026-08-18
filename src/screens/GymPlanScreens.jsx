@@ -488,16 +488,38 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Custom (off-catalog) exercises — an athlete's own name for a move that
+// isn't in EX_LIB. Rather than growing the queue/preselection data shape to
+// carry a separate name lookup, the name is encoded straight into the id
+// (`custom:<ts>:<encoded name>`), so every existing array-of-ids call site
+// (preselectedQueues, buildQueueFromExerciseIds, ExercisePickerSheet's own
+// initialSelectedIds round-trip) keeps working unchanged.
+function makeCustomExerciseId(name) {
+  return `custom:${Date.now().toString(36)}:${encodeURIComponent(name.trim())}`;
+}
+function isCustomExerciseId(id) {
+  return typeof id === 'string' && id.startsWith('custom:');
+}
+function customExerciseName(id) {
+  const encoded = id.split(':').slice(2).join(':');
+  try { return decodeURIComponent(encoded) || 'Custom exercise'; }
+  catch { return 'Custom exercise'; }
+}
+
+// ────────────────────────────────────────────────────────────
 // Builds a fresh gym-style exercise queue (sets/reps scaffold) from a plain
 // list of EX_LIB ids — shared by the gym split flow and conditioning
 // sessions, since conditioning now logs sets/reps the same way gym does.
+// Ids may also be custom-exercise ids (see above), which resolve their own
+// name instead of falling back to the raw id.
 function buildQueueFromExerciseIds(ids = []) {
   return ids.map(id => {
     const ex = EX_LIB[id] || {};
+    const custom = !ex.name && isCustomExerciseId(id);
     const targetSets = 3;
     const unilateral = ex.unilateral || false;
     return {
-      id, name: ex.name || id, muscle: ex.muscle || '',
+      id, name: ex.name || (custom ? customExerciseName(id) : id), muscle: ex.muscle || (custom ? 'Custom' : ''),
       targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
       unilateral,
       sets: Array.from({ length: targetSets }, () =>
@@ -534,6 +556,18 @@ function ExercisePickerSheet({
     const matchesQ = !q || ex.name.toLowerCase().includes(q) || ex.muscle.toLowerCase().includes(q);
     return matchesSection && matchesQ;
   }).map(([id, ex]) => ({ id, ...ex }));
+
+  // Already-added custom (off-catalog) exercises — shown pinned above the
+  // catalog results, unaffected by the section/search filters above, so
+  // they stay visible (and removable) while the athlete keeps browsing.
+  const customResults = selected
+    .filter(isCustomExerciseId)
+    .map(id => ({ id, name: customExerciseName(id), muscle: 'Custom' }));
+
+  const trimmedQuery = searchQ.trim();
+  const canAddCustom = trimmedQuery.length > 0 &&
+    !Object.values(EX_LIB).some(ex => ex.name.toLowerCase() === trimmedQuery.toLowerCase()) &&
+    !customResults.some(c => c.name.toLowerCase() === trimmedQuery.toLowerCase());
 
   const canUsePreviousWeek = Array.isArray(previousIds) && previousIds.length > 0;
 
@@ -580,6 +614,18 @@ function ExercisePickerSheet({
             marginBottom:10, boxSizing:'border-box'
           }}/>
 
+        {canAddCustom && (
+          <button onClick={() => {
+            setSelected(prev => [...prev, makeCustomExerciseId(trimmedQuery)]);
+            setSearchQ('');
+          }} style={{
+            width:'100%', padding:'9px 12px', borderRadius:10, marginBottom:10, flexShrink:0,
+            background:'transparent', border:`1px dashed ${t.accent}70`,
+            color:t.accent, fontSize:12, fontWeight:600, cursor:'pointer',
+            fontFamily:t.sans, textAlign:'left'
+          }}>+ Add "{trimmedQuery}" as a custom exercise</button>
+        )}
+
         <div style={{ display:'flex', gap:6, marginBottom:10, flexShrink:0, flexWrap:'wrap' }}>
           {['all', ...SECTION_ORDER].map(sec => {
             const isActive = section === sec;
@@ -596,6 +642,20 @@ function ExercisePickerSheet({
         </div>
 
         <div style={{ overflowY:'auto', flex:1, paddingRight:2 }} className="phone-scroll">
+          {customResults.map(ex => (
+            <button key={ex.id} onClick={() => toggle(ex.id)} style={{
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              width:'100%', padding:'10px 12px', borderRadius:10,
+              background: t.accent+'12', border:`1.5px solid ${t.accent}`,
+              marginBottom:5, cursor:'pointer', textAlign:'left', fontFamily:t.sans
+            }}>
+              <div>
+                <div style={{ fontSize:13, color:t.text }}>{ex.name}</div>
+                <div style={{ fontSize:10, color:t.text3 }}>{ex.muscle}</div>
+              </div>
+              <span style={{ fontSize:16, color:t.accent }}>✓</span>
+            </button>
+          ))}
           {results.length ? results.map(ex => {
             const isSelected = selected.includes(ex.id);
             return (
@@ -615,11 +675,11 @@ function ExercisePickerSheet({
                 </span>
               </button>
             );
-          }) : (
+          }) : customResults.length === 0 ? (
             <div style={{ textAlign:'center', padding:'30px 0', color:t.text3, fontSize:11.5 }}>
               No matches.
             </div>
-          )}
+          ) : null}
         </div>
 
         <button
