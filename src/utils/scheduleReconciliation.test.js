@@ -6,6 +6,7 @@ import {
   reconcileScheduleWithSplitIds,
   getActivityDayIndices,
   getAllTrainingDayIndices,
+  getScheduledSplitDay,
   REST,
 } from './scheduleReconciliation';
 
@@ -135,5 +136,47 @@ describe('getAllTrainingDayIndices', () => {
 
   it('returns just the schedule days when there are no activity days', () => {
     expect(getAllTrainingDayIndices([1, 3], [])).toEqual([1, 3]);
+  });
+});
+
+describe('getScheduledSplitDay', () => {
+  const split = {
+    schedule: [REST, 'push', REST, 'pull', REST, 'legs', REST], // template default: push on Tue (idx 1)
+    days: [
+      { id: 'push', name: 'Push', muscles: 'Chest' },
+      { id: 'pull', name: 'Pull', muscles: 'Back' },
+      { id: 'legs', name: 'Legs', muscles: 'Quads' },
+    ],
+  };
+
+  it('resolves the weekday against a stored scheduleOverride, not the split template default', () => {
+    // User moved push to Monday (idx 0) — the split's own template still has it on Tuesday.
+    const plan = { scheduleOverride: ['push', REST, REST, 'pull', REST, 'legs', REST] };
+    expect(getScheduledSplitDay(plan, split, 0).id).toBe('push'); // Monday
+    expect(getScheduledSplitDay(plan, split, 1)).toBe(null); // Tuesday is rest now, not push
+  });
+
+  it('falls back to the split template schedule when there is no override', () => {
+    expect(getScheduledSplitDay({}, split, 1).id).toBe('push'); // template default: Tue
+    expect(getScheduledSplitDay({}, split, 0)).toBe(null);
+  });
+
+  it('applies a per-day override onto the resolved base day', () => {
+    const plan = {
+      scheduleOverride: ['push', REST, REST, REST, REST, REST, REST],
+      overrides: { push: { id: 'push', name: 'Push (custom)', muscles: 'Chest · Delts' } },
+    };
+    expect(getScheduledSplitDay(plan, split, 0).name).toBe('Push (custom)');
+  });
+
+  it('reconciles a stale scheduleOverride onto the current split before resolving', () => {
+    // scheduleOverride still holds ids from a different (now inactive) split template.
+    const plan = { scheduleOverride: ['upperA', REST, REST, REST, REST, REST, REST] };
+    expect(getScheduledSplitDay(plan, split, 0).id).toBe('push');
+  });
+
+  it('returns null for a rest day and when there is no split', () => {
+    expect(getScheduledSplitDay({}, split, 2)).toBe(null);
+    expect(getScheduledSplitDay({}, null, 0)).toBe(null);
   });
 });
