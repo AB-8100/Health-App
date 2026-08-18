@@ -3,6 +3,7 @@
     {
       "name": "Football (match, 90 min)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "low",
       "cardio_load": "high",
@@ -14,6 +15,7 @@
     {
       "name": "Football (5-a-side, casual)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "medium",
       "upper_load": "low",
       "cardio_load": "medium",
@@ -25,6 +27,7 @@
     {
       "name": "Football (5-a-side, competitive)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "low",
       "cardio_load": "high",
@@ -36,17 +39,19 @@
     {
       "name": "Rugby (full match)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
       "core_load": "high",
       "intensity_default": "high",
       "recovery_hours": 72,
-      "notes": "Full body high load \u2014 treat as rest-day trigger"
+      "notes": "Full body high load — treat as rest-day trigger"
     },
     {
       "name": "Rugby (training session)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "medium",
       "upper_load": "medium",
       "cardio_load": "medium",
@@ -58,6 +63,7 @@
     {
       "name": "Basketball (game)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "medium",
       "cardio_load": "high",
@@ -69,6 +75,7 @@
     {
       "name": "Basketball (casual/shooting around)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "low",
       "upper_load": "low",
       "cardio_load": "low",
@@ -80,6 +87,7 @@
     {
       "name": "Netball (match)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "low",
       "cardio_load": "high",
@@ -91,6 +99,7 @@
     {
       "name": "Hockey (match)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "medium",
       "cardio_load": "high",
@@ -102,6 +111,7 @@
     {
       "name": "Tennis (match)",
       "category": "racket_sport",
+      "type": "racket_sport",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "high",
@@ -113,6 +123,7 @@
     {
       "name": "Tennis (casual hit)",
       "category": "racket_sport",
+      "type": "racket_sport",
       "leg_load": "low",
       "upper_load": "medium",
       "cardio_load": "medium",
@@ -124,6 +135,7 @@
     {
       "name": "Badminton (competitive)",
       "category": "racket_sport",
+      "type": "racket_sport",
       "leg_load": "medium",
       "upper_load": "medium",
       "cardio_load": "high",
@@ -135,17 +147,19 @@
     {
       "name": "Squash",
       "category": "racket_sport",
+      "type": "racket_sport",
       "leg_load": "high",
       "upper_load": "medium",
       "cardio_load": "high",
       "core_load": "medium",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "Very high intensity \u2014 short duration but maximal effort"
+      "notes": "Very high intensity — short duration but maximal effort"
     },
     {
       "name": "Volleyball (competitive)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -157,6 +171,7 @@
     {
       "name": "Volleyball (casual beach)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "medium",
       "upper_load": "medium",
       "cardio_load": "medium",
@@ -168,6 +183,7 @@
     {
       "name": "Cricket (batting/fielding)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "low",
       "upper_load": "medium",
       "cardio_load": "low",
@@ -179,6 +195,7 @@
     {
       "name": "Cricket (bowling)",
       "category": "team_sport",
+      "type": "team_sport",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -190,6 +207,7 @@
     {
       "name": "Running (easy / recovery)",
       "category": "endurance",
+      "type": "run",
       "leg_load": "low",
       "upper_load": "none",
       "cardio_load": "medium",
@@ -201,6 +219,7 @@
     {
       "name": "Running (tempo)",
       "category": "endurance",
+      "type": "run",
       "leg_load": "medium",
       "upper_load": "none",
       "cardio_load": "high",
@@ -212,6 +231,7 @@
     {
       "name": "Running (interval / track)",
       "category": "endurance",
+      "type": "run",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -223,6 +243,7 @@
     {
       "name": "Running (long run)",
       "category": "endurance",
+      "type": "run",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -234,6 +255,7 @@
     {
       "name": "Running (parkrun effort)",
       "category": "endurance",
+      "type": "run",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -245,6 +267,7 @@
     {
       "name": "Cycling (easy / commute)",
       "category": "endurance",
+      "type": "bike",
       "leg_load": "low",
       "upper_load": "none",
       "cardio_load": "low",
@@ -256,6 +279,7 @@
     {
       "name": "Cycling (moderate ride)",
       "category": "endurance",
+      "type": "bike",
       "leg_load": "medium",
       "upper_load": "none",
       "cardio_load": "medium",
@@ -267,6 +291,7 @@
     {
       "name": "Cycling (long ride)",
       "category": "endurance",
+      "type": "bike",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -278,6 +303,7 @@
     {
       "name": "Cycling (indoor / structured intervals)",
       "category": "endurance",
+      "type": "bike",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -289,6 +315,7 @@
     {
       "name": "Swimming (easy / technique)",
       "category": "endurance",
+      "type": "swim",
       "leg_load": "low",
       "upper_load": "medium",
       "cardio_load": "medium",
@@ -300,6 +327,7 @@
     {
       "name": "Swimming (moderate)",
       "category": "endurance",
+      "type": "swim",
       "leg_load": "low",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -311,6 +339,7 @@
     {
       "name": "Swimming (hard / intervals)",
       "category": "endurance",
+      "type": "swim",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "high",
@@ -322,6 +351,7 @@
     {
       "name": "Open water swimming",
       "category": "endurance",
+      "type": "swim",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -333,6 +363,7 @@
     {
       "name": "Synchronised Swimming",
       "category": "endurance",
+      "type": "swim",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -344,17 +375,19 @@
     {
       "name": "Rowing (on water)",
       "category": "endurance",
+      "type": "row",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
       "core_load": "high",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "Full body \u2014 treat as high load day"
+      "notes": "Full body — treat as high load day"
     },
     {
       "name": "Rowing (ergometer / erg)",
       "category": "endurance",
+      "type": "row",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
@@ -366,17 +399,19 @@
     {
       "name": "Triathlon brick (bike + run)",
       "category": "endurance",
+      "type": "brick",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
       "core_load": "medium",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "Combined session \u2014 counts as high legs + cardio load"
+      "notes": "Combined session — counts as high legs + cardio load"
     },
     {
       "name": "Legs day (gym)",
       "category": "gym",
+      "type": "gym",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "none",
@@ -388,6 +423,7 @@
     {
       "name": "Push day (gym)",
       "category": "gym",
+      "type": "gym",
       "leg_load": "none",
       "upper_load": "high",
       "cardio_load": "none",
@@ -399,6 +435,7 @@
     {
       "name": "Pull day (gym)",
       "category": "gym",
+      "type": "gym",
       "leg_load": "none",
       "upper_load": "high",
       "cardio_load": "none",
@@ -410,6 +447,7 @@
     {
       "name": "Upper body day (gym)",
       "category": "gym",
+      "type": "gym",
       "leg_load": "none",
       "upper_load": "high",
       "cardio_load": "none",
@@ -421,17 +459,19 @@
     {
       "name": "Full body (gym)",
       "category": "gym",
+      "type": "gym",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "low",
       "core_load": "high",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "All muscle groups \u2014 treat as high load day"
+      "notes": "All muscle groups — treat as high load day"
     },
     {
       "name": "Conditioning circuit",
       "category": "gym",
+      "type": "conditioning",
       "leg_load": "medium",
       "upper_load": "medium",
       "cardio_load": "medium",
@@ -443,17 +483,19 @@
     {
       "name": "Core / abs session",
       "category": "gym",
+      "type": "conditioning",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
       "core_load": "high",
       "intensity_default": "low",
       "recovery_hours": 24,
-      "notes": "Standalone core work \u2014 low overall load"
+      "notes": "Standalone core work — low overall load"
     },
     {
       "name": "HIIT class",
       "category": "gym",
+      "type": "hiit",
       "leg_load": "high",
       "upper_load": "medium",
       "cardio_load": "high",
@@ -465,17 +507,19 @@
     {
       "name": "CrossFit WOD",
       "category": "gym",
+      "type": "hiit",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
       "core_load": "high",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "Full body + cardio \u2014 treat same as full body high"
+      "notes": "Full body + cardio — treat same as full body high"
     },
     {
       "name": "Powerlifting session",
       "category": "gym",
+      "type": "gym",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "none",
@@ -487,6 +531,7 @@
     {
       "name": "Olympic lifting session",
       "category": "gym",
+      "type": "gym",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "none",
@@ -498,17 +543,19 @@
     {
       "name": "Yoga (gentle / restorative)",
       "category": "mobility",
+      "type": "yoga",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
       "core_load": "low",
       "intensity_default": "low",
       "recovery_hours": 0,
-      "notes": "Good active recovery \u2014 never blocked"
+      "notes": "Good active recovery — never blocked"
     },
     {
       "name": "Yoga (vinyasa / power)",
       "category": "mobility",
+      "type": "yoga",
       "leg_load": "low",
       "upper_load": "medium",
       "cardio_load": "low",
@@ -520,6 +567,7 @@
     {
       "name": "Pilates",
       "category": "mobility",
+      "type": "pilates",
       "leg_load": "low",
       "upper_load": "low",
       "cardio_load": "none",
@@ -531,17 +579,19 @@
     {
       "name": "Stretching / foam rolling",
       "category": "mobility",
+      "type": "mobility",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
       "core_load": "none",
       "intensity_default": "low",
       "recovery_hours": 0,
-      "notes": "Recovery only \u2014 always fine"
+      "notes": "Recovery only — always fine"
     },
     {
       "name": "Mobility session",
       "category": "mobility",
+      "type": "mobility",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
@@ -553,6 +603,7 @@
     {
       "name": "Boxing (sparring)",
       "category": "combat",
+      "type": "combat",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "high",
@@ -564,6 +615,7 @@
     {
       "name": "Boxing (pad/bag work)",
       "category": "combat",
+      "type": "combat",
       "leg_load": "low",
       "upper_load": "high",
       "cardio_load": "high",
@@ -575,17 +627,19 @@
     {
       "name": "MMA / BJJ training",
       "category": "combat",
+      "type": "combat",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
       "core_load": "high",
       "intensity_default": "high",
       "recovery_hours": 48,
-      "notes": "Full body contact \u2014 high recovery demand"
+      "notes": "Full body contact — high recovery demand"
     },
     {
       "name": "Muay Thai",
       "category": "combat",
+      "type": "combat",
       "leg_load": "high",
       "upper_load": "high",
       "cardio_load": "high",
@@ -597,6 +651,7 @@
     {
       "name": "Surfing",
       "category": "water_sport",
+      "type": "water_sport",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -608,6 +663,7 @@
     {
       "name": "Paddleboarding (SUP)",
       "category": "water_sport",
+      "type": "water_sport",
       "leg_load": "low",
       "upper_load": "medium",
       "cardio_load": "low",
@@ -619,6 +675,7 @@
     {
       "name": "Kayaking / canoeing",
       "category": "water_sport",
+      "type": "water_sport",
       "leg_load": "none",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -630,17 +687,19 @@
     {
       "name": "Climbing (bouldering)",
       "category": "adventure",
+      "type": "climb",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "low",
       "core_load": "high",
       "intensity_default": "medium",
       "recovery_hours": 48,
-      "notes": "Finger/forearm load not captured \u2014 add grip fatigue note"
+      "notes": "Finger/forearm load not captured — add grip fatigue note"
     },
     {
       "name": "Climbing (sport / trad)",
       "category": "adventure",
+      "type": "climb",
       "leg_load": "medium",
       "upper_load": "high",
       "cardio_load": "medium",
@@ -652,6 +711,7 @@
     {
       "name": "Hiking (moderate)",
       "category": "adventure",
+      "type": "adventure",
       "leg_load": "medium",
       "upper_load": "none",
       "cardio_load": "medium",
@@ -663,6 +723,7 @@
     {
       "name": "Hiking (long / mountainous)",
       "category": "adventure",
+      "type": "adventure",
       "leg_load": "high",
       "upper_load": "none",
       "cardio_load": "high",
@@ -674,6 +735,7 @@
     {
       "name": "Active recovery (walk / gentle swim)",
       "category": "recovery",
+      "type": "recovery",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
@@ -685,6 +747,7 @@
     {
       "name": "Rest day",
       "category": "recovery",
+      "type": "rest",
       "leg_load": "none",
       "upper_load": "none",
       "cardio_load": "none",
@@ -692,6 +755,42 @@
       "intensity_default": "low",
       "recovery_hours": 0,
       "notes": "Fully clears all load flags"
+    },
+    {
+      "name": "Walking",
+      "category": "recovery",
+      "type": "walk",
+      "leg_load": "none",
+      "upper_load": "none",
+      "cardio_load": "low",
+      "core_load": "none",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": ""
+    },
+    {
+      "name": "Dancing (social / fitness class)",
+      "category": "mobility",
+      "type": "dance",
+      "leg_load": "low",
+      "upper_load": "low",
+      "cardio_load": "medium",
+      "core_load": "low",
+      "intensity_default": "medium",
+      "recovery_hours": 24,
+      "notes": ""
+    },
+    {
+      "name": "Golf",
+      "category": "adventure",
+      "type": "other",
+      "leg_load": "low",
+      "upper_load": "low",
+      "cardio_load": "low",
+      "core_load": "low",
+      "intensity_default": "low",
+      "recovery_hours": 0,
+      "notes": ""
     }
   ],
   "exercises": [

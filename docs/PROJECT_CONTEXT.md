@@ -72,7 +72,7 @@ src/
 │   ├── storage.js                localStorage cache + debounced save orchestration (scheduleSaveAll)
 │   ├── supabase.js               Supabase client + full load/save mapping for every table
 │   ├── googleSheets.js           Google OAuth + Sheets read/write (optional secondary backup)
-│   ├── overtrain.js               Training-load conflict checker (uses ref_activities table)
+│   ├── overtrain.js               Training-load conflict checker (uses activity_catalog table)
 │   ├── trainingPlanImport.js      Hand-rolled .xlsx parser (JSZip + DOMParser) for uploaded event plans
 │   ├── eventDaySessions.js        Resolves which sessions apply to a date (override vs. uploaded plan)
 │   ├── sessionCompletion.js       Matches completed sessions to scheduled ones for a given day
@@ -308,10 +308,13 @@ user-defined `customFoods`. Daily macro targets are derived from
 
 ### 7.6 Training-load / overtraining checks (`utils/overtrain.js`)
 Scores each planned day's leg/upper/cardio load (high/medium/low/none →
-3/2/1/0) using the Supabase `ref_activities` reference table (with a
+3/2/1/0) using the Supabase `activity_catalog` reference table (with a
 hardcoded fallback table if that fetch fails), and flags conflicts (e.g. two
 high-leg-load days back to back). Used by the Weekly Overview's drag handler
-and day-detail panel.
+and day-detail panel. `activity_catalog` is also the picker source for the
+Weekly Overview's "+ Add session" panel and onboarding's activity pickers
+(`utils/activityCatalog.js`) — see
+`features/specs/weekly-overview-add-session-activity-matrix.md`.
 
 ---
 
@@ -319,9 +322,14 @@ and day-detail panel.
 
 `supabase/migrations/20260623_create_reference_tables.sql` defines
 `ref_activities`, `ref_exercises`, `ref_muscle_groups` — public read-only
-(RLS `using (true)`, no client writes). Seeded from
-`supabase/seeds/forma_seed_data.json` via `scripts/seed-reference-data.js`,
-a one-time idempotent upsert script run manually with a service-role key
+(RLS `using (true)`, no client writes). `ref_activities` was later renamed
+to `activity_catalog` and gained a `type` column
+(`supabase/migrations/20260816_extend_activity_catalog.sql`) — same table,
+same load-scoring columns, now also the single source every activity
+picker in the app selects from (not just the Sequencing Advisor). Seeded
+from `supabase/seeds/forma_seed_data.json` via
+`scripts/seed-reference-data.js`, a one-time idempotent upsert script run
+manually with a service-role key
 (`SUPABASE_URL` / `SUPABASE_SERVICE_KEY` env vars) — not part of the app
 runtime or CI.
 
@@ -345,7 +353,7 @@ enabled, one policy per CRUD op scoped to `auth.uid() = user_id`.
 | `user_goals` | goals (jsonb array — event_race config includes start date, per-discipline cutoff times), primary_goal_type, training_days_per_week, unavailable_days (text[]), gym_access, discipline_days (jsonb), standing_commitments (jsonb), regular_sports (jsonb, legacy — kept only for read-time fallback, see `utils/supabase.js`) | merged onboarding flow output (§6) — `pool_access`/`pool_days` were dropped, derived from `discipline_days.swim` instead |
 | `user_intake` | status ('draft'\|'complete'), run/swim/bike_baseline (jsonb), availability (jsonb), injury (jsonb), completed_at | merged onboarding flow output (§6) |
 | `user_feedback` | message (text), created_at | insert-only from the client (no select/update/delete policy) — the in-app feedback entry point, `AboutScreen.jsx`'s "Feedback" section |
-| `ref_activities` / `ref_exercises` / `ref_muscle_groups` | public read-only reference/seed data | no `user_id` column |
+| `activity_catalog` (renamed from `ref_activities`) / `ref_exercises` / `ref_muscle_groups` | public read-only reference/seed data | no `user_id` column; `activity_catalog` additionally carries a `type` column (SESSION_DISPLAY key) alongside its original load-scoring columns |
 
 A Postgres RPC `get_user_local_date(p_user_id)` returns "today" as a
 `YYYY-MM-DD` string in the user's stored `timezone`.
@@ -446,6 +454,7 @@ Redirect URL allow-list and Google Cloud Console's Authorized JS origins.
 | Change a workout split template or exercise | `screens/GymPlanScreens.jsx` (`EX_LIB`, `SPLITS`) |
 | Change how a live workout is logged | `screens/GymSessionScreen.jsx` |
 | Change what shows on the weekly planner | `screens/WeeklyOverviewScreen.jsx` (`buildWeekData`), `utils/eventDaySessions.js`, `utils/sessionCompletion.js` |
+| Add/adjust an activity a user can pick (Weekly Overview's "+ Add session", onboarding's activity pickers) | `activity_catalog` Supabase table (seed via `supabase/seeds/forma_seed_data.json` + `scripts/seed-reference-data.js`), `utils/activityCatalog.js` (fetch/cache/fallback), `data/sessionDisplay.js` (`SESSION_DISPLAY` — every catalog `type` needs a real entry here) |
 | Add/adjust a food item or macro target | `screens/FoodScreen.jsx` (`FOOD_DB`, `MEALS`) |
 | Change what gets saved/loaded from Supabase | `utils/supabase.js` (mappers + `loadUserData`/`saveUserData`), matching migration under `supabase/migrations/` |
 | Change the Google Sheets backup format | `utils/googleSheets.js` |

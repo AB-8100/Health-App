@@ -3231,17 +3231,18 @@ function SessionEditorScreen({ width = 390, height = 820, theme = 'light',
 // If a gym session is added, recommends the best session type based on
 // what else is already in the weekly plan.
 
-// `refName`, where set, is the canonical `ref_activities` row this quick-add
-// category defaults to (the "moderate" variant, unless a specific one is
-// picked instead via WeeklyOverviewScreen's "+ Add session" panel, which
-// lets you choose any ref_activities row by name). It becomes the created
-// item's actual `label` — not just a lookup key — so the same name is used
-// for display, for sequencing-advisor matching, and for RPE-history
-// personalization, all in one place; previously this screen stored a bare
-// generic label ("Swim") while the other add-entry-point stored full
-// ref_activities names ("Swimming (moderate)"), which meant the two could
-// never resolve to the same personalized history or session-load estimate.
-// Left unset for categories with no unambiguous "moderate" ref_activities
+// `refName`, where set, is the canonical `activity_catalog` row (renamed
+// from `ref_activities`) this quick-add category defaults to (the
+// "moderate" variant, unless a specific one is picked instead via
+// WeeklyOverviewScreen's "+ Add session" panel, which lets you choose any
+// activity_catalog row by name). It becomes the created item's actual
+// `label` — not just a lookup key — so the same name is used for display,
+// for sequencing-advisor matching, and for RPE-history personalization,
+// all in one place; previously this screen stored a bare generic label
+// ("Swim") while the other add-entry-point stored full activity_catalog
+// names ("Swimming (moderate)"), which meant the two could never resolve
+// to the same personalized history or session-load estimate.
+// Left unset for categories with no unambiguous "moderate" activity_catalog
 // row (walk, yoga, hike) or that aren't a single named activity (gym,
 // other) — those keep today's generic-fallback behaviour.
 const ACTIVITY_TYPES = [

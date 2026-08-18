@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mocks the Supabase client so checkWeek's ref_activities fetch (the only
+// Mocks the Supabase client so checkWeek's activity_catalog fetch (the only
 // remaining Supabase dependency in this module) doesn't need a live
 // connection — mirrors the mocking pattern in utils/supabase.test.js.
 const fromMock = vi.fn();

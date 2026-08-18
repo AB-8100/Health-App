@@ -1,9 +1,13 @@
 // Shared display metadata (emoji/color/label) for sessions shown across the
 // Weekly Overview, Session tab and session detail screens. Keyed by a
-// session's `type`. The `endurance`/`team_sport`/etc. keys mirror the
-// `category` column on the Supabase `ref_activities` table, so an activity
-// picked from that table (e.g. "Rugby (training session)") resolves to a
-// sensible icon/color without needing a per-activity mapping.
+// session's `type`. Every distinct value the Supabase `activity_catalog`
+// table's `type` column can hold (see utils/activityCatalog.js) has an
+// entry here — that column is what an activity picked from that table
+// (e.g. "Rugby (training session)") resolves to a sensible icon/color
+// through, not the coarser `category` column. The `endurance`/`team_sport`/
+// etc. keys below also happen to mirror `category` values, kept only as a
+// fallback for any legacy session that still carries a `category` value in
+// its `type` field from before that column existed.
 export const SESSION_DISPLAY = {
   swim:         { label: 'Swim',    emoji: '🏊', color: '#0369A1' },
   run:          { label: 'Run',     emoji: '🏃', color: '#0090FF' },
@@ -23,7 +27,7 @@ export const SESSION_DISPLAY = {
   race:         { label: 'Race',    emoji: '🏁', color: '#DC2626' },
   rest:         { label: 'Rest',    emoji: '😴', color: '#9CA3AF' },
   other:        { label: 'Other',   emoji: '⚡', color: '#4B5563' },
-  // ref_activities.category values
+  // legacy activity_catalog.category values (fallback only, see comment above)
   endurance:    { label: 'Endurance',    emoji: '🏃', color: '#0090FF' },
   team_sport:   { label: 'Team sport',   emoji: '⚽', color: '#DC2626' },
   racket_sport: { label: 'Racket sport', emoji: '🎾', color: '#F59E0B' },
@@ -34,8 +38,9 @@ export const SESSION_DISPLAY = {
   recovery:     { label: 'Recovery',     emoji: '😌', color: '#9CA3AF' },
 };
 
-// Resolve display for a session. Prefers the activity's own data (spread from
-// ACTIVITY_DEFS in App.jsx), then falls back to SESSION_DISPLAY keyed by type.
+// Resolve display for a session. Prefers the activity's own data (spread
+// from a `DayActivitiesScreen` quick-add item, GymPlanScreens.jsx), then
+// falls back to SESSION_DISPLAY keyed by type.
 export function getSessionDisplay(actData, type) {
   if (actData?.label && actData?.emoji && actData?.color) {
     return { label: actData.label, emoji: actData.emoji, color: actData.color };

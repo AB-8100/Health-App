@@ -4,7 +4,7 @@
  *
  * No Supabase import here on purpose — resolveExpectedLoad and
  * buildSequencingDecisions are meant to be testable in isolation (spec §6).
- * `overtrain.js` (which does own the Supabase ref_activities cache) is the
+ * `overtrain.js` (which does own the Supabase activity_catalog cache) is the
  * thin async orchestrator that feeds this module real data.
  */
 
@@ -33,7 +33,7 @@ export const MAX_SESSIONS_PER_DAY = 2;
 const VALID_TIERS = new Set(['high', 'medium', 'low']);
 
 // Maps a resolved personal/fuzzy RPE average onto the same low/medium/high
-// scale event-plan tags and ref_activities rows already use, so every
+// scale event-plan tags and activity_catalog rows already use, so every
 // resolution path (personal, tag, or ref-matched generic) produces one
 // consistent `tier` the day-level checks can compare directly.
 function rpeToTier(rpe) {
@@ -82,7 +82,7 @@ export function findRef(name, refActivities) {
 
 const CATEGORY_FIELDS = ['leg_load', 'upper_load', 'cardio_load', 'core_load'];
 
-// The single load bucket (leg/upper/cardio/core) a ref_activities row loads
+// The single load bucket (leg/upper/cardio/core) an activity_catalog row loads
 // hardest on. Returns null if every bucket is 'none' (no ref, or a genuinely
 // neutral activity) so callers can't accidentally match two unrelated
 // "none" sessions as sharing a category.
@@ -229,14 +229,14 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
     };
   }
 
-  // Tier 4 — generic ref_activities / FALLBACK_LOAD lookup (no regression
+  // Tier 4 — generic activity_catalog / FALLBACK_LOAD lookup (no regression
   // vs. the pre-existing behaviour). Confidence stays 'none' — this still
-  // isn't personalized to the user — but a matched ref_activities row's
+  // isn't personalized to the user — but a matched activity_catalog row's
   // intensity_default is real, curated data (not a guess), so it still
   // populates `tier` for the day-level same-day/next-day checks. Previously
   // this branch discarded that signal entirely (tier always null), which
   // meant e.g. an unlogged "Full body" gym session could never be detected
-  // as high-intensity even though ref_activities explicitly flags it so.
+  // as high-intensity even though activity_catalog explicitly flags it so.
   const ref = findRef(session.name || session.type, refActivities);
   if (ref) {
     const refTier = VALID_TIERS.has(ref.intensity_default) ? ref.intensity_default : null;
@@ -259,7 +259,7 @@ export function resolveExpectedLoad(session, personalRpeHistory = [], refActivit
 // High-intensity (P0.3/P0.4 gate): tier === 'high', regardless of which
 // resolution path produced it — personal/fuzzy RPE mapped through
 // rpeToTier, an event-plan tag's classified tier, or a matched
-// ref_activities row's intensity_default. A session with no resolvable
+// activity_catalog row's intensity_default. A session with no resolvable
 // tier at all (no personal data, no tag, no ref match) is correctly
 // excluded — there's genuinely nothing to go on there — but that's now the
 // narrow "truly unknown" case, not every unlogged session.
@@ -303,7 +303,7 @@ const DAY_MS = 86400000;
 
 // Recovery window is capped to exactly the one calendar day immediately
 // following a high-intensity session (product decision — rest window tops
-// out at 48h in ref_activities, and two calendar days apart can already be
+// out at 48h in activity_catalog, and two calendar days apart can already be
 // a full 48h of rest, e.g. Monday -> Wednesday). Previously this scaled with
 // each ref row's own `recovery_hours` via Math.ceil(recovery_hours / 24),
 // which let a 48h-recovery activity (e.g. a Football match) flag two

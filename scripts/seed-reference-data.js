@@ -42,9 +42,10 @@ async function upsert(table, rows, conflictColumn = 'name') {
 async function main() {
   console.log('Seeding reference tables…\n');
 
-  await upsert('ref_activities', seed.activities.map(a => ({
+  await upsert('activity_catalog', seed.activities.map(a => ({
     name:              a.name,
     category:          a.category,
+    type:              a.type,
     leg_load:          a.leg_load,
     upper_load:        a.upper_load,
     cardio_load:       a.cardio_load,

@@ -1,5 +1,59 @@
 import { describe, it, expect } from 'vitest';
-import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields } from './scheduleGeneration';
+import { generateActivitySchedule, getAutoSplitDays, buildGymScheduleOverride, shouldBlockGeneratedSchedule, resetOnboardingProfileFields, sportActivityDef } from './scheduleGeneration';
+import { SESSION_DISPLAY } from '../data/sessionDisplay';
+
+// Regression coverage for the category-as-type bug class fixed by
+// features/specs/weekly-overview-add-session-activity-matrix.md §B/§C —
+// these general_fitness ids previously all resolved to the generic 'other'
+// type (rowing/hiit/pilates/climbing/dancing) despite SESSION_DISPLAY
+// already having a correct, unused entry for each.
+describe('generateActivitySchedule — general_fitness type fixes (§B/§C)', () => {
+  it('rowing/hiit/pilates/climbing/dancing resolve to their own SESSION_DISPLAY type, not "other"', () => {
+    const payload = {
+      goals: [{ type: 'general_fitness', config: { activities: ['rowing', 'hiit', 'pilates', 'climbing', 'dancing'] } }],
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      gymAccess: false,
+    };
+    const { schedule } = generateActivitySchedule(payload);
+    const types = Object.values(schedule).map(s => s[0].type).sort();
+    expect(types).toEqual(['climb', 'dance', 'hiit', 'pilates', 'row']);
+    for (const t of types) {
+      expect(SESSION_DISPLAY[t]).toBeDefined();
+      expect(t).not.toBe('other');
+    }
+  });
+
+  it('every general_fitness-generated entry omits emoji/color so getSessionDisplay resolves them from SESSION_DISPLAY[type]', () => {
+    const payload = {
+      goals: [{ type: 'general_fitness', config: { activities: ['yoga'] } }],
+      trainingDays: ['monday'],
+      gymAccess: false,
+    };
+    const { schedule } = generateActivitySchedule(payload);
+    expect(schedule[0][0].emoji).toBeUndefined();
+    expect(schedule[0][0].color).toBeUndefined();
+  });
+});
+
+describe('sportActivityDef', () => {
+  it('resolves a known sport name to its activity_catalog type via fuzzy match, keeping the sport name as label', () => {
+    expect(sportActivityDef('Football')).toEqual({ type: 'team_sport', label: 'Football', duration: 60 });
+    expect(sportActivityDef('Tennis')).toEqual({ type: 'racket_sport', label: 'Tennis', duration: 60 });
+  });
+
+  it('resolves Cycling to "bike", not "cycle" (the cross-cutting alignment fix, §C)', () => {
+    expect(sportActivityDef('Cycling').type).toBe('bike');
+  });
+
+  it('falls back to "other" for a name with no catalog match', () => {
+    expect(sportActivityDef('Underwater Basket Weaving').type).toBe('other');
+  });
+
+  it('accepts an explicit catalog override instead of the default FALLBACK_CATALOG', () => {
+    const customCatalog = [{ name: 'Custom Sport', type: 'hiit' }];
+    expect(sportActivityDef('Custom Sport', customCatalog).type).toBe('hiit');
+  });
+});
 
 describe('generateActivitySchedule — backward compatibility (no event_race/sport_activity/regularSports)', () => {
   // These fix today's exact behavior in place — every non-race onboarding
@@ -92,7 +146,9 @@ describe('generateActivitySchedule — event_race discipline frequency (the fix)
     const { schedule, gymDayCount } = generateActivitySchedule(payload);
     const types = Object.values(schedule).map(s => s[0].type);
     expect(types.filter(t => t === 'swim').length).toBe(2);
-    expect(types.filter(t => t === 'cycle').length).toBe(2);
+    // 'bike', not 'cycle' — matches planEngine.js's convention for the same
+    // discipline, see GENERAL_ACTIVITY_ID_TO_TYPE's comment in scheduleGeneration.js.
+    expect(types.filter(t => t === 'bike').length).toBe(2);
     expect(types.filter(t => t === 'run').length).toBe(2);
     expect(gymDayCount).toBe(0);
     expect(Object.keys(schedule).length).toBe(6); // every training day gets a real session
@@ -158,7 +214,7 @@ describe('generateActivitySchedule — event_race discipline frequency (the fix)
     const { schedule } = generateActivitySchedule(payload);
     expect(Object.keys(schedule).length).toBe(3);
     const types = Object.values(schedule).map(s => s[0].type).sort();
-    expect(types).toEqual(['cycle', 'run', 'swim']); // interleaved, one of each rather than 3x one discipline
+    expect(types).toEqual(['bike', 'run', 'swim']); // interleaved, one of each rather than 3x one discipline
   });
 
   it('attaches a target-pace note when the goal has confirmed target paces, omits it otherwise', () => {

@@ -217,6 +217,32 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('Add session picks a Bike activity and disambiguates a same-day duplicate', async ({ page }) => {
+    // features/specs/weekly-overview-add-session-activity-matrix.md §D/§F —
+    // the two-step picker resolves a bike-type session to its default
+    // activity_catalog row (correct icon/label), and a second same-day pick
+    // of the same type gets a " 2" suffix instead of colliding.
+    await expect(page.getByText(/mon|tue|wed|thu|fri|sat|sun/i).first()).toBeVisible();
+
+    await page.getByRole('button', { name: '+ Add session', exact: true }).click();
+    await expect(page.getByText(/^add a session$/i)).toBeVisible();
+    await page.getByRole('button', { name: /^mon/i }).first().click();
+    await page.getByRole('button', { name: /bike/i }).first().click();
+    await page.getByRole('button', { name: 'Add session', exact: true }).click();
+
+    await expect(page.getByText(/^add a session$/i)).not.toBeVisible();
+    await expect(page.getByText(/^cycling \(moderate ride\)$/i).first()).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+
+    await page.getByRole('button', { name: '+ Add session', exact: true }).click();
+    await page.getByRole('button', { name: /^mon/i }).first().click();
+    await page.getByRole('button', { name: /bike/i }).first().click();
+    await page.getByRole('button', { name: 'Add session', exact: true }).click();
+
+    await expect(page.getByText(/^cycling \(moderate ride\) 2$/i).first()).toBeVisible();
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('About screen shows a standalone Glossary section irrespective of plan state', async ({ page }) => {
     // The Glossary bar always renders data/planGlossary.js's full static
     // list — unlike Training plan's collapsible "Plan overview", it does not

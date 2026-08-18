@@ -6,8 +6,10 @@
  * (Overtraining Redesign v2)"). The actual resolution/decision logic is pure
  * and lives in sessionLoadEstimate.js so it's testable without a Supabase
  * connection; this file is just the thin async layer that owns the
- * ref_activities cache and adapts the app's Weekly Overview session shape
- * into that pure engine's input.
+ * activity_catalog cache (renamed from ref_activities — see
+ * features/specs/weekly-overview-add-session-activity-matrix.md §A) and
+ * adapts the app's Weekly Overview session shape into that pure engine's
+ * input.
  *
  * personalRpeHistory (the resolver's "have I seen this session name before"
  * input) is derived straight from the app's `completedSessions` state
@@ -30,31 +32,31 @@ import {
 } from './sessionLoadEstimate';
 
 // Re-exported for any external caller still expecting overtrain.js to be the
-// home of ref-matching (only getRefActivities is actually imported
+// home of ref-matching (only getActivityCatalog is actually imported
 // elsewhere today, but keeping findRef here preserves the prior public API).
 export { findRef };
 
-// ── Ref-activities cache ──────────────────────────────────────────────────────
+// ── activity_catalog cache ──────────────────────────────────────────────────
 // Module-level so multiple callers share one fetch per session.
 
-let _refCache = null;
-let _refPending = null;
+let _catalogCache = null;
+let _catalogPending = null;
 
-export async function getRefActivities() {
-  if (_refCache)   return _refCache;
-  if (_refPending) return _refPending;
+export async function getActivityCatalog() {
+  if (_catalogCache)   return _catalogCache;
+  if (_catalogPending) return _catalogPending;
 
-  _refPending = supabase
-    .from('ref_activities')
-    .select('name, category, leg_load, upper_load, cardio_load, core_load, recovery_hours, intensity_default')
+  _catalogPending = supabase
+    .from('activity_catalog')
+    .select('name, category, type, leg_load, upper_load, cardio_load, core_load, recovery_hours, intensity_default')
     .then(({ data, error }) => {
-      if (error) console.warn('Forma: ref_activities fetch failed', error);
-      _refCache   = data || [];
-      _refPending = null;
-      return _refCache;
+      if (error) console.warn('Forma: activity_catalog fetch failed', error);
+      _catalogCache   = data || [];
+      _catalogPending = null;
+      return _catalogCache;
     });
 
-  return _refPending;
+  return _catalogPending;
 }
 
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -89,7 +91,7 @@ function flattenWeekData(weekData) {
  * @returns {Promise<Array>} decision objects, spec §5 P0.5
  */
 export async function checkWeek(weekData, completedSessions = []) {
-  const ref = await getRefActivities();
+  const ref = await getActivityCatalog();
   const personalRpeHistory = buildPersonalRpeHistory(completedSessions);
 
   const resolvedSessions = flattenWeekData(weekData).map(s => ({
@@ -97,8 +99,8 @@ export async function checkWeek(weekData, completedSessions = []) {
     resolved: resolveExpectedLoad(s, personalRpeHistory, ref),
     // Name first — it's the specific activity ("Football"), type/discipline
     // is often just a broad category ("team_sport") that won't match
-    // ref_activities.name directly, though it can for the event-plan
-    // disciplines (run/swim/bike/...) that overlap with ref_activities rows.
+    // activity_catalog.name directly, though it can for the event-plan
+    // disciplines (run/swim/bike/...) that overlap with activity_catalog rows.
     matchedRef: findRef(s.name, ref) || findRef(s.type, ref),
   }));
 

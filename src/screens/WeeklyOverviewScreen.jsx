@@ -1,6 +1,7 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { checkWeek, getRefActivities } from '../utils/overtrain';
+import { checkWeek } from '../utils/overtrain';
+import { getActivityCatalog, FALLBACK_CATALOG, pickerTypes, rowsForType, defaultRowForType, findRef } from '../utils/activityCatalog';
 import themes from '../data/themes';
 import { BottomNav, DraftPlanBanner } from '../components/SharedUI';
 import { getCurrentPlanWeek, getPlanWeekStart, getTodayDateKey } from '../data/eventPlan';
@@ -43,6 +44,19 @@ function toDateKey(d) {
 // applyDayOrder below and the "exercise bubbles reset on reorder" bug.
 export function sessionOrderKey(sess) {
   return `${sess.source}:${sess.label}`;
+}
+
+// [LOGIC] Disambiguates a new manually-added session's label against a
+// day's already-scheduled sessions (any source — gym/event_plan/activity/
+// manual), so utils/sessionCompletion.js's exact-`workout === label`
+// completion matching stays unambiguous once more than one session shares
+// a label on the same day (e.g. a second "Bike" added on a day that
+// already has one, from any source). The first session with a given label
+// on a day keeps it unnumbered; the Nth gets " N" appended. See
+// features/specs/weekly-overview-add-session-activity-matrix.md §F.
+export function disambiguateLabel(daySessions, label) {
+  const matches = daySessions.filter(s => s.label === label).length;
+  return matches > 0 ? `${label} ${matches + 1}` : label;
 }
 
 // [LOGIC] Re-sorts a day's sessions per a previously-saved manual order
@@ -359,31 +373,119 @@ function DecisionCard({ decision, t, decidedChoice, onDecide }) {
   );
 }
 
-function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
-  const [dayIdx, setDayIdx] = React.useState(null);
-  const [activityName, setActivityName] = React.useState('');
-  const [sessionType, setSessionType] = React.useState('');
-  const [duration, setDuration] = React.useState('');
-  const [refActivities, setRefActivities] = React.useState([]);
+// Broad-type → section header, for grouping activity_catalog's distinct
+// `type` values in the picker (features/specs/weekly-overview-add-session-
+// activity-matrix.md §D). A type with no explicit entry falls into "Other"
+// so a future catalog addition never silently disappears from the picker.
+const TYPE_SECTION = {
+  run: 'Training', bike: 'Training', swim: 'Training', gym: 'Training',
+  conditioning: 'Training', row: 'Training', brick: 'Training', hiit: 'Training',
+  yoga: 'Mobility', pilates: 'Mobility', mobility: 'Mobility', dance: 'Mobility',
+  team_sport: 'Team & racket sports', racket_sport: 'Team & racket sports',
+  combat: 'Combat',
+  water_sport: 'Water sports',
+  climb: 'Adventure', adventure: 'Adventure', walk: 'Adventure',
+};
+const SECTION_ORDER = ['Training', 'Mobility', 'Team & racket sports', 'Combat', 'Water sports', 'Adventure', 'Other'];
 
-  // Activities (rugby, run, swim, ...) come from the Supabase ref_activities
-  // table rather than a hardcoded list, so the picker always reflects what's
-  // actually seeded there.
-  const [activitiesLoaded, setActivitiesLoaded] = React.useState(false);
+function sectionForType(type) {
+  return TYPE_SECTION[type] || 'Other';
+}
+
+// Groups a flat list of pickable types into { section: [type, type, ...] },
+// in SECTION_ORDER, each section's types in first-seen order.
+function groupTypesBySection(types) {
+  const bySection = {};
+  types.forEach(type => {
+    const section = sectionForType(type);
+    (bySection[section] ||= []).push(type);
+  });
+  return SECTION_ORDER.filter(s => bySection[s]?.length).map(s => [s, bySection[s]]);
+}
+
+// Two-step picker: a broad type (Bike/Run/Swim/Gym/Conditioning/Yoga/...),
+// then an optional specific activity_catalog row for that type (e.g.
+// "Cycling (long ride)"), auto-skipped when only one row exists for the
+// chosen type. Also surfaces the user's own onboarding answers (standing
+// commitments, sport_activity's chosen sport) as one-tap "Yours" chips.
+// See features/specs/weekly-overview-add-session-activity-matrix.md §D/§E.
+function AddSessionPanel({ weekData, t, onAdd, onCancel, goalsPayload }) {
+  const [dayIdx, setDayIdx] = React.useState(null);
+  const [catalog, setCatalog] = React.useState(FALLBACK_CATALOG);
+  const [pickedType, setPickedType] = React.useState(null);
+  const [pickedRowName, setPickedRowName] = React.useState(null);
+  const [yoursLabel, setYoursLabel] = React.useState(null);
+  const [customLabel, setCustomLabel] = React.useState('');
+  const [duration, setDuration] = React.useState('');
+
+  // Renders from the hardcoded fallback immediately (no loading/blank
+  // state), then swaps in the live table once fetched — same resilience
+  // pattern as utils/overtrain.js's own ref cache.
   React.useEffect(() => {
     let cancelled = false;
-    getRefActivities().then(rows => { if (!cancelled) { setRefActivities(rows); setActivitiesLoaded(true); } });
+    getActivityCatalog().then(rows => { if (!cancelled && rows.length) setCatalog(rows); });
     return () => { cancelled = true; };
   }, []);
 
-  const selectedActivity = refActivities.find(a => a.name === activityName);
-  const canSubmit = dayIdx !== null && !!activityName;
+  const sections = React.useMemo(() => groupTypesBySection(pickerTypes(catalog)), [catalog]);
+  const variantRows = pickedType ? rowsForType(catalog, pickedType) : [];
+  const defaultRow = pickedType ? defaultRowForType(catalog, pickedType) : null;
+  const resolvedRow = pickedRowName ? variantRows.find(r => r.name === pickedRowName) : defaultRow;
+
+  // What Add session will actually create — a "Yours" pick short-circuits
+  // the catalog step-1/step-2 selection entirely.
+  let resolvedType = null, resolvedName = null;
+  if (yoursLabel) {
+    resolvedType = findRef(yoursLabel, catalog)?.type || 'other';
+    resolvedName = yoursLabel;
+  } else if (pickedType) {
+    resolvedType = pickedType;
+    resolvedName = resolvedRow?.name || SESSION_DISPLAY[pickedType]?.label || pickedType;
+  }
+
+  const canSubmit = dayIdx !== null && !!resolvedType;
+  const finalLabel = customLabel.trim() || resolvedName || '';
+
+  const selectType = (type) => {
+    setYoursLabel(null);
+    setPickedType(type);
+    setPickedRowName(null);
+  };
+  const selectYours = (label) => {
+    setPickedType(null);
+    setPickedRowName(null);
+    setYoursLabel(label);
+  };
+
+  // The user's own onboarding answers (client state, not reference data) —
+  // free-text standing commitments and, if set, the single sport_activity
+  // goal's chosen sport. Skips anything that already matches a catalog row
+  // by name exactly, so e.g. a "Tennis" sport_activity goal doesn't show up
+  // twice (once under Team & racket sports, once under Yours).
+  const yoursChips = React.useMemo(() => {
+    const labels = new Set();
+    (goalsPayload?.standingCommitments || []).forEach(c => { if (c?.label) labels.add(c.label); });
+    const sportType = goalsPayload?.goals?.find(g => g.type === 'sport_activity')?.config?.sportType;
+    if (sportType) labels.add(sportType);
+    const catalogNames = new Set(catalog.map(r => r.name));
+    return Array.from(labels).filter(l => !catalogNames.has(l));
+  }, [goalsPayload, catalog]);
+
   const inputStyle = {
     padding: '8px 10px', borderRadius: 8,
     border: `1px solid ${t.border}`, background: t.surface2,
     color: t.text, fontFamily: t.sans, fontSize: 11.5, outline: 'none',
     boxSizing: 'border-box',
   };
+  const sectionLabelStyle = { fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 };
+  const typeButtonStyle = (active) => ({
+    padding: '7px 11px', borderRadius: 9,
+    background: active ? t.accent + '15' : t.surface2,
+    border: `1.5px solid ${active ? t.accent : t.border}`,
+    color: active ? t.accent : t.text2,
+    fontFamily: t.sans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: 5,
+  });
 
   return (
     <div style={{
@@ -392,7 +494,7 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
     }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 10 }}>Add a session</div>
 
-      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Day</div>
+      <div style={sectionLabelStyle}>Day</div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
         {weekData.map((day, i) => (
           <button key={day.dk} onClick={() => setDayIdx(i)} style={{
@@ -408,33 +510,57 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
         ))}
       </div>
 
-      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Activity</div>
-      {activitiesLoaded && refActivities.length === 0 ? (
-        // Fall back to free text if the ref_activities table couldn't be
-        // reached or is empty, so a picker outage doesn't block session creation.
-        <input
-          value={activityName} onChange={e => setActivityName(e.target.value)}
-          placeholder="Activity name, e.g. Rugby"
-          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
-        />
-      ) : (
-        <select
-          value={activityName}
-          onChange={e => setActivityName(e.target.value)}
-          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
-        >
-          <option value="">{activitiesLoaded ? 'Select an activity…' : 'Loading activities…'}</option>
-          {refActivities.map(a => (
-            <option key={a.name} value={a.name}>{a.name}</option>
-          ))}
-        </select>
+      {yoursChips.length > 0 && (
+        <>
+          <div style={sectionLabelStyle}>Yours</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {yoursChips.map(label => (
+              <button key={label} onClick={() => selectYours(label)} style={typeButtonStyle(yoursLabel === label)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
-      <div style={{ fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.text3, marginBottom: 5 }}>Type (optional)</div>
+      <div style={sectionLabelStyle}>Activity</div>
+      <div style={{ marginBottom: 12 }}>
+        {sections.map(([section, types]) => (
+          <div key={section} style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 9.5, color: t.text3, marginBottom: 4 }}>{section}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {types.map(type => (
+                <button key={type} onClick={() => selectType(type)} style={typeButtonStyle(pickedType === type)}>
+                  <span>{SESSION_DISPLAY[type]?.emoji}</span>
+                  <span>{SESSION_DISPLAY[type]?.label || type}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {pickedType && variantRows.length > 1 && (
+        <>
+          <div style={sectionLabelStyle}>Specific type (optional)</div>
+          <select
+            value={pickedRowName || ''}
+            onChange={e => setPickedRowName(e.target.value || null)}
+            style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+          >
+            <option value="">{defaultRow?.name} (default)</option>
+            {variantRows.map(r => (
+              <option key={r.name} value={r.name}>{r.name}</option>
+            ))}
+          </select>
+        </>
+      )}
+
+      <div style={sectionLabelStyle}>Name (optional)</div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input
-          value={sessionType} onChange={e => setSessionType(e.target.value)}
-          placeholder="Describe what was done, e.g. 5k tempo run"
+          value={customLabel} onChange={e => setCustomLabel(e.target.value)}
+          placeholder={resolvedName || 'Custom label'}
           style={{ ...inputStyle, flex: 1 }}
         />
         <input
@@ -452,7 +578,7 @@ function AddSessionPanel({ weekData, t, onAdd, onCancel }) {
         }}>Cancel</button>
         <button
           disabled={!canSubmit}
-          onClick={() => onAdd({ dayIdx, activityName, category: selectedActivity?.category, sessionType, duration })}
+          onClick={() => onAdd({ dayIdx, type: resolvedType, label: finalLabel, duration })}
           style={{
             flex: 1, padding: '9px', borderRadius: 9,
             background: canSubmit ? t.accent : t.border,
@@ -611,6 +737,7 @@ export function WeeklyOverviewScreen({
   onViewWeekChange,
   dayOrder = {},
   onUpdateDayOrder,
+  goalsPayload = null,
 }) {
   const t = themes[theme];
 
@@ -675,14 +802,18 @@ export function WeeklyOverviewScreen({
   // Adds a one-off session to a specific date in the currently-viewed week,
   // stored alongside uploaded-plan sessions in eventOverrides (keyed by date)
   // so it survives independently of any gym split or recurring activity.
-  const handleAddSession = ({ dayIdx, activityName, category, sessionType, duration }) => {
+  // `type` always comes from an activity_catalog row (or a fuzzy match
+  // against one, for a "Yours" personalized pick) — never a free-text
+  // guess — so the resulting session always gets the right icon and the
+  // right Analytics bucket. See features/specs/weekly-overview-add-session-
+  // activity-matrix.md §D.
+  const handleAddSession = ({ dayIdx, type, label, duration }) => {
     const row = weekData[dayIdx];
-    if (!row || !onUpdateOverrides || !activityName) return;
-    const typeKey = SESSION_DISPLAY[category] ? category : 'other';
+    if (!row || !onUpdateOverrides || !type || !label) return;
     const newSession = {
-      type: typeKey,
-      label: activityName,
-      sessionType: sessionType.trim(),
+      type,
+      label: disambiguateLabel(row.sessions, label),
+      sessionType: '',
       duration: duration.trim(),
       flag: '',
       done: false,
@@ -867,6 +998,7 @@ export function WeeklyOverviewScreen({
             t={t}
             onAdd={handleAddSession}
             onCancel={() => setAddOpen(false)}
+            goalsPayload={goalsPayload}
           />
         ) : (
           <button

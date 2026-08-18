@@ -18,8 +18,8 @@ const seedActivityNames = new Set(
   JSON.parse(readFileSync(seedPath, 'utf-8')).activities.map(a => a.name)
 );
 
-describe('ACTIVITY_TYPES.refName consistency with seeded ref_activities', () => {
-  it('every configured refName matches a real seeded ref_activities row', () => {
+describe('ACTIVITY_TYPES.refName consistency with seeded activity_catalog', () => {
+  it('every configured refName matches a real seeded activity_catalog row', () => {
     const withRefName = ACTIVITY_TYPES.filter(a => a.refName);
     expect(withRefName.length).toBeGreaterThan(0);
     withRefName.forEach(a => {

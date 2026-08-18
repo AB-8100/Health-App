@@ -65,15 +65,15 @@ describe('resolveExpectedLoad — resolution chain (P0.1)', () => {
     expect(result.tier).toBe('high');
   });
 
-  it('falls back to generic ref_activities/FALLBACK_LOAD lookup with no personal data and no tag (confidence none)', () => {
+  it('falls back to generic activity_catalog/FALLBACK_LOAD lookup with no personal data and no tag (confidence none)', () => {
     const result = resolveExpectedLoad({ name: 'Football', durationMinutes: 60 }, [], REF_ACTIVITIES);
     expect(result.confidence).toBe('none');
     expect(result.source).toContain('generic');
   });
 
-  it('a matched ref_activities row still populates tier even at confidence "none" (the fixed bug)', () => {
+  it('a matched activity_catalog row still populates tier even at confidence "none" (the fixed bug)', () => {
     // A brand-new user with no personal RPE logged for "Full body" gym
-    // sessions should still resolve to tier 'high', since ref_activities
+    // sessions should still resolve to tier 'high', since activity_catalog
     // explicitly flags "Full body (gym)" as intensity_default: 'high'.
     // Previously this branch discarded that and always returned tier: null.
     const result = resolveExpectedLoad({ name: 'Full body', type: 'gym', durationMinutes: 60 }, [], REF_ACTIVITIES);
@@ -402,7 +402,7 @@ describe('decision output (P0.5)', () => {
 });
 
 describe('quick-add / AddSessionPanel naming convergence (fix #4)', () => {
-  it('a Swim added via the quick-add picker and one added via the ref_activities picker resolve identically', () => {
+  it('a Swim added via the quick-add picker and one added via the activity_catalog picker resolve identically', () => {
     // DayActivitiesScreen's quick-add now stores the canonical ref name
     // directly (ACTIVITY_TYPES swim.refName = "Swimming (moderate)"),
     // matching exactly what WeeklyOverviewScreen's AddSessionPanel already

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildWeekData, sessionOrderKey, dayShortLabel } from './WeeklyOverviewScreen';
+import { buildWeekData, sessionOrderKey, dayShortLabel, disambiguateLabel } from './WeeklyOverviewScreen';
+import { SESSION_DISPLAY } from '../data/sessionDisplay';
+import { getActivityOptions } from '../utils/analytics';
 
 // A Monday-anchored plan start so week 1 lines up with DAY_SHORT's Mon..Sun.
 const START_DATE = '2026-01-05'; // a Monday
@@ -26,6 +28,43 @@ describe('dayShortLabel', () => {
       d.setUTCDate(d.getUTCDate() + i);
       expect(dayShortLabel(d)).toBe(expected[i]);
     }
+  });
+});
+
+describe('disambiguateLabel', () => {
+  it('leaves a label unchanged when nothing on the day already has it', () => {
+    expect(disambiguateLabel([{ label: 'Run' }], 'Bike')).toBe('Bike');
+  });
+
+  it('appends " 2" for the second occurrence, " 3" for the third, regardless of source', () => {
+    expect(disambiguateLabel([{ label: 'Bike', source: 'event_plan' }], 'Bike')).toBe('Bike 2');
+    expect(disambiguateLabel([{ label: 'Bike' }, { label: 'Bike 2' }], 'Bike')).toBe('Bike 2');
+  });
+
+  it('an empty day never collides', () => {
+    expect(disambiguateLabel([], 'Bike')).toBe('Bike');
+  });
+});
+
+// Regression test for the original bug this feature fixes: a manually-added
+// Weekly Overview session must resolve to the same icon/colour AND the same
+// Analytics pace bucket a plan-generated session of the same discipline
+// gets — see features/specs/weekly-overview-add-session-activity-matrix.md.
+describe('a manually-added session integrates with SESSION_DISPLAY and Analytics like a plan-generated one', () => {
+  it('a manual bike session and a plan-generated bike session resolve to the same SESSION_DISPLAY entry and Analytics id', () => {
+    const manualBikeSession = { type: 'bike', label: 'Cycling (moderate ride)', source: 'manual' };
+    const planBikeSession = { type: 'bike', label: 'Bike', source: 'event_plan' };
+    expect(SESSION_DISPLAY[manualBikeSession.type]).toBe(SESSION_DISPLAY[planBikeSession.type]);
+    expect(SESSION_DISPLAY[manualBikeSession.type].emoji).toBe('🚴');
+    expect(SESSION_DISPLAY[manualBikeSession.type].color).toBe('#D97706');
+
+    const completedSessions = [
+      { workout: 'Cycling (moderate ride)', type: 'bike', date: '2026-08-01', distance: 20, distanceUnit: 'km', elapsed: 3600 },
+      { workout: 'Bike', type: 'bike', date: '2026-08-05', distance: 25, distanceUnit: 'km', elapsed: 4200 },
+    ];
+    const options = getActivityOptions(completedSessions);
+    const bikeOptions = options.filter(o => o.id === 'pace:bike');
+    expect(bikeOptions).toHaveLength(1); // one merged bucket, not two separate ones
   });
 });
 

@@ -4,22 +4,51 @@
 // keeping generated-data logic in utils/ (see sessionCompletion.js, etc.).
 import { legDistanceKm, formatPaceForDiscipline } from './raceTargets';
 import { REST, reconcileScheduleWithSplitIds } from './scheduleReconciliation';
+import { SESSION_DISPLAY } from '../data/sessionDisplay';
+import { FALLBACK_CATALOG, findRef } from './activityCatalog';
 
 export const DAY_KEY_TO_IDX = { monday:0, tuesday:1, wednesday:2, thursday:3, friday:4, saturday:5, sunday:6 };
 
-export const ACTIVITY_DEFS = {
-  gym:      { type:'gym',   label:'Gym',     emoji:'🏋️', color:'#BE5A38', duration:60, isGym: true },
-  running:  { type:'run',   label:'Run',     emoji:'🏃', color:'#0090FF', duration:45 },
-  cycling:  { type:'cycle', label:'Cycle',   emoji:'🚴', color:'#9333EA', duration:60 },
-  swimming: { type:'swim',  label:'Swim',    emoji:'🏊', color:'#0369A1', duration:45 },
-  rowing:   { type:'other', label:'Row',     emoji:'🚣', color:'#4B5563', duration:45 },
-  yoga:     { type:'yoga',  label:'Yoga',    emoji:'🧘', color:'#6D4AAF', duration:60 },
-  hiit:     { type:'other', label:'HIIT',    emoji:'⚡', color:'#DC2626', duration:30 },
-  walking:  { type:'walk',  label:'Walk',    emoji:'🚶', color:'#15803D', duration:60 },
-  pilates:  { type:'other', label:'Pilates', emoji:'🤸', color:'#6D4AAF', duration:45 },
-  climbing: { type:'other', label:'Climb',   emoji:'🧗', color:'#854D0E', duration:90 },
-  dancing:  { type:'other', label:'Dancing', emoji:'💃', color:'#EC4899', duration:60 },
+// `GoalsSetupScreen.jsx`'s General Fitness step persists these exact ids
+// into `user_goals.goals[].config.activities` — kept unchanged (not
+// renamed to match `type` directly) so an already-onboarded user's saved
+// selection keeps resolving correctly. Each id's `type` used to live
+// inline in a hardcoded ACTIVITY_DEFS map that also duplicated
+// emoji/color/label (already available from data/sessionDisplay.js's
+// SESSION_DISPLAY, keyed by `type`) and, for five of these ids, pointed at
+// the wrong type entirely — rowing/hiit/pilates/climbing/dancing all
+// resolved to the generic 'other', and cycling resolved to 'cycle' instead
+// of 'bike' (planEngine.js's convention for the same discipline), splitting
+// Analytics pace series across `pace:cycle` and `pace:bike` for what a
+// user experiences as the same "my bike rides" data. Fixed here — see
+// features/specs/weekly-overview-add-session-activity-matrix.md §B/§C.
+export const GENERAL_ACTIVITY_ID_TO_TYPE = {
+  gym: 'gym', running: 'run', cycling: 'bike', swimming: 'swim', rowing: 'row',
+  yoga: 'yoga', hiit: 'hiit', walking: 'walk', pilates: 'pilates', climbing: 'climb', dancing: 'dance',
 };
+
+// Typical session length (minutes) per type for a generated schedule
+// entry's `duration` field — the one piece of data activity_catalog itself
+// doesn't carry (its columns are load-scoring, not typical duration).
+// Values unchanged from the old per-id ACTIVITY_DEFS durations.
+const TYPE_DURATION = {
+  gym: 60, run: 45, bike: 60, swim: 45, row: 45,
+  yoga: 60, hiit: 30, walk: 60, pilates: 45, climb: 90, dance: 60,
+};
+
+// A generated schedule entry's display metadata for a `type`. Deliberately
+// carries only `type`/`label`/`duration` — no `emoji`/`color` (the old
+// ACTIVITY_DEFS duplicated those, which is exactly how the cycling/rowing/
+// etc. mistakes above could happen without anything catching it).
+// getSessionDisplay (data/sessionDisplay.js) resolves emoji/colour from
+// SESSION_DISPLAY[type] whenever a session's own data doesn't carry a full
+// label+emoji+color triple, so leaving them out here routes every consumer
+// through that one source of truth instead of a second, driftable copy.
+function activityDefForId(actId) {
+  const type = GENERAL_ACTIVITY_ID_TO_TYPE[actId];
+  if (!type) return null;
+  return { type, label: SESSION_DISPLAY[type]?.label || type, duration: TYPE_DURATION[type] || 45 };
+}
 
 // Spreads selected activities across training days (capped at trainingDays.length).
 // Gym sessions are not stored in the activities state — they're tracked via plan.splitDays.
@@ -69,7 +98,7 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
       // falling back to the split template's own default schedule.
       gymDayIdxs.push(dayIdx);
     } else {
-      const def = ACTIVITY_DEFS[actId];
+      const def = activityDefForId(actId);
       if (def) {
         schedule[dayIdx] = [{ id: `gen-${dayIdx}`, ...def, isGym: false, source: 'generated' }];
       }
@@ -80,10 +109,13 @@ export function legacyGenerateActivitySchedule(goalsPayload) {
 }
 
 // Discipline key (from an event_race goal's per-discipline day picker, set
-// in GoalsSetupScreen) → display metadata for a generated session.
+// in GoalsSetupScreen) → display metadata for a generated session. `bike`'s
+// `type` matches planEngine.js's own convention for the same discipline
+// (was 'cycle' — see GENERAL_ACTIVITY_ID_TO_TYPE's comment above for why
+// that split Analytics in two).
 const DISCIPLINE_ACTIVITY_META = {
   swim:  { type: 'swim',  label: 'Swim',     duration: 45 },
-  bike:  { type: 'cycle', label: 'Bike',     duration: 60 },
+  bike:  { type: 'bike',  label: 'Bike',     duration: 60 },
   run:   { type: 'run',   label: 'Run',      duration: 45 },
   other: { type: 'other', label: 'Training', duration: 45 },
 };
@@ -99,18 +131,21 @@ export function disciplineActivityDef(discipline, raceType, targetPaces) {
   return def;
 }
 
-// A regularSports/sport_activity entry's free-text sport name → a `type` key
-// that `getSessionDisplay` (data/sessionDisplay.js) already has emoji/color
-// for. `label` is kept as the specific sport name, not the category.
-const SPORT_NAME_TO_TYPE = {
-  Football: 'team_sport', Basketball: 'team_sport', Rugby: 'team_sport', Hockey: 'team_sport', Volleyball: 'team_sport',
-  Tennis: 'racket_sport',
-  Swimming: 'swim', 'Synchronised Swimming': 'swim', Cycling: 'cycle', Running: 'run',
-  'Martial Arts': 'combat',
-};
-
-export function sportActivityDef(sportName) {
-  return { type: SPORT_NAME_TO_TYPE[sportName] || 'other', label: sportName || 'Sport', duration: 60 };
+// A regularSports/sport_activity entry's free-text sport name → a `type`
+// key that `getSessionDisplay` (data/sessionDisplay.js) already has
+// emoji/color for. `label` is kept as the specific sport name, not the
+// category. Resolves via the activity_catalog fuzzy-name matcher
+// (utils/activityCatalog.js's `findRef`, exact→prefix→substring — the same
+// matcher the Sequencing Advisor uses) instead of a separate hardcoded
+// name→type dict, so this and the Sequencing Advisor never disagree on
+// what e.g. "Rugby" resolves to. Defaults to the hardcoded
+// `FALLBACK_CATALOG` rather than requiring a live Supabase fetch — every
+// name `GoalsSetupScreen.jsx`'s SPORT_TYPES offers today already has a row
+// there, so this function stays pure and synchronous, no network
+// dependency, same as before.
+export function sportActivityDef(sportName, catalogRows = FALLBACK_CATALOG) {
+  const ref = findRef(sportName, catalogRows);
+  return { type: ref?.type || 'other', label: sportName || 'Sport', duration: 60 };
 }
 
 // The merged onboarding flow (features/specs/deterministic-endurance-plan-generator.md
@@ -203,7 +238,7 @@ export function goalAwareGenerateActivitySchedule(goalsPayload) {
   const generalGoal = goals.find(g => g.type === 'general_fitness');
   (generalGoal?.config?.activities || []).forEach(actId => {
     if (actId === 'gym') return;
-    const def = ACTIVITY_DEFS[actId];
+    const def = activityDefForId(actId);
     if (def) sources.push({ def, count: 1 });
   });
   if (gymAccess && remainingDayIdxs.length) {

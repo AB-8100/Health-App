@@ -1442,6 +1442,7 @@ function App() {
       return <WeeklyOverviewScreen width={contentW} height={contentH} theme={tweaks.theme}
                onNav={navigate}
                profile={profile}
+               goalsPayload={goalsPayload}
                plan={plan}
                activities={activities}
                onUpdateActivities={(next) => {
