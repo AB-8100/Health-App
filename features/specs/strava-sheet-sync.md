@@ -45,13 +45,17 @@ PR description — do not let this auto-merge.
   what §3 explicitly says to share.
 - **No server-side/background sync.** Confirmed decision #1 above — this is
   a known, accepted limitation, not an oversight.
-- **No auto-completion for activity types other than run/swim/cycle.** The
-  product ask was specifically "map to the buttons on the health app" — the
-  buttons are `run`/`swim`/`cycle` (`GymPlanScreens.jsx`'s `ACTIVITY_TYPES`,
-  `data/sessionDisplay.js`'s `SESSION_DISPLAY`). A Strava row with any other
-  `Sport_type` (e.g. `WeightTraining`, `Hike`, `Workout`) is still stored in
-  `strava_activities` for visibility/future use, but is never auto-completed
-  or reconciled into `completedSessions`.
+- **Auto-completion is not limited to triathlon disciplines.** Earlier
+  drafting of this spec scoped reconciliation to `run`/`swim`/`cycle` only —
+  corrected per user feedback. The real boundary is Forma's full non-gym
+  `ACTIVITY_TYPES` set (`GymPlanScreens.jsx` line ~3247): `run`, `walk`,
+  `swim`, `yoga`, `hike`, `cycle`, plus `gym` for a Strava strength-type
+  activity. Any `Sport_type` that maps to one of *those* is reconciled the
+  same way run/swim/cycle are (§4). Only a `Sport_type` with no sensible
+  Forma counterpart (golf, kayaking, sailing, etc.) falls through to
+  `activity_type: 'other'` — still stored in `strava_activities` for
+  visibility, but never auto-completed or reconciled, since there's no
+  scheduled/loggable counterpart to reconcile it against.
 
 ## 1. Context — what's already there
 
@@ -75,7 +79,52 @@ PR description — do not let this auto-merge.
 - `utils/sessionCompletion.js` already matches completed sessions to
   *scheduled* sessions by workout label for a given calendar day. Strava
   activities don't know Forma's scheduled workout labels, so §4 below needs
-  its own, simpler match: same local calendar date + same `type`, not label.
+  its own, simpler match: same local calendar date + same `type` (subject to
+  the `cycle`/`bike` equivalence in §1.1 below), not label.
+
+### 1.1 Pre-existing bug this feature must not make worse: `cycle` vs `bike`
+
+There is already a live inconsistency in the app, independent of this
+feature, that this sync **must** account for rather than silently
+reproduce: the cycling discipline is stored under **two different `type`
+strings depending on which part of the app generated the session**.
+
+- Non-race sources — `GymPlanScreens.jsx`'s `ACTIVITY_TYPES`, the
+  auto-generated weekly schedule (`utils/scheduleGeneration.js`), day
+  activities logged via `ActivityTimerScreen` — all use `type: 'cycle'`,
+  `label: 'Cycle'`.
+- Event-race training plans — the deterministic engine
+  (`utils/planEngine.js`'s `buildBikeEntry`), an uploaded `.xlsx` plan
+  (`utils/trainingPlanImport.js`'s `DISCIPLINE_TYPE_MAP`), and the retired
+  AI generator (`utils/planGeneration.js`) — all use `type: 'bike'`,
+  `label: 'Bike'`.
+- `utils/sessionCompletion.js`'s `isSessionCompleted` matches a non-gym
+  scheduled session to a completed one **by label** (`s.workout ===
+  sess.label`). Since `'Cycle'` and `'Bike'` are different strings, a
+  logged activity from one source doesn't mark a scheduled session from the
+  other source complete — that's the "live issue... depending on the
+  source" being described. `data/sessionDisplay.js`'s `SESSION_DISPLAY` then
+  compounds it visually with two separate colour/emoji entries (`cycle`:
+  purple, `bike`: orange).
+- `utils/analytics.js` already has to work around exactly this split for its
+  own purposes — `SPEED_TYPES = ['cycle', 'bike']` and `DISCIPLINE_FOR_TYPE
+  = { cycle: 'bike', bike: 'bike', ... }` treat the two as aliases when
+  computing pace/speed and goal paces. **This spec follows that existing
+  precedent rather than inventing a new convention.**
+
+**Decision — fixing the underlying `cycle`/`bike` split app-wide (unifying
+`sessionCompletion.js`'s matching, `SESSION_DISPLAY`, and every
+producer/consumer of the two strings) is a real bug but a separate,
+larger piece of work than this spec's scope — flag it in the PR description
+as a follow-up, don't fold it into this feature.** What this feature *does*
+need to do, scoped to its own reconciliation logic only (§4): treat `cycle`
+and `bike` as one equivalence class everywhere it checks "is there already a
+matching session for this Strava ride" — so a Strava `Ride` can satisfy
+*either* a `cycle`-typed day activity *or* a `bike`-typed event-plan
+session on the same day, never just one of them. Without this, a triathlete
+with an active event plan would see their Strava rides silently fail to
+mark the plan's own Bike sessions complete, which is precisely the
+"either one is marked to completion" outcome asked for.
 - `utils/googleSheets.js` already owns a Google Identity Services token
   client with scope `https://www.googleapis.com/auth/spreadsheets` +
   `.../drive.file`. The **`spreadsheets`** scope (unlike `drive.file`) grants
@@ -112,24 +161,55 @@ rather than assumed away:**
    updating in place. **Decision: upsert on `(user_id, strava_id)` — last
    write wins.** Since both rows describe the same activity, whichever is
    read last simply overwrites the same DB row; no data is lost either way.
-3. **`Time_formatted` is unreliable when it's wrapped in a `<span
-   type="duration" hours=… minutes=… seconds=…>` tag.** Compare row 1's
-   attributes (`hours="24" minutes="30" seconds="0"`) against its own
-   `Distance_km` (3.68) and `Pace_min_per_km` (6:39): 3.68 × 6:39 ≈ 24m 28s —
-   i.e. the *visible* text (`24:30:00`, read as `MM:SS` + a bogus trailing
-   `:00`) is roughly right, but the span's `hours="24"` attribute is
-   nonsense (nobody ran for 24 hours). Row 4 shows the same pattern
-   (`hours="35" minutes="56" seconds="59"` against a distance/pace product
-   of ≈36 min). **Decision: never trust the `hours`/`minutes`/`seconds`
-   attributes on a `<span>`-wrapped value.** Instead: (a) if `Distance_km`
-   and `Pace_min_per_km` are both present, compute
-   `duration_seconds = round(distance_km * pace_min_per_km * 60)` and treat
-   that as authoritative; (b) only when a row has *no* span wrapper — a
-   plain `MM:SS` or `H:MM:SS` string (rows 3 and 5 above) — parse that text
-   directly; (c) if neither is available, leave `duration_seconds` null
-   rather than trusting the span. This is a data-cleaning workaround for the
-   upstream sheet, not a Forma bug — don't "fix" it by changing how Forma
-   displays durations elsewhere.
+3. **`Time_formatted`'s `<span type="duration" hours=… minutes=… seconds=…>`
+   wrapper mislabels sub-hour durations — confirmed by the user, who spotted
+   the actual shift.** Under an hour, the value's fields are shifted one
+   place: what should render as `0:MM:SS` (0 hours) instead loses the
+   leading `0:` and gains a bogus trailing `:00`, landing in the `hours`
+   attribute what should have been `minutes`, and in `minutes` what should
+   have been `seconds`. Row 1's `hours="24" minutes="30" seconds="0"`
+   (displayed `24:30:00`) isn't a 24-hour run — it's 24 minutes 30 seconds,
+   confirmed against its own `Distance_km`/`Pace_min_per_km` (3.68km ×
+   6:39/km ≈ 24m 28s). Row 6 (`hours="31" minutes="23" seconds="0"`,
+   displayed `31:23:00`) is the same pattern: 10.08km × 3:07/km ≈ 31m 25s,
+   matching a real `31:23`, not 31 hours.
+
+   **Parsing rule for a `<span>`-wrapped value, in order:**
+   - `seconds === "0"` (or `"00"`) → **the shift bug** — discard the
+     trailing `:00` entirely and read the remaining `hours:minutes` pair as
+     `MM:SS` (real hours = 0). This is the case the user identified.
+   - `seconds !== "00"` → per the user's rule this is a genuine `H:MM:SS`
+     value ("over an hour, the format is rightfully x-y-z") and should be
+     trusted literally.
+     **Caveat — this branch doesn't hold for every row in the live sample,
+     so don't trust it unconditionally.** Row 4 (`10.7km` at `3:22/km`
+     pace) carries `hours="35" minutes="56" seconds="59"` — read literally
+     that's a 35-hour bike ride, but `distance × pace` puts the real
+     duration at ≈36 minutes, so this row has the *same* shift bug despite
+     a non-zero trailing value. **Decision: add a plausibility guard** —
+     whenever `Distance_km` and `Pace_min_per_km` are both present, compute
+     `estimate_seconds = distance_km * pace_min_per_km * 60` and compare it
+     to the literal `H:MM:SS` reading; if they disagree by more than ~2× (or
+     the literal reading implies an implausible duration for a single
+     activity, e.g. >6 hours), apply the same left-shift correction as the
+     `seconds === "00"` case instead of trusting the literal value. Treat
+     this guard as a probabilistic safety net inferred from a handful of
+     rows, not a settled rule — re-verify once more data (especially a
+     genuinely long run/ride) has synced, and surface to the user if the
+     guard ever fires, rather than resolving it silently forever.
+   - **No `<span>` wrapper** (plain text, e.g. `23:12` or `1:02:26` in the
+     sample) → parse directly by segment count (`MM:SS` for 2 segments,
+     `H:MM:SS` for 3). Both plain-text rows in the sample check out exactly
+     against `distance × pace`, with no evidence of the shift bug — the bug
+     appears to be specific to how the span-wrapped form gets generated
+     upstream, not a general problem with the column.
+   - If `Distance_km`/`Pace_min_per_km` are unavailable to cross-check *and*
+     the value is span-wrapped with a non-zero trailing second, fall back to
+     the literal `H:MM:SS` reading (there's nothing better to do) but this
+     is the lowest-confidence path — worth a code comment saying so.
+
+   This is a data-cleaning workaround for the upstream sheet, not a Forma
+   bug — don't "fix" it by changing how Forma displays durations elsewhere.
 4. **`Date` is inconsistently formatted** — sometimes a full
    `YYYY-MM-DD HH:mm:ss` timestamp, sometimes a bare `Ddd Mon DD YYYY` date
    with no time-of-day (both appear on the *same* duplicated activity, so
@@ -233,26 +313,56 @@ any new pure logic in `utils/`"), called from a thin `App.jsx` orchestration
 layer:
 
 ```js
-// Sport_type (Strava vocabulary) -> Forma's ACTIVITY_TYPES id.
-// Anything not listed maps to 'other' and is excluded from auto-completion.
+// Sport_type (Strava vocabulary) -> Forma's non-gym ACTIVITY_TYPES id.
+// Not limited to triathlon disciplines — covers every button ACTIVITY_TYPES
+// actually has (GymPlanScreens.jsx ~line 3247). Anything not listed maps to
+// 'other', stored for visibility but excluded from auto-completion (§ Non-goals).
 const SPORT_TYPE_MAP = {
   Run: 'run', TrailRun: 'run', VirtualRun: 'run',
-  Ride: 'cycle', VirtualRide: 'cycle', EBikeRide: 'cycle', GravelRide: 'cycle', MountainBikeRide: 'cycle',
+  Ride: 'cycle', VirtualRide: 'cycle', EBikeRide: 'cycle', GravelRide: 'cycle',
+  MountainBikeRide: 'cycle', Velomobile: 'cycle', Handcycle: 'cycle',
   Swim: 'swim',
+  Walk: 'walk',
+  Hike: 'hike', Snowshoe: 'hike',
+  Yoga: 'yoga',
+  WeightTraining: 'gym', Crossfit: 'gym', Workout: 'gym', Elliptical: 'gym', StairStepper: 'gym',
+  // everything else (Golf, Kayaking, Rowing, Soccer, Sail, Surfing, ski/skate
+  // types, etc.) intentionally falls through to 'other' below.
 };
 
-export function mapSportType(sportType) { … }        // -> 'run' | 'swim' | 'cycle' | 'other'
+// cycle/bike are the same discipline under two different `type` strings
+// depending on source (§1.1) — treat them as one equivalence class for every
+// match/lookup this module does, mirroring utils/analytics.js's existing
+// SPEED_TYPES/DISCIPLINE_FOR_TYPE precedent. Not used to fix §1.1's
+// underlying split app-wide, only to keep this module's own reconciliation
+// correct regardless of which source produced the day's scheduled session.
+const TYPE_EQUIVALENCE = { cycle: ['cycle', 'bike'], bike: ['cycle', 'bike'] };
+function typesMatch(a, b) {
+  return a === b || (TYPE_EQUIVALENCE[a] || []).includes(b);
+}
+
+export function mapSportType(sportType) { … }        // -> one of ACTIVITY_TYPES' ids, or 'other'
 export function parseStravaDate(dateStr) { … }         // -> 'YYYY-MM-DD' local-date string, per §2.4
-export function parseDuration(row) { … }               // -> seconds|null, per §2.3's span-distrust rule
+export function parseDuration(row) { … }               // -> seconds|null, per §2.3's span-distrust + plausibility-guard rule
 export function parseStravaRow(headerIndex, cells) { … } // raw sheet row -> normalized object matching §3.1's columns
 export function findMatchingCompletedSession(activity, completedSessions) { … }
-  // same local date + same `type`, not yet reconciled (no back-reference needed —
-  // caller passes only sessions not already claimed this sync pass)
+  // same local date + typesMatch(activity.activity_type, session.type) — not
+  // yet reconciled (caller passes only sessions not already claimed this pass)
+export function findMatchingScheduledSession(activity, scheduledSessionsForDay) { … }
+  // same day's event-plan/day-activity sessions (source of `sess.label` used
+  // by sessionCompletion.js's isSessionCompleted), matched by typesMatch —
+  // used to decide which label/type an auto-created session should carry
+  // (see orchestration step 4c below), so it actually marks that scheduled
+  // session complete regardless of whether it says 'cycle' or 'bike'
 export function fillMissingFields(completedSession, stravaActivity) { … }
   // returns a new session object with only the previously-*undefined/null*
   // fields backfilled from stravaActivity — never overwrites an existing value
-export function buildSessionFromStrava(stravaActivity) { … }
-  // synthesizes a new completedSessions-shaped entry when no manual match exists
+export function buildSessionFromStrava(stravaActivity, matchedScheduledSession) { … }
+  // synthesizes a new completedSessions-shaped entry when no manual match
+  // exists; if matchedScheduledSession is given, uses *its* type/label
+  // (e.g. 'bike'/'Bike' from an active event plan) instead of always
+  // defaulting to activity_type/'cycle', so the right scheduled session
+  // gets marked done (§1.1)
 ```
 
 **Read strategy:** fetch the full sheet range (`Sheet1!A1:M`, or whatever the
@@ -272,19 +382,29 @@ manual "Sync now" button, §5):**
 3. Upsert all of them into `strava_activities` (dedupes on `strava_id`
    regardless of match/reconciliation outcome — §2.2's duplicate-row case is
    handled here for free).
-4. For every row with `matched_session_id == null` **and** `activity_type in
-   ('run','swim','cycle')`:
+4. For every row with `matched_session_id == null` **and** `activity_type !==
+   'other'` (i.e. it mapped to one of Forma's actual activity buttons —
+   run/walk/swim/yoga/hike/cycle/gym, not just the triathlon three):
    a. Try `findMatchingCompletedSession` against the current
       `completedSessions` (excluding sessions already claimed earlier in
       this same loop, so two Strava rows on the same day/type don't both
-      grab the same manual entry).
+      grab the same manual entry) — using `typesMatch`, so a `cycle`-mapped
+      Strava ride can match a `bike`-typed completed session and vice versa.
    b. **Match found:** `fillMissingFields` — only touches fields that were
       `null`/`undefined`/`''` on the manual entry (distance, elapsed/duration,
       pool fields for swim). If nothing was missing, the entry is left
       byte-for-byte unchanged.
-   c. **No match:** synthesize a new entry via `buildSessionFromStrava` and
-      append it to `completedSessions` — this is the "avoid manually
-      inputting the activity" case from the product ask.
+   c. **No match on `completedSessions`:** before creating a new entry,
+      check that day's *scheduled* sessions (event-plan sessions +
+      day-activities feeding into `WeeklyOverviewScreen.jsx`'s
+      `buildWeekData()`) via `findMatchingScheduledSession`, again with
+      `typesMatch`. If one exists (e.g. an active triathlon plan's `Bike`
+      session today), synthesize the new `completedSessions` entry with
+      *that* session's `type`/label (§1.1's fix, scoped to this feature's
+      own output) so it actually reads as complete; otherwise default to
+      the Strava-mapped type/label (e.g. `cycle`/`'Cycle'`). Either way this
+      is the "avoid manually inputting the activity" case from the product
+      ask.
    d. Either way, mark that `strava_activities` row's `matched_session_id`
       (update, not re-upsert of the whole row) so it's never reprocessed.
 5. If any `completedSessions` entries were added/changed in step 4, run them
@@ -339,12 +459,19 @@ mostly-unreachable `OnboardingScreen.jsx` — don't confuse the two, only the
 
 - **Vitest** (`utils/stravaSync.test.js`): cover every §2 data-quality case
   with the *actual* sample rows from §2 as fixtures — the span-wrapped
-  bogus-duration rows, the plain-text duration rows, both `Date` formats,
-  the literal duplicate-ID row, and an unmapped `Sport_type` (e.g.
-  `WeightTraining`) to confirm it's stored but never reconciled. Also cover
-  `fillMissingFields` never overwriting a present value, and
+  `seconds==="00"` shift-bug rows, the plain-text duration rows, the
+  span-wrapped-but-non-zero-seconds row (`35:56:59`) confirming the
+  plausibility guard overrides the literal reading, both `Date` formats,
+  the literal duplicate-ID row, and a `Sport_type` with no Forma counterpart
+  (e.g. `Golf`) to confirm it's stored as `'other'` but never reconciled.
+  Also cover: `fillMissingFields` never overwriting a present value;
   `findMatchingCompletedSession` not double-claiming one manual entry for
-  two Strava rows on the same day/type.
+  two Strava rows on the same day/type; and — specifically for §1.1 —
+  `typesMatch('cycle', 'bike')` both directions, plus a scenario test where
+  a Strava `Ride` on a day with an active triathlon plan's scheduled `Bike`
+  session (and no matching `completedSessions` entry) produces a new
+  session typed `bike`/`'Bike'`, not `cycle`/`'Cycle'`, so it actually marks
+  that plan session complete.
 - **Playwright** (`tests/e2e/`): a smoke assertion that the About screen's
   Strava card renders in each status state (disconnected/connected), per
   `CLAUDE.md`'s "changes a screen's core render path" trigger.
@@ -354,11 +481,34 @@ mostly-unreachable `OnboardingScreen.jsx` — don't confuse the two, only the
 
 ## 7. Rollout note
 
-Since there's currently no synced swim activity to verify §2's `Swim →
-swim` mapping and swim-specific field backfill (`poolLengthM`/`lengths` have
-no obvious Strava-sheet equivalent — only `Distance_km` is available, so a
-swim gap-fill can only ever backfill total distance, never pool length/lengths),
-treat swim reconciliation as **lower-confidence than run/cycle** until
-verified against a real synced swim. This is a probabilistic read of the
-available sample data, not a certainty — flag it to the user after the first
-real swim syncs, rather than assuming it worked silently.
+Everything in this spec beyond plain run/cycle is inferred, not observed —
+worth being explicit about which parts are solid versus a best-probability
+guess, and flagging accordingly rather than presenting all of it with equal
+confidence:
+
+- **Run and cycle (as `Ride`) are backed by real sample rows** and the
+  duration/date parsing rules in §2 were derived directly from them — this
+  is the highest-confidence part of the spec.
+- **No synced swim activity exists in the current sample**, so `Swim →
+  swim` mapping is inferred from Strava's own API vocabulary, not observed.
+  Swim-specific field backfill is also structurally limited:
+  `poolLengthM`/`lengths` have no obvious Strava-sheet equivalent — only
+  `Distance_km` is available, so a swim gap-fill can only ever backfill
+  total distance, never pool length/lengths.
+- **`walk`/`hike`/`yoga`/`gym` mappings (added per this revision) have zero
+  supporting sample data** — they're a reasonable reading of Strava's public
+  sport-type vocabulary against Forma's existing `ACTIVITY_TYPES`, not
+  something cross-checked against a real row the way run/cycle were. If any
+  of these Sport_type values behave differently in practice (e.g. Strava's
+  actual `sport_type` string for a gym session turns out to be something
+  other than `WeightTraining`/`Workout`), `SPORT_TYPE_MAP` will need
+  adjusting once real data surfaces.
+- **The `35:56:59`-style plausibility guard (§2 point 3) is inferred from a
+  single contradicting row**, not a confirmed general rule — treat its
+  2×/6-hour thresholds as a starting point to tune once more real durations
+  (especially a genuinely-over-an-hour activity) have synced.
+
+Flag each of these to the user the first time real data would exercise them
+(first synced swim, first gym/walk/hike/yoga activity, first time the
+plausibility guard fires) rather than assuming silently that the inferred
+behaviour was correct.
