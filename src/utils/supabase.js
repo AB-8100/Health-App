@@ -110,7 +110,10 @@ export async function loadUserData(userId) {
     profile:            profile   ? dbToProfile(profile)   : undefined,
     userSettings:       settings  ? dbToSettings(settings) : undefined,
     plan:               plan      ? dbToPlan(plan)         : undefined,
-    completedSessions:  (sessions ?? []).map(r => r.raw),
+    // [DATA] Rows saved before the (user_id, client_id) unique constraint
+    // can exist several times over — collapse them by client id on load so
+    // the duplicates don't get carried back into app state and re-saved.
+    completedSessions:  dedupeSessionsById((sessions ?? []).map(r => r.raw)),
     foodLog,
     customFoods:        (customFoods ?? []).map(dbToCustomFood),
     activities:         activitiesMap,
@@ -143,11 +146,17 @@ export async function saveUserData(userId, snapshot) {
     ops.push(supabase.from('gym_plans').upsert({ user_id: userId, ...planToDb(snapshot.plan), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }));
   }
   if (snapshot.completedSessions) {
-    // Replace all sessions for this user
+    // [DATA] Replace all sessions for this user. The Supabase write is not
+    // debounced, so several saves can race: each one's delete can land before
+    // any insert, and a plain insert then left one full copy of the history
+    // per racing save (4x duplicates seen in production). Upserting on
+    // (user_id, client_id) makes the racing writes converge on one row per
+    // session instead of stacking copies.
+    const sessionRows = dedupeSessionsById(snapshot.completedSessions).map(s => sessionToDb(userId, s));
     ops.push(
       supabase.from('gym_sessions').delete().eq('user_id', userId).then(() =>
-        snapshot.completedSessions.length
-          ? supabase.from('gym_sessions').insert(snapshot.completedSessions.map(s => sessionToDb(userId, s)))
+        sessionRows.length
+          ? supabase.from('gym_sessions').upsert(sessionRows, { onConflict: 'user_id,client_id' })
           : Promise.resolve()
       )
     );
@@ -253,13 +262,28 @@ function sessionToDb(userId, s) {
     // custom_foods already do this (`id: id || undefined`). The app never
     // reads this DB-assigned id back — completedSessions is reconstructed
     // from `raw`, which still carries the original client-side id.
+    // `client_id` carries that same id in its own column so the
+    // (user_id, client_id) unique constraint can reject duplicate copies.
     user_id:          userId,
+    client_id:        s.id != null ? String(s.id) : null,
     session_date:     s.date || s.endedAt ? new Date(s.date || s.endedAt).toISOString() : new Date().toISOString(),
     workout_name:     s.workout || null,
     elapsed_seconds:  s.elapsed || 0,
     exercises:        s.queue || [],
     raw:              s,
   };
+}
+
+// [LOGIC] Keeps the last occurrence of each session id (the most recent edit
+// wins). Sessions without an id are kept as-is — they can't collide.
+function dedupeSessionsById(sessions) {
+  const byId = new Map();
+  const noId = [];
+  for (const s of sessions ?? []) {
+    if (s?.id == null) noId.push(s);
+    else byId.set(String(s.id), s);
+  }
+  return [...byId.values(), ...noId];
 }
 
 function foodLogToRows(userId, foodLog) {

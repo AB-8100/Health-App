@@ -270,14 +270,52 @@ describe('saveUserData — gym_sessions insert payload', () => {
     ];
     await saveUserData('user-1', { completedSessions });
 
-    const insertCall = builder.calls.find(([name]) => name === 'insert');
-    expect(insertCall).toBeTruthy();
-    const [, [rows]] = insertCall;
+    const writeCall = builder.calls.find(([name]) => name === 'upsert');
+    expect(writeCall).toBeTruthy();
+    const [, [rows]] = writeCall;
     expect(rows).toHaveLength(1);
     expect(rows[0]).not.toHaveProperty('id');
     // The original client-side id must still round-trip via `raw` so the
     // app can keep matching/editing/deleting by it after a reload.
     expect(rows[0].raw.id).toBe(completedSessions[0].id);
+  });
+
+  // Regression test for 4x duplicate rows: racing saves each deleted then
+  // inserted the full history. Writes must upsert on (user_id, client_id)
+  // and never send the same session twice in one payload.
+  it('upserts on user_id+client_id, one row per session id', async () => {
+    const builder = makeBuilder({ data: null, error: null });
+    fromMock.mockImplementation(() => builder);
+
+    const run = { id: '1786989554439', date: '2026-08-17T00:00:00.000Z', workout: 'Run', elapsed: 2820 };
+    await saveUserData('user-1', { completedSessions: [run, { ...run }, { ...run, elapsed: 2900 }] });
+
+    expect(builder.calls.some(([name]) => name === 'insert')).toBe(false);
+    const [, [rows, opts]] = builder.calls.find(([name]) => name === 'upsert');
+    expect(opts).toEqual({ onConflict: 'user_id,client_id' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].client_id).toBe('1786989554439');
+    expect(rows[0].elapsed_seconds).toBe(2900);
+  });
+});
+
+describe('loadUserData — gym_sessions duplicates', () => {
+  it('collapses duplicate rows for the same session id', async () => {
+    const raw = { id: '1784702886702', workout: 'Run', elapsed: 1500 };
+    const responses = {
+      profiles:       { data: { user_id: 'user-1', updated_at: '2026-07-05T12:00:00Z' }, error: null },
+      user_settings:  { data: null, error: null },
+      gym_plans:      { data: null, error: null },
+      gym_sessions:   { data: [{ raw }, { raw }, { raw }, { raw }], error: null },
+      food_log:       { data: [], error: null },
+      custom_foods:   { data: [], error: null },
+      day_activities: { data: [], error: null },
+      training_plans: { data: [], error: null },
+    };
+    fromMock.mockImplementation((table) => makeBuilder(responses[table]));
+
+    const result = await loadUserData('user-1');
+    expect(result.completedSessions).toEqual([raw]);
   });
 });
 
