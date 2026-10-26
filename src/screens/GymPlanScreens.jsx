@@ -488,16 +488,38 @@ function EditGymSessionSheet({ theme, session, onClose, onSave }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Custom (off-catalog) exercises — an athlete's own name for a move that
+// isn't in EX_LIB. Rather than growing the queue/preselection data shape to
+// carry a separate name lookup, the name is encoded straight into the id
+// (`custom:<ts>:<encoded name>`), so every existing array-of-ids call site
+// (preselectedQueues, buildQueueFromExerciseIds, ExercisePickerSheet's own
+// initialSelectedIds round-trip) keeps working unchanged.
+function makeCustomExerciseId(name) {
+  return `custom:${Date.now().toString(36)}:${encodeURIComponent(name.trim())}`;
+}
+function isCustomExerciseId(id) {
+  return typeof id === 'string' && id.startsWith('custom:');
+}
+function customExerciseName(id) {
+  const encoded = id.split(':').slice(2).join(':');
+  try { return decodeURIComponent(encoded) || 'Custom exercise'; }
+  catch { return 'Custom exercise'; }
+}
+
+// ────────────────────────────────────────────────────────────
 // Builds a fresh gym-style exercise queue (sets/reps scaffold) from a plain
 // list of EX_LIB ids — shared by the gym split flow and conditioning
 // sessions, since conditioning now logs sets/reps the same way gym does.
+// Ids may also be custom-exercise ids (see above), which resolve their own
+// name instead of falling back to the raw id.
 function buildQueueFromExerciseIds(ids = []) {
   return ids.map(id => {
     const ex = EX_LIB[id] || {};
+    const custom = !ex.name && isCustomExerciseId(id);
     const targetSets = 3;
     const unilateral = ex.unilateral || false;
     return {
-      id, name: ex.name || id, muscle: ex.muscle || '',
+      id, name: ex.name || (custom ? customExerciseName(id) : id), muscle: ex.muscle || (custom ? 'Custom' : ''),
       targetSets, targetReps: 10, targetWeight: 0, lastWeek: '—', isPR: false,
       unilateral,
       sets: Array.from({ length: targetSets }, () =>
@@ -534,6 +556,18 @@ function ExercisePickerSheet({
     const matchesQ = !q || ex.name.toLowerCase().includes(q) || ex.muscle.toLowerCase().includes(q);
     return matchesSection && matchesQ;
   }).map(([id, ex]) => ({ id, ...ex }));
+
+  // Already-added custom (off-catalog) exercises — shown pinned above the
+  // catalog results, unaffected by the section/search filters above, so
+  // they stay visible (and removable) while the athlete keeps browsing.
+  const customResults = selected
+    .filter(isCustomExerciseId)
+    .map(id => ({ id, name: customExerciseName(id), muscle: 'Custom' }));
+
+  const trimmedQuery = searchQ.trim();
+  const canAddCustom = trimmedQuery.length > 0 &&
+    !Object.values(EX_LIB).some(ex => ex.name.toLowerCase() === trimmedQuery.toLowerCase()) &&
+    !customResults.some(c => c.name.toLowerCase() === trimmedQuery.toLowerCase());
 
   const canUsePreviousWeek = Array.isArray(previousIds) && previousIds.length > 0;
 
@@ -580,6 +614,18 @@ function ExercisePickerSheet({
             marginBottom:10, boxSizing:'border-box'
           }}/>
 
+        {canAddCustom && (
+          <button onClick={() => {
+            setSelected(prev => [...prev, makeCustomExerciseId(trimmedQuery)]);
+            setSearchQ('');
+          }} style={{
+            width:'100%', padding:'9px 12px', borderRadius:10, marginBottom:10, flexShrink:0,
+            background:'transparent', border:`1px dashed ${t.accent}70`,
+            color:t.accent, fontSize:12, fontWeight:600, cursor:'pointer',
+            fontFamily:t.sans, textAlign:'left'
+          }}>+ Add "{trimmedQuery}" as a custom exercise</button>
+        )}
+
         <div style={{ display:'flex', gap:6, marginBottom:10, flexShrink:0, flexWrap:'wrap' }}>
           {['all', ...SECTION_ORDER].map(sec => {
             const isActive = section === sec;
@@ -596,6 +642,20 @@ function ExercisePickerSheet({
         </div>
 
         <div style={{ overflowY:'auto', flex:1, paddingRight:2 }} className="phone-scroll">
+          {customResults.map(ex => (
+            <button key={ex.id} onClick={() => toggle(ex.id)} style={{
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              width:'100%', padding:'10px 12px', borderRadius:10,
+              background: t.accent+'12', border:`1.5px solid ${t.accent}`,
+              marginBottom:5, cursor:'pointer', textAlign:'left', fontFamily:t.sans
+            }}>
+              <div>
+                <div style={{ fontSize:13, color:t.text }}>{ex.name}</div>
+                <div style={{ fontSize:10, color:t.text3 }}>{ex.muscle}</div>
+              </div>
+              <span style={{ fontSize:16, color:t.accent }}>✓</span>
+            </button>
+          ))}
           {results.length ? results.map(ex => {
             const isSelected = selected.includes(ex.id);
             return (
@@ -615,11 +675,11 @@ function ExercisePickerSheet({
                 </span>
               </button>
             );
-          }) : (
+          }) : customResults.length === 0 ? (
             <div style={{ textAlign:'center', padding:'30px 0', color:t.text3, fontSize:11.5 }}>
               No matches.
             </div>
-          )}
+          ) : null}
         </div>
 
         <button
@@ -1821,10 +1881,11 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
   todayMidnight.setHours(0, 0, 0, 0);
   const isViewDayPast = viewDayDate < todayMidnight;
 
-  const viewDayCompleted = completedSessions.find(s => {
+  const viewDayCompletedList = completedSessions.filter(s => {
     const sd = new Date(s.date);
     return sd >= viewDayDate && sd <= viewDayDateEnd;
   });
+  const viewDayCompleted = viewDayCompletedList[0] || null;
 
   // Resolve the viewed day's scheduled session
   const viewSlot = schedule[viewDayIdx];
@@ -2353,6 +2414,66 @@ function GymHubScreen({ width = 390, height = 820, theme = 'light',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6
               }}>View day activities ›</button>
             )}
+          </div>
+        )}
+
+        {/* [UI] Activities scheduled the same day as a gym split day (e.g. a
+            conditioning session) — the split-day focus card above only ever
+            showed the split day itself, so anything else scheduled that day
+            (conditioning included) never got its own gym-specific session
+            viewer on this tab. Only rendered for non-rest days, since a rest
+            day's activities already get the full card above. */}
+        {!isViewRest && viewDayActs.length > 0 && (
+          <div style={{
+            background:t.surface, border:`1px solid ${t.border}`, borderRadius:18,
+            padding:'14px 16px', marginBottom:14
+          }}>
+            <div style={{
+              fontSize:9.5, letterSpacing:'.16em', textTransform:'uppercase',
+              color:t.text3, marginBottom:10, fontWeight:600
+            }}>
+              Also scheduled {WEEK_DAYS[viewDayIdx]}
+            </div>
+            {viewDayActs.map((act, i) => {
+              const actCompleted = findCompletedForActivity(act, viewDayCompletedList);
+              return (
+                <div key={i} style={{
+                  display:'flex', alignItems:'center', gap:10, padding:'9px 0',
+                  borderTop: i > 0 ? `1px solid ${t.border}` : 'none'
+                }}>
+                  <div style={{
+                    width:36, height:36, borderRadius:10, flexShrink:0,
+                    background:(act.color || t.accent) + '18',
+                    display:'flex', alignItems:'center', justifyContent:'center', fontSize:17
+                  }}>{act.emoji || '⚡'}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, color:t.text }}>{act.label}</div>
+                    {act.duration && (
+                      <div style={{ fontSize:10.5, color:t.text3, marginTop:1 }}>{act.duration} min</div>
+                    )}
+                  </div>
+                  {actCompleted ? (
+                    <button onClick={() => onViewSummary && onViewSummary(actCompleted)} style={{
+                      padding:'8px 12px', borderRadius:9, background:t.green+'18', color:t.green,
+                      border:`1px solid ${t.green}40`, fontFamily:t.sans, fontSize:11.5,
+                      fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>✓ Logged</button>
+                  ) : viewDayIdx === dayOfWeek ? (
+                    <button onClick={() => handleStartActivity(act)} style={{
+                      padding:'8px 12px', borderRadius:9, border:'none',
+                      background: act.color || t.accent, color:'#fff',
+                      fontFamily:t.sans, fontSize:11.5, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>Start</button>
+                  ) : (
+                    <button onClick={() => onTapDay && onTapDay(viewDayIdx)} style={{
+                      padding:'8px 12px', borderRadius:9, background:'transparent',
+                      border:`1px solid ${t.border2}`, color:t.text2,
+                      fontFamily:t.sans, fontSize:11.5, cursor:'pointer', whiteSpace:'nowrap'
+                    }}>View ›</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

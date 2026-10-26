@@ -2,6 +2,7 @@ import React from 'react';
 import themes from '../data/themes';
 import { PulseDot, BottomNav } from '../components/SharedUI';
 import { ExerciseImage } from './ExerciseScreens';
+import { ExercisePickerSheet, buildQueueFromExerciseIds } from './GymPlanScreens';
 const GYM_QUEUE = [
   {
     id: 'bench',
@@ -49,6 +50,7 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
   const [restSec, setRestSec]         = React.useState(0);
   const [showEndConfirm, setShowEndConfirm] = React.useState(false);
   const [editingSetIdx, setEditingSetIdx]   = React.useState(null);
+  const [showAddExercise, setShowAddExercise] = React.useState(false);
 
   // Clear edit mode when exercise changes
   React.useEffect(() => { setEditingSetIdx(null); }, [exIdx]);
@@ -128,6 +130,14 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
     if (onExit) onExit();
   };
   const jumpToExercise = (i) => setSession(s => ({ ...s, exIdx: i }));
+  // Appends exercises picked mid-session onto the end of the live queue —
+  // covers both "forgot to plan one ahead of time" and a conditioning
+  // session that was started with too few exercises pre-selected.
+  const addExercises = (ids) => {
+    const additions = buildQueueFromExerciseIds(ids);
+    setSession(s => ({ ...s, queue: [...(s.queue || queue), ...additions] }));
+    setShowAddExercise(false);
+  };
 
   return (
     <div style={{
@@ -532,9 +542,31 @@ function GymSessionScreen({ width = 390, height = 820, theme = 'light', session,
             </div>
           </div>
         ))}
+
+        {/* [ACTION] Lets the athlete add an exercise that wasn't planned
+            ahead of time — e.g. a conditioning session started with too few
+            exercises pre-selected — without having to end and restart. */}
+        <button onClick={() => setShowAddExercise(true)} style={{
+          width:'100%', padding:'11px', borderRadius:12, marginBottom:4,
+          background:'transparent', border:`1px dashed ${t.border2}`,
+          color:t.text2, fontFamily:t.sans, fontSize:12, fontWeight:500, cursor:'pointer'
+        }}>+ Add exercise</button>
       </div>
 
       <BottomNav theme={theme} active="gym" onNav={onNav} tracksCycle={tracksCycle} hasGym={hasGym} hasEventTraining={hasEventTraining} hasTrainingActivities={hasTrainingActivities}/>
+
+      {/* Add-exercise picker — appends to the live queue rather than
+          replacing it, so sets already logged on earlier exercises stay put. */}
+      {showAddExercise && (
+        <ExercisePickerSheet
+          theme={theme}
+          title="Add exercise"
+          confirmLabel="Add to session"
+          initialSelectedIds={[]}
+          onConfirm={addExercises}
+          onClose={() => setShowAddExercise(false)}
+        />
+      )}
 
       {/* End-session confirm sheet */}
       {showEndConfirm && (
