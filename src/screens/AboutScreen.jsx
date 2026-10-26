@@ -1008,6 +1008,7 @@ function AboutScreen({
                   </div>
                   <div style={{ fontSize: 11, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
                     You'll go through goal setup and the questionnaire again, starting from your current answers. Nothing changes until you finish — your plan regenerates automatically at the end.
+                    {hasEventTraining && ' Finishing also removes your current training plan (including an uploaded one) from today onward; past weeks are kept.'}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => setRedoConfirming(false)} style={{
