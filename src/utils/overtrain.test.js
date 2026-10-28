@@ -8,7 +8,7 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({ from: fromMock }),
 }));
 
-const { checkWeek, findRef } = await import('./overtrain');
+const { checkWeek, findRef, flattenWeekData } = await import('./overtrain');
 
 const REF_ROWS = [
   { name: 'Football', category: 'team_sport', leg_load: 'high', upper_load: 'low', cardio_load: 'high', core_load: 'low', recovery_hours: 48, intensity_default: 'high' },
@@ -70,5 +70,17 @@ describe('checkWeek — regression: fires from a direct call, not just after a d
 describe('findRef still exported from overtrain.js', () => {
   it('matches by exact name', () => {
     expect(findRef('Football', REF_ROWS)?.name).toBe('Football');
+  });
+});
+
+describe('flattenWeekData', () => {
+  it('labels each session with its real weekday, even when the plan week starts mid-week', () => {
+    // Plan week starting Tuesday 27 Oct 2026: row 1 (dayIdx 1) is Wednesday —
+    // previously labelled "Tue" because dayIdx was read as Monday-first.
+    const weekData = [
+      { d: new Date(Date.UTC(2026, 9, 27)), dk: '2026-10-27', dayIdx: 0, sessions: [{ id: 'a', label: 'Run', type: 'run' }] },
+      { d: new Date(Date.UTC(2026, 9, 28)), dk: '2026-10-28', dayIdx: 1, sessions: [{ id: 'b', label: 'Conditioning', type: 'conditioning' }] },
+    ];
+    expect(flattenWeekData(weekData).map(s => s.dayLabel)).toEqual(['Tue', 'Wed']);
   });
 });

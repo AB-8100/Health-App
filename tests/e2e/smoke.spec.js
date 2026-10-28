@@ -217,6 +217,46 @@ test.describe('core screens render without error', () => {
     expect(page.__consoleErrors).toEqual([]);
   });
 
+  test('a 10K with every day available gets fewer runs than days, rest days, and pace/distance targets', async ({ page }) => {
+    // Tester feedback: ticking every day used to produce a run every day with
+    // no targets. Days are now availability; the plan picks how many to run.
+    await page.getByRole('button', { name: /about|me|profile|settings/i }).first().click();
+    await page.getByRole('button', { name: /redo my goals/i }).click();
+    await page.getByRole('button', { name: /^continue$/i }).click();
+    for (let i = 0; i < 5; i++) {
+      if (await page.getByText(/^Race details\.$/).isVisible().catch(() => false)) break;
+      await page.getByRole('button', { name: /^continue →$/i }).click();
+    }
+    await page.getByRole('button', { name: '10K', exact: true }).click();
+    await page.getByTestId('race-goal-time').click();
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    await expect(page.getByText(/days you're available/i)).toBeVisible();
+    for (const day of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']) {
+      const toggle = page.getByTestId(`day-toggle-run-${day}`);
+      if ((await toggle.getAttribute('data-selected')) !== 'true') await toggle.click();
+    }
+    await page.getByTestId('strength-mode-gym').click();
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    await expect(page.getByText(/^Run baseline\.$/)).toBeVisible();
+    await expect(page.getByText(/how many days a week do you want to run/i)).toBeVisible();
+    await expect(page.getByTestId('runs-per-week-7')).toHaveCount(0); // capped at 6 — always a rest day
+    await page.getByTestId('runs-per-week-4').click();
+    await page.getByRole('button', { name: /^continue →$/i }).click();
+
+    for (let i = 0; i < 6; i++) {
+      if (await page.getByText(/your plan is ready/i).isVisible().catch(() => false)) break;
+      await page.getByRole('button', { name: /^continue →$/i }).click();
+    }
+    await expect(page.getByText(/your plan is ready/i)).toBeVisible();
+    await page.getByRole('button', { name: /^enter forma →$/i }).click();
+
+    await expect(page.getByTestId('session-target').first()).toBeVisible();
+    await expect(page.getByTestId('session-target').first()).toContainText(/km/);
+    expect(page.__consoleErrors).toEqual([]);
+  });
+
   test('About screen shows a standalone Glossary section irrespective of plan state', async ({ page }) => {
     // The Glossary bar always renders data/planGlossary.js's full static
     // list — unlike Training plan's collapsible "Plan overview", it does not

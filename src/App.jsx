@@ -585,6 +585,7 @@ function App() {
           disciplineRanking: newIntake.disciplineRanking,
           baselines: { run: newIntake.runBaseline, swim: newIntake.swimBaseline, bike: newIntake.bikeBaseline },
           preferences: newIntake.preferences,
+          raceGoal: eventGoalCfg.raceGoal,
           gymAccess,
           holidays: newIntake.availability?.holidays,
           oneOffEvents: newIntake.availability?.oneOffEvents,

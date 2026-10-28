@@ -61,13 +61,15 @@ const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Flattens buildWeekData()'s per-day session shape into the flat, dated
 // session list resolveExpectedLoad/buildSequencingDecisions expect.
-function flattenWeekData(weekData) {
+export function flattenWeekData(weekData) {
   const flat = [];
   weekData.forEach(day => {
     (day.sessions || []).forEach(s => {
       flat.push({
         id: s.id,
-        dayLabel: DAY_SHORT[day.dayIdx] || day.dayIdx,
+        // Real weekday of the date, not the row position: a plan week can
+        // start on any weekday (e.g. Tuesday), so dayIdx 0 isn't always Monday.
+        dayLabel: day.d ? DAY_SHORT[(day.d.getUTCDay() + 6) % 7] : (DAY_SHORT[day.dayIdx] || day.dayIdx),
         date: day.dk,
         name: s.label || s.type || '',
         type: s.type,

@@ -112,6 +112,8 @@ export function buildWeekData(viewWeek, plan, activities, eventOverrides, hasGym
           type: SESSION_DISPLAY[type] ? type : 'conditioning',
           label: s.label || type,
           detail: [s.sessionType, s.duration, s.flag].filter(Boolean).join(' · '),
+          // [DATA] Pace/distance line for engine-generated road runs (planEngine → runWeekPlanner)
+          target: s.target || '',
           source: 'event_plan',
           raw: s,
           dayIdx: i,
@@ -269,26 +271,38 @@ function SessionBar({ session, isDragging }) {
   // Completed sessions get a solid fill instead of the usual tinted/see-through
   // treatment, so a finished session visibly stands out from the rest of the week.
   const textColor = done ? '#fff' : color;
+  const target = session.target;
+  // [UI] Slightly larger bar than before so a run's pace/distance target fits
+  // on its own wrapped line under the title row instead of being truncated.
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 7,
+      display: 'flex', alignItems: target ? 'flex-start' : 'center', gap: 8,
       background: done ? color : (isDragging ? color + '28' : color + '14'),
       border: `1px solid ${done ? color : color + (isDragging ? '55' : '28')}`,
-      borderRadius: 9, padding: '6px 10px',
+      borderRadius: 10, padding: '8px 11px',
       width: '100%', boxSizing: 'border-box',
       boxShadow: isDragging ? `0 3px 10px ${color}35` : 'none',
       transform: isDragging ? 'scale(1.02)' : 'none',
       transition: 'box-shadow .1s, transform .1s, background .2s',
       cursor: 'grab', userSelect: 'none',
     }}>
-      <span style={{ fontSize: 13, flexShrink: 0 }}>{done ? '✓' : emoji}</span>
-      <span style={{ fontSize: 11.5, fontWeight: 600, color: textColor, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
-      {detail && (
-        <span style={{
-          fontSize: 10, color: done ? '#ffffffcc' : color + 'BB', flex: 1, minWidth: 0,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{detail}</span>
-      )}
+      <span style={{ fontSize: 14, flexShrink: 0, lineHeight: '18px' }}>{done ? '✓' : emoji}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: textColor, flexShrink: 0, whiteSpace: 'nowrap', lineHeight: '18px' }}>{label}</span>
+          {detail && (
+            <span style={{
+              fontSize: 11, color: done ? '#ffffffcc' : color + 'BB', flex: 1, minWidth: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{detail}</span>
+          )}
+        </div>
+        {target && (
+          <div data-testid="session-target" style={{
+            fontSize: 11, fontWeight: 500, color: done ? '#ffffffdd' : color, marginTop: 3, lineHeight: 1.35,
+          }}>{target}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -532,7 +546,9 @@ function DayRow({ d, dk, sessions, isToday, dayIdx, decisions, sequencingDecisio
               {...provided.droppableProps}
               onClick={onClick}
               style={{
-                flex: 1, borderLeft: `1px solid ${t.border}`,
+                // minWidth 0 lets long session text truncate instead of
+                // stretching the column past the card's right edge.
+                flex: 1, minWidth: 0, borderLeft: `1px solid ${t.border}`,
                 paddingLeft: 10, paddingTop: 8, paddingBottom: decisions.length ? 4 : 8, paddingRight: 8,
                 display: 'flex', flexDirection: 'column', gap: 5, cursor: 'pointer',
                 minHeight: 44,

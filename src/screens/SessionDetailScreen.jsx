@@ -42,7 +42,10 @@ function findGlossaryEntry(sess, glossary) {
   // A conditioning session's sessionType is the athlete's own selected
   // exercise list (e.g. "Circuit: Bird dog, Clamshell..."), not a fixed
   // glossary term — match by type instead of exact sessionType text.
-  if (raw.type === 'conditioning') return glossary.find(g => g.term === 'Conditioning circuit') || null;
+  if (raw.type === 'conditioning') {
+    const term = raw.sessionType?.startsWith('Gym strength: ') ? 'Strength session' : 'Conditioning circuit';
+    return glossary.find(g => g.term === term) || null;
+  }
   return glossary.find(g => g.term === raw.sessionType) || null;
 }
 
@@ -408,6 +411,10 @@ export function SessionDetailScreen({
                       <div style={{ fontFamily: t.serif, fontSize: 19, color: t.text, lineHeight: 1.1 }}>{label}</div>
                       {sess.detail && (
                         <div style={{ fontSize: 11.5, color: t.text3, marginTop: 3 }}>{sess.detail}</div>
+                      )}
+                      {/* [UI] Pace/distance target for engine-generated road runs */}
+                      {sess.raw?.target && (
+                        <div style={{ fontSize: 12, color: color, fontWeight: 500, marginTop: 4, lineHeight: 1.4 }}>{sess.raw.target}</div>
                       )}
                     </div>
                     {glossaryEntry && (

@@ -76,6 +76,7 @@ src/
 │   ├── trainingPlanImport.js      Hand-rolled .xlsx parser (JSZip + DOMParser) for uploaded event plans
 │   ├── eventDaySessions.js        Resolves which sessions apply to a date (override vs. uploaded plan)
 │   ├── sessionCompletion.js       Matches completed sessions to scheduled ones for a given day
+│   ├── runWeekPlanner.js          Road-running week structure for planEngine.js: runs/week, day spread, hard/easy roles, strength days, pace zones + targets
 │   └── planEngine.js              Deterministic training-plan generator — see §7.4
 ├── components/
 │   ├── SharedUI.jsx               AnimatedNumber, StackedRings, PulseDot, BottomNav, DraftPlanBanner
@@ -443,6 +444,7 @@ Redirect URL allow-list and Google Cloud Console's Authorized JS origins.
 | Change what happens on sign-up/sign-in | `App.jsx` (`bootstrapUser`, `handleLogin`, `handleSignUp`), `screens/LoginScreen.jsx` |
 | Add a new onboarding question | `screens/GoalsSetupScreen.jsx` (the whole merged flow lives here now) + matching Supabase migration + `utils/supabase.js` mappers |
 | Change a training-plan taper/phase/volume rule | `utils/planEngine.js` (tables + pure functions), `data/sessionLibraries.js` (session content), `data/planGlossary.js` (terms) |
+| Change how a 10K/Half/Marathon week is laid out (run count, rest days, hard-day spacing, strength placement, paces) | `utils/runWeekPlanner.js` |
 | Change a workout split template or exercise | `screens/GymPlanScreens.jsx` (`EX_LIB`, `SPLITS`) |
 | Change how a live workout is logged | `screens/GymSessionScreen.jsx` |
 | Change what shows on the weekly planner | `screens/WeeklyOverviewScreen.jsx` (`buildWeekData`), `utils/eventDaySessions.js`, `utils/sessionCompletion.js` |
