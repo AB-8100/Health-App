@@ -17,6 +17,7 @@ import {
   formatPaceForDiscipline, legDistanceKm, formatSecondsAsHMS,
 } from '../utils/raceTargets';
 import { isEngineSupportedRaceType, buildTrainingPlan, isTrailRaceType } from '../utils/planEngine';
+import { recommendedRunsPerWeek, MAX_RUNS_PER_WEEK, MIN_RUNS_PER_WEEK } from '../utils/runWeekPlanner';
 import { CONDITIONING_EXERCISES } from '../data/conditioningLibrary';
 import { PlanOverviewSection } from './AboutScreen';
 
@@ -58,6 +59,24 @@ const RACE_TYPES = [
 ];
 
 const FITNESS_LEVELS = ['Beginner', 'Intermediate', 'Fit but new to this'];
+// [DATA] One-line descriptions so self-rated fitness is answered consistently.
+const FITNESS_LEVEL_HINTS = {
+  'Beginner': 'New to regular training, or running less than twice a week',
+  'Intermediate': 'Running 3+ times a week for 6+ months',
+  'Fit but new to this': 'Regularly active in other sports, but new to this kind of event',
+};
+// [DATA] Road-running race goal — sets how many hard sessions a week the plan uses.
+const RACE_GOALS = [
+  { value: 'finish', label: 'Finish comfortably' },
+  { value: 'time',   label: 'Beat a time' },
+  { value: 'race',   label: 'Race hard' },
+];
+// [DATA] Strength training choice — replaces inferring it from gym access alone.
+const STRENGTH_MODES = [
+  { value: 'none',       label: 'No' },
+  { value: 'bodyweight', label: 'Bodyweight' },
+  { value: 'gym',        label: 'Gym' },
+];
 const STRENGTH_FOCUSES = ['Powerlifting', 'Olympic Lifting', 'General Strength', 'Body Recomposition', 'Calisthenics'];
 const SPORT_TYPES = [
   'Football', 'Basketball', 'Tennis', 'Swimming', 'Synchronised Swimming', 'Cycling', 'Running',
@@ -113,13 +132,13 @@ const DEFAULT_CONFIG = {
 };
 
 const EMPTY_INTAKE = {
-  runBaseline:  { time5k: '', time10k: '', timeHalfMarathon: '', timeMarathon: '', longestEffortKm: '', canRunContinuously60min: null, longestEffortMinutes: '' },
+  runBaseline:  { time5k: '', time10k: '', timeHalfMarathon: '', timeMarathon: '', longestEffortKm: '', canRunContinuously60min: null, longestEffortMinutes: '', runsPerWeekCurrent: '', weeklyKm: '', usualLongRunMinutes: '' },
   swimBaseline: { time400m: '', longestSessionM: '', openWaterExperience: '', wetsuitExperience: '' },
   bikeBaseline: { ftpWatts: '', longestRideKm: '', bikeType: '' },
   disciplineRanking: [],
   targetPaces: null,
   availability: { holidays: [], oneOffEvents: [] },
-  preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '', hillDay: '' },
+  preferences: { longSessionDay: '', secondDisciplineDay: '', conditioningDay: '', hillDay: '', runsPerWeek: null, restDays: [], allowDoubleDays: null, strengthMode: '', strengthPerWeek: 1 },
   injury: { pastInjuries: [], currentNiggles: '', healthConditions: '', avoidExerciseIds: [], aggravatingFactors: '' },
 };
 
@@ -249,6 +268,17 @@ export function GoalsSetupScreen({
   const eventCfg = goalConfigs['event_race'] || {};
   const triathlon = isTriathlonRaceType(eventCfg.raceType);
   const raceDisciplines = disciplinesForRaceType(eventCfg.raceType);
+  // [LOGIC] Road running (10K/Half/Marathon) gets the run-frequency, rest-day
+  // and race-goal questions — triathlon and trail schedule every picked day.
+  const roadRace = isRaceGoal(selectedGoals) && isEngineSupportedRaceType(eventCfg.raceType) && !triathlon && !isTrailRaceType(eventCfg.raceType);
+  const maxRunsPerWeek = Math.min((disciplineDays.run || []).length, MAX_RUNS_PER_WEEK);
+  const recommendedRuns = Math.min(
+    recommendedRunsPerWeek({ fitnessLevel: eventCfg.fitnessLevel, currentRunsPerWeek: intake.runBaseline.runsPerWeekCurrent }),
+    maxRunsPerWeek || MAX_RUNS_PER_WEEK,
+  );
+  // [LOGIC] An unanswered strength question follows gym access.
+  const effectiveStrengthMode = intake.preferences.strengthMode || (gymAccess ? 'gym' : 'bodyweight');
+  const enginePreferences = { ...intake.preferences, strengthMode: effectiveStrengthMode };
 
   // Preview-only plan for the "done" step's Plan overview dropdown — built
   // from the exact same inputs handleGoalsSetupComplete (App.jsx) passes to
@@ -271,7 +301,8 @@ export function GoalsSetupScreen({
         disciplineDays,
         disciplineRanking: intake.disciplineRanking,
         baselines: { run: intake.runBaseline, swim: intake.swimBaseline, bike: intake.bikeBaseline },
-        preferences: intake.preferences,
+        preferences: enginePreferences,
+        raceGoal: eventCfg.raceGoal,
         gymAccess,
         holidays: intake.availability?.holidays,
         oneOffEvents: intake.availability?.oneOffEvents,
@@ -455,6 +486,7 @@ export function GoalsSetupScreen({
 
     const intakePayload = {
       ...intake,
+      preferences: enginePreferences,
       status: skipped ? 'draft' : 'complete',
       completedAt: skipped ? null : new Date().toISOString(),
     };
@@ -651,7 +683,11 @@ export function GoalsSetupScreen({
                   const active = eventCfg.fitnessLevel === fl;
                   return (
                     <button key={fl} onClick={() => updateConfig('event_race', { fitnessLevel: fl })} style={optionRowSt(t, active)}>
-                      {fl}{active && <span style={{ color: t.accent, fontSize: 14 }}>✓</span>}
+                      <span>
+                        {fl}
+                        <span style={{ display: 'block', fontSize: 11, color: t.text3, marginTop: 2 }}>{FITNESS_LEVEL_HINTS[fl]}</span>
+                      </span>
+                      {active && <span style={{ color: t.accent, fontSize: 14 }}>✓</span>}
                     </button>
                   );
                 })}
@@ -747,6 +783,14 @@ export function GoalsSetupScreen({
                 )
               )}
             </GField>
+
+            {/* [UI] Race goal — controls how many hard sessions a week (road running only) */}
+            {roadRace && (
+              <GField label="What's your goal for this race?" t={t}>
+                <ChoiceRow options={RACE_GOALS} value={eventCfg.raceGoal || null} testIdPrefix="race-goal"
+                  onChange={v => updateConfig('event_race', { raceGoal: v })} t={t} />
+              </GField>
+            )}
           </div>
         )}
 
@@ -858,14 +902,18 @@ export function GoalsSetupScreen({
         {current === 'day_picker' && (
           <div>
             <StepTitle t={t}>Your training setup.</StepTitle>
-            <StepSub t={t}>{isRaceGoal(selectedGoals) ? 'Which days do you want to train each discipline?' : 'Days you can train, and what you have access to.'}</StepSub>
+            <StepSub t={t}>{isRaceGoal(selectedGoals)
+              ? (roadRace
+                ? 'Which days could you train? Tick every day you\'re free — we\'ll pick how many to actually run on and keep rest days.'
+                : 'Which days do you want to train each discipline?')
+              : 'Days you can train, and what you have access to.'}</StepSub>
 
             {isRaceGoal(selectedGoals) ? (
               raceDisciplines.map(disc => {
                 const meta = DISCIPLINE_META[disc];
                 const days = disciplineDays[disc] || [];
                 return (
-                  <GField key={disc} label={`${meta.icon} ${meta.label} — pick days`} t={t}>
+                  <GField key={disc} label={`${meta.icon} ${meta.label} — ${roadRace ? 'days you\'re available' : 'pick days'}`} t={t}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
                       {DAYS.map((day, i) => {
                         const key = DAY_KEYS[i];
@@ -913,6 +961,24 @@ export function GoalsSetupScreen({
             <GField label="Access" t={t}>
               <ToggleCard icon="🏋️" title="Gym access" sub="Weight room, machines, cables" active={gymAccess} onToggle={() => setGymAccess(v => !v)} t={t} />
             </GField>
+
+            {/* [UI] Explicit strength choice — gym access alone doesn't say whether they want it */}
+            {isRaceGoal(selectedGoals) && isEngineSupportedRaceType(eventCfg.raceType) && (
+              <GField label="Do you want strength training in your plan?" t={t}>
+                <ChoiceRow options={STRENGTH_MODES} value={effectiveStrengthMode} testIdPrefix="strength-mode"
+                  onChange={v => patchIntake('preferences', { strengthMode: v })} t={t} />
+                {roadRace && effectiveStrengthMode !== 'none' && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={miniLabelSt(t)}>Sessions per week</div>
+                    <ChoiceRow options={[{ value: 1, label: '1' }, { value: 2, label: '2' }]} value={intake.preferences.strengthPerWeek || 1}
+                      testIdPrefix="strength-per-week" onChange={v => patchIntake('preferences', { strengthPerWeek: v })} t={t} />
+                  </div>
+                )}
+                {effectiveStrengthMode === 'gym' && !gymAccess && (
+                  <div style={{ fontSize: 10.5, color: t.text3, marginTop: 6 }}>Gym sessions need gym access — turn it on above, or pick bodyweight.</div>
+                )}
+              </GField>
+            )}
 
             <GField label="Other regular commitments" t={t}>
               <div style={{ fontSize: 11.5, color: t.text3, marginBottom: 10, lineHeight: 1.4 }}>
@@ -964,15 +1030,64 @@ export function GoalsSetupScreen({
             <DQField label="10K time" hint="e.g. 53:00" t={t}><TimeInput value={intake.runBaseline.time10k} onChange={v => patchIntake('runBaseline', { time10k: v })} placeholder="mm:ss" t={t} /></DQField>
             <DQField label="Half marathon time" hint="e.g. 1:58:00" t={t}><TimeInput value={intake.runBaseline.timeHalfMarathon} onChange={v => patchIntake('runBaseline', { timeHalfMarathon: v })} placeholder="h:mm:ss" t={t} /></DQField>
             <DQField label="Marathon time" hint="e.g. 4:12:00" t={t}><TimeInput value={intake.runBaseline.timeMarathon} onChange={v => patchIntake('runBaseline', { timeMarathon: v })} placeholder="h:mm:ss" t={t} /></DQField>
+            {/* [UI] Current training load — sets a safe starting volume and run frequency */}
             {!isTrailRaceType(eventCfg.raceType) && (
-              <DQField label="Longest single run recently (km)" t={t}>
-                <input type="number" inputMode="decimal" min="0" max="200" step="0.5" value={intake.runBaseline.longestEffortKm}
-                  onChange={e => patchIntake('runBaseline', { longestEffortKm: e.target.value })} placeholder="e.g. 18" style={inputSt(t)} />
-              </DQField>
+              <>
+                <DQField label="Your running over the last 4 weeks" hint="Rough averages are fine." t={t}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div style={miniLabelSt(t)}>Runs per week</div>
+                      <input type="number" inputMode="numeric" min="0" max="14" step="1" value={intake.runBaseline.runsPerWeekCurrent}
+                        data-testid="runs-per-week-current"
+                        onChange={e => patchIntake('runBaseline', { runsPerWeekCurrent: e.target.value })} placeholder="e.g. 3" style={inputSt(t)} />
+                    </div>
+                    <div>
+                      <div style={miniLabelSt(t)}>Km per week</div>
+                      <input type="number" inputMode="decimal" min="0" max="300" step="1" value={intake.runBaseline.weeklyKm}
+                        onChange={e => patchIntake('runBaseline', { weeklyKm: e.target.value })} placeholder="e.g. 20" style={inputSt(t)} />
+                    </div>
+                  </div>
+                </DQField>
+                <DQField label="Your longest run in the last month" hint="Same run for both — used to set where your long run starts." t={t}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div style={miniLabelSt(t)}>Distance (km)</div>
+                      <input type="number" inputMode="decimal" min="0" max="200" step="0.5" value={intake.runBaseline.longestEffortKm}
+                        onChange={e => patchIntake('runBaseline', { longestEffortKm: e.target.value })} placeholder="e.g. 10" style={inputSt(t)} />
+                    </div>
+                    <div>
+                      <div style={miniLabelSt(t)}>Time (minutes)</div>
+                      <input type="number" inputMode="numeric" min="0" max="600" step="5" value={intake.runBaseline.longestEffortMinutes}
+                        onChange={e => patchIntake('runBaseline', { longestEffortMinutes: e.target.value })} placeholder="e.g. 60" style={inputSt(t)} />
+                    </div>
+                  </div>
+                </DQField>
+              </>
             )}
             <DQField label="Can you run continuously for 60 minutes?" t={t}>
               <YesNoRow value={intake.runBaseline.canRunContinuously60min} onChange={v => patchIntake('runBaseline', { canRunContinuously60min: v })} t={t} />
             </DQField>
+            {/* [UI] Follow-up turns the yes/no into a real starting long run */}
+            {intake.runBaseline.canRunContinuously60min === true && !isTrailRaceType(eventCfg.raceType) && (
+              <DQField label="How long is your usual long run? (minutes)" hint="Your plan's first long run starts here, not below it." t={t}>
+                <input type="number" inputMode="numeric" min="0" max="600" step="5" value={intake.runBaseline.usualLongRunMinutes}
+                  data-testid="usual-long-run"
+                  onChange={e => patchIntake('runBaseline', { usualLongRunMinutes: e.target.value })} placeholder="e.g. 70" style={inputSt(t)} />
+              </DQField>
+            )}
+            {/* [UI] Training frequency — separate from the days they're available */}
+            {roadRace && maxRunsPerWeek >= MIN_RUNS_PER_WEEK && (
+              <DQField label="How many days a week do you want to run?"
+                hint={`You're available ${(disciplineDays.run || []).length} day${(disciplineDays.run || []).length === 1 ? '' : 's'}. We recommend ${recommendedRuns} for your fitness and current running — and always keep at least one full rest day.`} t={t}>
+                <ChoiceRow
+                  options={Array.from({ length: maxRunsPerWeek - MIN_RUNS_PER_WEEK + 1 }, (_, i) => {
+                    const n = MIN_RUNS_PER_WEEK + i;
+                    return { value: n, label: String(n), badge: n === recommendedRuns ? 'Rec.' : null };
+                  })}
+                  value={intake.preferences.runsPerWeek || recommendedRuns} testIdPrefix="runs-per-week"
+                  onChange={v => patchIntake('preferences', { runsPerWeek: v })} t={t} />
+              </DQField>
+            )}
             {isTrailRaceType(eventCfg.raceType) && (
               <DQField label="Your longest continuous run or hike recently" hint="Same outing, roughly is fine — used to size your long run so it actually builds toward your race distance." t={t}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1117,10 +1232,36 @@ export function GoalsSetupScreen({
                 <DaySelect value={intake.preferences.hillDay} onChange={v => patchIntake('preferences', { hillDay: v })} t={t} />
               </DQField>
             )}
-            {gymAccess && (
-              <DQField label="Conditioning day" hint="Won't be placed on the same day as a long or high-intensity session unless chosen here." t={t}>
+            {effectiveStrengthMode !== 'none' && (
+              <DQField label="Strength day" hint="Won't be placed on the same day as a long or high-intensity session unless chosen here." t={t}>
                 <DaySelect value={intake.preferences.conditioningDay} onChange={v => patchIntake('preferences', { conditioningDay: v })} t={t} />
               </DQField>
+            )}
+            {/* [UI] Road running: guaranteed rest days + whether strength can share a day with a run */}
+            {roadRace && (
+              <>
+                <DQField label="Preferred rest day(s)" hint="We'll keep runs off these days where we can." t={t}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+                    {DAYS.map((day, i) => {
+                      const key = DAY_KEYS[i];
+                      const restDays = intake.preferences.restDays || [];
+                      const on = restDays.includes(key);
+                      return (
+                        <button key={key} data-testid={`rest-day-${key}`} onClick={() => patchIntake('preferences', { restDays: on ? restDays.filter(d => d !== key) : [...restDays, key] })} style={{
+                          padding: '10px 0', borderRadius: 10, fontSize: 10.5, fontWeight: 600,
+                          background: on ? t.accent : t.surface, color: on ? t.accentText : t.text3,
+                          border: `1.5px solid ${on ? t.accent : t.border}`, fontFamily: t.sans, cursor: 'pointer',
+                        }}>{day}</button>
+                      );
+                    })}
+                  </div>
+                </DQField>
+                {effectiveStrengthMode !== 'none' && (
+                  <DQField label="Can you do two sessions in one day?" hint="e.g. an easy run in the morning and strength later. Yes keeps more full rest days." t={t}>
+                    <YesNoRow value={intake.preferences.allowDoubleDays ?? null} onChange={v => patchIntake('preferences', { allowDoubleDays: v })} t={t} />
+                  </DQField>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1283,6 +1424,28 @@ function inputSt(t) {
 }
 function dateInputSt(t) {
   return { ...inputSt(t), padding: '12px 14px', fontSize: 14 };
+}
+// [COMPONENT] Single-select pill row (like YesNoRow, for 2+ options) with an
+// optional small badge, e.g. marking the recommended run count.
+function ChoiceRow({ options, value, onChange, t, testIdPrefix }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {options.map(opt => {
+        const active = value === opt.value;
+        return (
+          <button key={String(opt.value)} data-testid={testIdPrefix ? `${testIdPrefix}-${opt.value}` : undefined} data-selected={active}
+            onClick={() => onChange(opt.value)} style={{
+              flex: 1, padding: '10px 4px', borderRadius: 10, background: active ? t.accent + '15' : t.surface,
+              border: `1.5px solid ${active ? t.accent : t.border}`, color: active ? t.accent : t.text,
+              fontFamily: t.sans, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', lineHeight: 1.2,
+            }}>
+            {opt.label}
+            {opt.badge && <span style={{ display: 'block', fontSize: 9, fontWeight: 500, color: t.text3, marginTop: 2 }}>{opt.badge}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 function YesNoRow({ value, onChange, t }) {
   return (

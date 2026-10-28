@@ -62,3 +62,26 @@ export function selectConditioningExercises({ areas = [], avoidIds = [], count =
   pushUnique(rest);
   return picked;
 }
+
+// Gym strength session for runners who chose "Gym" for strength training in
+// onboarding — compound lower-body + core work with real load, as opposed
+// to the bodyweight circuit above. `relatedIds` links each lift to the
+// bodyweight catalog entry an athlete can tick as "avoid" in onboarding, so
+// avoiding e.g. 'squat' also drops the loaded back squat.
+export const GYM_STRENGTH_EXERCISES = [
+  { id: 'back_squat',        name: 'Back squat',        prescription: '3×6',      relatedIds: ['squat'] },
+  { id: 'romanian_deadlift', name: 'Romanian deadlift', prescription: '3×8',      relatedIds: ['hip_hinge'] },
+  { id: 'split_squat',       name: 'Split squat',       prescription: '3×8/leg',  relatedIds: ['lunge'] },
+  { id: 'step_up_weighted',  name: 'Weighted step-up',  prescription: '2×8/leg',  relatedIds: ['step_up'] },
+  { id: 'calf_raise_loaded', name: 'Calf raise',        prescription: '3×12',     relatedIds: ['calf_raise'] },
+  { id: 'plank_gym',         name: 'Plank',             prescription: '3×40s',    relatedIds: ['plank'] },
+];
+
+// Up to `count` gym lifts, in catalog order, skipping anything the athlete
+// asked to avoid (directly or via its bodyweight equivalent).
+export function selectGymStrengthExercises({ avoidIds = [], count = 5 } = {}) {
+  const avoid = new Set(avoidIds);
+  return GYM_STRENGTH_EXERCISES
+    .filter(e => !avoid.has(e.id) && !e.relatedIds.some(id => avoid.has(id)))
+    .slice(0, count);
+}

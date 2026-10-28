@@ -498,3 +498,120 @@ describe('buildTrainingPlan — plan health', () => {
     expect(typeof plan.meta.planHealth.summary).toBe('string');
   });
 });
+
+// Regression for tester feedback: a 10K a few weeks out, every day ticked as
+// available, can already run 60min continuously, has gym access. The old
+// engine produced a run every day, back-to-back hard sessions, a 47min long
+// run and no real strength work.
+function tenKIntake(overrides = {}) {
+  return {
+    raceType: '10K',
+    startDate: '2026-10-27', // Tuesday
+    raceDate: '2026-11-29',  // ~5 weeks
+    fitnessLevel: 'Intermediate',
+    disciplineDays: { run: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] },
+    baselines: { run: { canRunContinuously60min: true } },
+    preferences: { longSessionDay: 'sunday', strengthMode: 'gym', strengthPerWeek: 2 },
+    gymAccess: true,
+    holidays: [],
+    oneOffEvents: [],
+    targetPaces: null,
+    injury: {},
+    ...overrides,
+  };
+}
+
+function dowKey(dk) {
+  return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date(dk + 'T00:00:00Z').getUTCDay()];
+}
+
+function nextDateKey(dk, n = 1) {
+  const d = new Date(dk + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+describe('buildTrainingPlan — road running week structure (10K tester feedback)', () => {
+  it('treats selected days as availability — never more than 6 runs a week, with a rest day every full week', () => {
+    const plan = buildTrainingPlan(tenKIntake());
+    const runsByWeek = {};
+    Object.values(plan.sessions).flat().filter(e => e.type === 'run').forEach(e => {
+      runsByWeek[e.week] = (runsByWeek[e.week] || 0) + 1;
+    });
+    Object.values(runsByWeek).forEach(n => expect(n).toBeLessThanOrEqual(6));
+    expect(plan.meta.planHealth.weeksWithoutRest).toEqual([]);
+  });
+
+  it('uses the recommended 4 runs a week for an Intermediate athlete by default, or the number asked for', () => {
+    const countWeek2 = (plan) => Object.values(plan.sessions).flat().filter(e => e.type === 'run' && e.week === 2).length;
+    expect(countWeek2(buildTrainingPlan(tenKIntake()))).toBe(4);
+    expect(countWeek2(buildTrainingPlan(tenKIntake({ preferences: { longSessionDay: 'sunday', runsPerWeek: 3 } })))).toBe(3);
+  });
+
+  it('never puts hard runs on consecutive days or the day before the long run', () => {
+    const plan = buildTrainingPlan(tenKIntake({ preferences: { longSessionDay: 'sunday', runsPerWeek: 6 }, raceGoal: 'race' }));
+    Object.entries(plan.sessions).forEach(([dk, entries]) => {
+      if (!entries.some(e => e.type === 'run' && e.intensity !== 'Low')) return;
+      const next = plan.sessions[nextDateKey(dk)] || [];
+      expect(next.some(e => e.type === 'run' && e.intensity !== 'Low')).toBe(false);
+      expect(next.some(e => e.sessionType === 'Long run')).toBe(false);
+    });
+  });
+
+  it('starts the long run at what the athlete can already run (60min), not below it', () => {
+    const plan = buildTrainingPlan(tenKIntake());
+    const week1Long = Object.values(plan.sessions).flat().find(e => e.week === 1 && e.sessionType === 'Long run');
+    expect(parseInt(week1Long.duration, 10)).toBeGreaterThanOrEqual(60);
+  });
+
+  it('builds the 10K long run beyond race distance for a non-beginner', () => {
+    const plan = buildTrainingPlan(tenKIntake({ startDate: '2026-08-31' })); // full-length plan
+    const maxKm = Math.max(...Object.values(plan.sessions).flat().filter(e => e.sessionType === 'Long run').map(e => e.distanceKm));
+    expect(maxKm).toBeGreaterThan(10);
+  });
+
+  it('gives every run a distance and pace target', () => {
+    const plan = buildTrainingPlan(tenKIntake({ baselines: { run: { time10k: '50:00', canRunContinuously60min: true } } }));
+    Object.values(plan.sessions).flat().filter(e => e.type === 'run').forEach(e => {
+      expect(e.target).toMatch(/≈[\d.]+ km/);
+      expect(e.target).toMatch(/\d:\d\d–\d:\d\d\/km/);
+      expect(e.distanceKm).toBeGreaterThan(0);
+    });
+  });
+
+  it('schedules gym strength twice a week in Build, never on the long-run day or a hard run day', () => {
+    const plan = buildTrainingPlan(tenKIntake());
+    const week1Strength = Object.entries(plan.sessions).filter(([, es]) => es.some(e => e.week === 1 && e.type === 'conditioning'));
+    expect(week1Strength).toHaveLength(2);
+    Object.values(plan.sessions).forEach(entries => {
+      const strength = entries.find(e => e.type === 'conditioning');
+      if (!strength) return;
+      expect(strength.sessionType).toMatch(/^Gym strength: .*Back squat/);
+      expect(entries.some(e => e.sessionType === 'Long run' || (e.type === 'run' && e.intensity !== 'Low'))).toBe(false);
+    });
+    expect(plan.meta.glossary.some(g => g.term === 'Strength session')).toBe(true);
+  });
+
+  it('drops strength entirely when the athlete says no', () => {
+    const plan = buildTrainingPlan(tenKIntake({ preferences: { longSessionDay: 'sunday', strengthMode: 'none' } }));
+    expect(Object.values(plan.sessions).flat().some(e => e.type === 'conditioning')).toBe(false);
+  });
+
+  it('keeps runs off preferred rest days', () => {
+    const plan = buildTrainingPlan(tenKIntake({ preferences: { longSessionDay: 'sunday', restDays: ['monday', 'friday'] } }));
+    Object.entries(plan.sessions).forEach(([dk, entries]) => {
+      if (['monday', 'friday'].includes(dowKey(dk))) expect(entries.every(e => e.type === 'rest')).toBe(true);
+    });
+  });
+
+  it('explains why the plan looks the way it does', () => {
+    const plan = buildTrainingPlan(tenKIntake());
+    expect(plan.meta.planMix).toMatch(/You'll run 4 days a week .* out of the 7 you're available/);
+    expect(plan.meta.planMix).toMatch(/Your long run starts at 60min — in line with what you run now/);
+  });
+
+  it('still respects the 10% weekly growth rule', () => {
+    const plan = buildTrainingPlan(tenKIntake({ startDate: '2026-08-31' }));
+    expect(plan.meta.planHealth.tenPercentRule).toMatch(/Violations \(excluding accepted exceptions\): 0\./);
+  });
+});

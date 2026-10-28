@@ -34,7 +34,12 @@ import { RUN_RACE_DISTANCES_KM, TRIATHLON_LEG_DISTANCES_KM, legDistanceKm } from
 import { colorForPhase } from './trainingPlanImport';
 import { RUN_LIBRARY, SWIM_LIBRARY, BIKE_LIBRARY, RUN_LONG_TERM, BIKE_LONG_TERM, nextFromRotation } from '../data/sessionLibraries';
 import { glossaryForTerms } from '../data/planGlossary';
-import { selectConditioningExercises } from '../data/conditioningLibrary';
+import { selectConditioningExercises, selectGymStrengthExercises } from '../data/conditioningLibrary';
+import {
+  recommendedRunsPerWeek, resolveRunsPerWeek, selectRunDays, qualityCountFor, assignRunRoles,
+  placeStrengthDays, estimateTenKPace, paceZones, zoneMid, currentLongRunMinutes,
+  supportingRunMinutes, describeRunTarget,
+} from './runWeekPlanner';
 
 export const SUPPORTED_RACE_TYPES = [
   '10K', 'Half Marathon', 'Marathon', 'Trail Running',
@@ -78,7 +83,9 @@ const PEAK_VOLUME_TABLE = {
   'Triathlon (Olympic)':        { swimM: 1900, bikeMin: 105, runMin: 65,  brickBikeMin: 90,  brickRunMin: 30 },
   'Triathlon (70.3 / Half)':    { swimM: 2750, bikeMin: 210, runMin: 105, brickBikeMin: 180, brickRunMin: 35 },
   'Triathlon (Full / Ironman)': { swimM: 3750, bikeMin: 330, runMin: 135, brickBikeMin: 240, brickRunMin: 45 },
-  '10K':                        { longRunKm: 9,    weeklyKm: 40 },
+  // 10K peaks above race distance (12km) so race day is never the longest
+  // run the athlete has done; Beginners peak at race distance instead.
+  '10K':                        { longRunKm: 12, beginnerLongRunKm: 10, weeklyKm: 40 },
   'Half Marathon':              { longRunKm: 19.5, weeklyKm: 57.5 },
   'Marathon':                   { longRunKm: 30.5, weeklyKm: 80 },
   'Trail Running':              { longRunMinByFitness: { 'Beginner': 90, 'Intermediate': 150, 'Fit but new to this': 120 } },
@@ -292,8 +299,15 @@ function fitnessRatio(level) {
 // value (post recovery-cut/growth-cap), not the nominal peak — if a recovery
 // week happens to land on the final non-taper week, taper should ease off
 // from where training really was, not jump back up to an uncut peak first.
-function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut, growthCap = 1.10 }) {
+//
+// reboundAfterRecovery (road running): the week after a recovery week caps
+// growth against the last *non-recovery* week instead, so training returns
+// to where it was before the down week. Without it a 3-up/1-down cycle can
+// never climb back (0.70 × 1.10³ ≈ 0.93), and the long run shrinks across
+// the plan. computePlanHealth exempts those rebound weeks from the 10% check.
+function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut, growthCap = 1.10, reboundAfterRecovery = false }) {
   const values = [];
+  let lastLoadWeekValue = startValue;
   for (let w = 1; w <= nonTaperWeeks; w++) {
     const idx = w - 1;
     if (recoveryWeeks.has(w)) {
@@ -302,7 +316,9 @@ function buildWeeklySeries({ startValue, peakValue, totalWeeks, nonTaperWeeks, r
     }
     const t = nonTaperWeeks <= 1 ? 1 : (w - 1) / (nonTaperWeeks - 1);
     const raw = startValue + (peakValue - startValue) * t;
-    values.push(idx === 0 ? raw : Math.min(raw, values[idx - 1] * growthCap));
+    const capBase = reboundAfterRecovery && recoveryWeeks.has(w - 1) ? lastLoadWeekValue : values[idx - 1];
+    values.push(idx === 0 ? raw : Math.min(raw, capBase * growthCap));
+    lastLoadWeekValue = values[idx];
   }
 
   const lastNonTaperValue = values[nonTaperWeeks - 1] ?? peakValue;
@@ -444,6 +460,44 @@ function buildConditioningEntry(weekNum, phase, conditioningExercises) {
   return { type: 'conditioning', label: 'Conditioning', sessionType, duration: '22min', flag: '', intensity: 'Low', week: weekNum, phase: phase.label };
 }
 
+// Gym strength replaces the bodyweight circuit when the athlete chose "Gym"
+// for strength in onboarding (preferences.strengthMode) — real loaded
+// lower-body + core lifts rather than activation work.
+function buildStrengthEntry(weekNum, phase, strengthMode, conditioningExercises, gymExercises) {
+  if (strengthMode === 'gym' && gymExercises.length) {
+    const sessionType = `${GYM_STRENGTH_PREFIX}${gymExercises.map(e => `${e.name} ${e.prescription}`).join(', ')}`;
+    return { type: 'conditioning', label: 'Strength', sessionType, duration: '40min', flag: '', intensity: 'Medium', week: weekNum, phase: phase.label };
+  }
+  return buildConditioningEntry(weekNum, phase, conditioningExercises);
+}
+
+export const GYM_STRENGTH_PREFIX = 'Gym strength: ';
+
+// ── Road-running (10K / Half / Marathon) run builder ────────────────────────
+// Each run day has a fixed weekly role from runWeekPlanner.assignRunRoles;
+// durations are sized off that week's long run and every run carries a
+// pace + approximate-distance target line (describeRunTarget).
+const ROAD_LONG_RUN_CAP_MIN = 180;
+
+function buildRoadRunEntry({ role, weekNum, phase, longMinutes, qualityIdx, easyIdx, zones, raceType, estimated }) {
+  const mins = supportingRunMinutes(longMinutes);
+  let sessionType, intensity, minutes;
+  if (role === 'long') {
+    sessionType = RUN_LONG_TERM; intensity = 'Low'; minutes = Math.max(longMinutes, mins.easy);
+  } else if (role === 'quality') {
+    const pool = (RUN_LIBRARY[phase.label] || []).filter(a => a.intensity !== 'Low');
+    const archetype = pool.length ? pool[qualityIdx % pool.length] : { sessionType: 'Tempo run', intensity: 'Medium' };
+    sessionType = archetype.sessionType; intensity = archetype.intensity; minutes = mins.quality;
+  } else if (role === 'recovery') {
+    sessionType = 'Recovery run'; intensity = 'Low'; minutes = mins.recovery;
+  } else {
+    sessionType = phase.label === 'Foundation' && easyIdx % 2 === 1 ? 'Easy run + strides' : 'Easy run';
+    intensity = 'Low'; minutes = mins.easy;
+  }
+  const { target, distanceKm } = describeRunTarget({ sessionType, minutes, zones, raceType, estimated });
+  return { type: 'run', label: 'Run', sessionType, duration: minutesDuration(minutes), target, distanceKm, flag: '', intensity, week: weekNum, phase: phase.label };
+}
+
 function buildRestEntry(weekNum, phase) {
   return { type: 'rest', label: 'Rest', sessionType: 'Rest', duration: '-', flag: '', intensity: 'Low', week: weekNum, phase: phase?.label || '' };
 }
@@ -476,11 +530,35 @@ export function buildTrainingPlan(intake) {
   const holidays = intake.holidays || [];
   const oneOffEvents = intake.oneOffEvents || [];
   const injury = intake.injury || {};
+  const roadRun = !triathlon && !trail;
+  const raceGoal = intake.raceGoal || null;
+  const restDays = preferences.restDays || [];
+  // Strength: 'none' | 'bodyweight' | 'gym'. A payload saved before the
+  // strength question existed keeps the original single bodyweight circuit.
+  const strengthMode = preferences.strengthMode || 'bodyweight';
+  const strengthPerWeek = preferences.strengthMode ? clamp(Number(preferences.strengthPerWeek) || 1, 1, 2) : 1;
+
+  // ── which run days are actually used (road running) ──
+  // The day picker collects days the athlete *could* train; road running
+  // uses only as many as preferences.runsPerWeek asks for (or the
+  // fitness-based recommendation), never more than 6, spread around the
+  // long-run day. Triathlon/trail keep using every selected day.
+  const availableRunDays = disciplineDays.run || [];
+  let runDays = availableRunDays;
+  let roadLongDay = null;
+  let recommendedRuns = null;
+  if (roadRun && availableRunDays.length) {
+    recommendedRuns = recommendedRunsPerWeek({ fitnessLevel, currentRunsPerWeek: baselines.run?.runsPerWeekCurrent });
+    const runsPerWeek = resolveRunsPerWeek(preferences.runsPerWeek || recommendedRuns, availableRunDays.length);
+    const longCandidates = availableRunDays.filter(d => !restDays.includes(d));
+    roadLongDay = pickAnchorDay(longCandidates.length ? longCandidates : availableRunDays, preferences.longSessionDay, 'sunday');
+    runDays = selectRunDays(availableRunDays, runsPerWeek, { longDay: roadLongDay, restDays, preferredDays: [preferences.secondDisciplineDay] });
+  }
 
   // ── weekly value series per discipline ──
   const runPaceSecPerKm = estimateRunPaceSecPerKm(baselines, targetPaces, raceType);
-  const runDays = disciplineDays.run || [];
   let runLongSeries;
+  let roadZones = null, roadPaceSource = null, roadCurrentLongMin = null;
   if (trail) {
     // Time-on-feet, not pace-based: peak long run is a duration by fitness
     // level, ramping at 10-15%/week (not the 10% road-running cap) straight
@@ -516,8 +594,32 @@ export function buildTrainingPlan(intake) {
       startValue: peakMin * trailFitness, peakValue: peakMin,
       totalWeeks, nonTaperWeeks: totalWeeks, recoveryWeeks, taperVolumeCut: 0, growthCap: 1.15,
     }) : [];
+  } else if (roadRun) {
+    // Long run is sized in minutes at the athlete's *easy* pace (from their
+    // race times / target, else a fitness default) and starts at what they
+    // run today (currentLongRunMinutes) rather than a fixed fraction of the
+    // peak — someone already running 60min continuously starts at 60, not
+    // below it. If they already exceed the table peak, the peak moves up
+    // modestly instead of the plan shrinking their long run.
+    const tenK = estimateTenKPace({ baselines, targetPaces, raceType, fitnessLevel });
+    roadZones = paceZones(tenK.secPerKm, raceType, targetPaces);
+    roadPaceSource = tenK.source;
+    const easyPace = zoneMid(roadZones.easy);
+    const peakKm = fitnessLevel === 'Beginner' && peak.beginnerLongRunKm ? peak.beginnerLongRunKm : peak.longRunKm;
+    const tablePeakMin = Math.min(ROAD_LONG_RUN_CAP_MIN, (peakKm * easyPace) / 60);
+    roadCurrentLongMin = currentLongRunMinutes(baselines.run, easyPace);
+    const peakMin = roadCurrentLongMin && roadCurrentLongMin >= tablePeakMin
+      ? Math.min(ROAD_LONG_RUN_CAP_MIN, roadCurrentLongMin * 1.15, tablePeakMin * 1.4)
+      : tablePeakMin;
+    const startMin = roadCurrentLongMin
+      ? Math.min(roadCurrentLongMin, peakMin)
+      : Math.max(30, peakMin * fitnessRatio(fitnessLevel));
+    runLongSeries = runDays.length ? buildWeeklySeries({
+      startValue: startMin, peakValue: Math.max(peakMin, startMin),
+      totalWeeks, nonTaperWeeks, recoveryWeeks, taperVolumeCut: taperInfo.volumeCut, reboundAfterRecovery: true,
+    }) : [];
   } else {
-    const runPeakMin = triathlon ? peak.runMin : (peak.longRunKm * runPaceSecPerKm) / 60;
+    const runPeakMin = peak.runMin;
     const runFitness = baselines.run?.longestEffortKm
       ? clamp((baselines.run.longestEffortKm * runPaceSecPerKm / 60) / runPeakMin, 0.15, 0.75)
       : fitnessRatio(fitnessLevel);
@@ -552,7 +654,7 @@ export function buildTrainingPlan(intake) {
     }) : [];
   }
 
-  const runLongDay = pickAnchorDay(runDays, triathlon ? null : preferences.longSessionDay, 'sunday');
+  const runLongDay = roadLongDay || pickAnchorDay(runDays, triathlon ? null : preferences.longSessionDay, 'sunday');
   const bikeLongDay = triathlon ? pickAnchorDay(disciplineDays.bike || [], preferences.longSessionDay, 'sunday') : null;
   const trailAssignment = trail ? assignTrailDays(runDays, preferences) : null;
   // Conditioning (strength/stability) is now unconditional in every
@@ -565,6 +667,26 @@ export function buildTrainingPlan(intake) {
     areas: (injury.pastInjuries || []).map(p => p.area),
     avoidIds: injury.avoidExerciseIds || [],
   });
+  const gymExercises = strengthMode === 'gym' ? selectGymStrengthExercises({ avoidIds: injury.avoidExerciseIds || [] }) : [];
+
+  // Road running: each week's run roles + strength days, memoized by the
+  // two things that vary week to week (quality count, strength count).
+  const roadTemplates = new Map();
+  function roadTemplateFor(weekNum, phase) {
+    const q = qualityCountFor({ phase: phase.label, runsPerWeek: runDays.length, raceGoal, isRecoveryWeek: recoveryWeeks.has(weekNum) });
+    const s = strengthMode === 'none' || phase.label === 'Taper' || weekNum >= totalWeeks ? 0
+      : phase.label === 'Peak' ? Math.min(1, strengthPerWeek) : strengthPerWeek;
+    const key = `${q}|${s}`;
+    if (!roadTemplates.has(key)) {
+      const roles = assignRunRoles(runDays, runLongDay, q, preferences.secondDisciplineDay || null);
+      const strengthDays = placeStrengthDays({
+        runDays, roles, availableDays: availableRunDays, count: s, restDays,
+        explicitDay: preferences.conditioningDay || null, allowDoubleDays: preferences.allowDoubleDays ?? null,
+      });
+      roadTemplates.set(key, { roles, strengthDays });
+    }
+    return roadTemplates.get(key);
+  }
 
   // Discipline-frequency-in-Foundation ramp (triathlon only, §B.2): caps how
   // many of the athlete's own selected days for a discipline are actually
@@ -664,8 +786,20 @@ export function buildTrainingPlan(intake) {
         else if (runAllowed && dayKey === trailAssignment.hillDay) entries.push(buildTrailHillEntry(weekNum, phase));
         else if (runAllowed && trailAssignment.easyDays.includes(dayKey)) entries.push(buildTrailEasyEntry(weekNum, phase));
       } else if (runAllowed && activeDaysForWeek('run', weekNum, runDays, runLongDay).includes(dayKey) && !entries.some(e => e.type === 'run')) {
-        const idx = runRotation.get('i') || 0; runRotation.set('i', idx + 1);
-        entries.push(buildRunEntry({ isLong: dayKey === runLongDay, weekNum, phase, weeklyMinutes: { long: runLongSeries[weekNum - 1] || 0, short: runShortSeries[weekNum - 1] || 0 }, rotationIdx: idx }));
+        if (roadRun) {
+          let role = roadTemplateFor(weekNum, phase).roles[dayKey] || 'easy';
+          // Nothing hard in the last two days before race day.
+          if (role === 'quality' && diffDays(cursor, raceDate) <= 2) role = 'easy';
+          const counter = role === 'quality' ? 'q' : 'e';
+          const idx = runRotation.get(counter) || 0; runRotation.set(counter, idx + 1);
+          entries.push(buildRoadRunEntry({
+            role, weekNum, phase, longMinutes: runLongSeries[weekNum - 1] || 0,
+            qualityIdx: idx, easyIdx: idx, zones: roadZones, raceType, estimated: roadPaceSource === 'default',
+          }));
+        } else {
+          const idx = runRotation.get('i') || 0; runRotation.set('i', idx + 1);
+          entries.push(buildRunEntry({ isLong: dayKey === runLongDay, weekNum, phase, weeklyMinutes: { long: runLongSeries[weekNum - 1] || 0, short: runShortSeries[weekNum - 1] || 0 }, rotationIdx: idx }));
+        }
       } else if (runAllowed && holiday?.limited && holiday.disciplines.includes('run') && !runDays.includes(dayKey) && !entries.length) {
         entries.push({ type: 'run', label: 'Run', sessionType: 'Easy holiday run', duration: '25min', flag: 'Holiday', intensity: 'Low', week: weekNum, phase: phase.label });
       }
@@ -678,8 +812,12 @@ export function buildTrainingPlan(intake) {
           entries.push(buildSwimEntry({ weekNum, phase, weeklyMeters: meters, rotationIdx: idx }));
         }
       }
-      if (conditioningDay === dayKey && phase.label !== 'Taper' && weekNum < totalWeeks) {
-        entries.push(buildConditioningEntry(weekNum, phase, conditioningExercises));
+      if (roadRun) {
+        if (roadTemplateFor(weekNum, phase).strengthDays.includes(dayKey)) {
+          entries.push(buildStrengthEntry(weekNum, phase, strengthMode, conditioningExercises, gymExercises));
+        }
+      } else if (strengthMode !== 'none' && conditioningDay === dayKey && phase.label !== 'Taper' && weekNum < totalWeeks) {
+        entries.push(buildStrengthEntry(weekNum, phase, strengthMode, conditioningExercises, gymExercises));
       }
     }
 
@@ -702,11 +840,17 @@ export function buildTrainingPlan(intake) {
       ? Object.entries(TRIATHLON_LEG_DISTANCES_KM[raceType]).map(([, km]) => `${km}km`).join(' / ')
       : `${RUN_RACE_DISTANCES_KM[raceType]}km`);
 
-  const planHealth = computePlanHealth(sessions, phases, holidayByDate, oneOffByDate);
+  const planHealth = computePlanHealth(sessions, phases, holidayByDate, oneOffByDate, roadRun ? recoveryWeeks : new Set());
   const usedTerms = collectUsedTerms(sessions);
   const glossary = glossaryForTerms(usedTerms);
   const overview = buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays, oneOffEvents, injury, totalWeeks });
-  const planMix = buildPlanMix({ trail, triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [], trailDistanceKm: trailDistanceKmNum });
+  const planMix = roadRun && runDays.length
+    ? buildRoadPlanMix({
+      runDays, availableRunDays, recommendedRuns, requestedRuns: Number(preferences.runsPerWeek) || null,
+      longDay: runLongDay, sessions, strengthMode, paceSource: roadPaceSource,
+      currentLongMin: roadCurrentLongMin, longSeries: runLongSeries, totalWeeks, phaseMode,
+    })
+    : buildPlanMix({ trail, triathlon, runDays, bikeDays: disciplineDays.bike || [], swimDays: disciplineDays.swim || [], trailDistanceKm: trailDistanceKmNum });
 
   return {
     meta: {
@@ -771,7 +915,7 @@ function applyOneOffEvents(sessions, oneOffByDate, startDate, raceDate) {
 // ── STEP 7: plan-health checks (computed, not self-reported) ────────────────
 
 function sessionMinutes(entry) {
-  if (entry.type === 'conditioning') return 22;
+  if (entry.type === 'conditioning') return parseInt(entry.duration, 10) || 22;
   if (entry.type === 'rest' || entry.type === 'race') return 0;
   if (entry.type === 'swim') {
     const m = parseInt(entry.duration, 10);
@@ -781,7 +925,7 @@ function sessionMinutes(entry) {
   return Number.isFinite(mins) ? mins : 0;
 }
 
-function computePlanHealth(sessions, phases, holidayByDate, oneOffByDate) {
+function computePlanHealth(sessions, phases, holidayByDate, oneOffByDate, reboundExemptAfter = new Set()) {
   const dateKeys = Object.keys(sessions).sort();
   const totalWeeks = phases[phases.length - 1].weeks[1];
   const weeklyMinutes = Array(totalWeeks).fill(0);
@@ -808,8 +952,10 @@ function computePlanHealth(sessions, phases, holidayByDate, oneOffByDate) {
     const prev = weeklyMinutes[w - 1], cur = weeklyMinutes[w];
     if (prev <= 0) continue;
     const pctChange = (cur - prev) / prev;
+    // reboundExemptAfter: plan weeks (1-based) that were planned recovery
+    // weeks — the week after one returns to pre-recovery volume by design.
     const exempt = weeklyHasHoliday[w] || weeklyHasEvent[w] || weeklyNewDay[w] ||
-      weeklyHasHoliday[w - 1] || weeklyHasEvent[w - 1];
+      weeklyHasHoliday[w - 1] || weeklyHasEvent[w - 1] || reboundExemptAfter.has(w);
     // A tolerance above the nominal 10% absorbs whole-minute display
     // rounding: buildWeeklySeries caps growth at exactly 10.00% on the
     // unrounded series (verified directly — e.g. 65.71→72.28→79.51, each
@@ -835,7 +981,8 @@ function computePlanHealth(sessions, phases, holidayByDate, oneOffByDate) {
   const weeklyIntensity = Array.from({ length: totalWeeks }, () => ({ low: 0, med: 0, high: 0, phase: '' }));
   dateKeys.forEach(dk => {
     sessions[dk].forEach(e => {
-      if (e.type === 'rest' || e.type === 'race') return;
+      // Strength work isn't part of the endurance 80/20 split.
+      if (e.type === 'rest' || e.type === 'race' || e.type === 'conditioning') return;
       const w = e.week - 1;
       weeklyIntensity[w].phase = e.phase;
       if (e.intensity === 'High') weeklyIntensity[w].high++;
@@ -855,13 +1002,30 @@ function computePlanHealth(sessions, phases, holidayByDate, oneOffByDate) {
   }).filter(Boolean);
   const eightyTwentyRule = eightyTwentyLines.join('; ') + `. Weeks exceeding Hard session target: ${exceedCount}.`;
 
-  const summary = violations === 0 && exceedCount === 0
+  // Rest-day check: every full 7-day week should have at least one day with
+  // nothing but rest on it.
+  const weekDays = Array.from({ length: totalWeeks }, () => ({ days: 0, restDays: 0 }));
+  dateKeys.forEach(dk => {
+    const entries = sessions[dk];
+    const w = (entries[0]?.week || 1) - 1;
+    weekDays[w].days++;
+    if (entries.every(e => e.type === 'rest')) weekDays[w].restDays++;
+  });
+  const weeksWithoutRest = weekDays
+    .map((wd, i) => (wd.days === 7 && wd.restDays === 0 ? i + 1 : null))
+    .filter(Boolean);
+  const restDayRule = weeksWithoutRest.length
+    ? `Weeks with no full rest day: ${weeksWithoutRest.join(', ')}.`
+    : 'Every full week includes at least one rest day.';
+
+  const summary = (violations === 0 && exceedCount === 0
     ? 'Weekly volume and intensity both stay within the 10% and 80/20 guidelines for the whole plan.'
     : `Weekly volume stays within the 10% guideline except ${violations} week${violations === 1 ? '' : 's'}` +
       `${violations ? ' (holiday/event weeks are expected exceptions and already excluded)' : ''}. ` +
-      `${exceedCount} week${exceedCount === 1 ? '' : 's'} run above the 80/20 hard-session target for their phase.`;
+      `${exceedCount} week${exceedCount === 1 ? '' : 's'} run above the 80/20 hard-session target for their phase.`) +
+    ` ${restDayRule}`;
 
-  return { tenPercentRule, eightyTwentyRule, summary };
+  return { tenPercentRule, eightyTwentyRule, restDayRule, weeksWithoutRest, summary };
 }
 
 // ── Glossary / overview / plan-mix text ──────────────────────────────────────
@@ -872,7 +1036,7 @@ function collectUsedTerms(sessions) {
     if (e.sessionType === RUN_LONG_TERM) terms.add(RUN_LONG_TERM);
     else if (e.sessionType === BIKE_LONG_TERM) terms.add(BIKE_LONG_TERM);
     else if (e.flag?.includes('Brick')) terms.add('Brick');
-    else if (e.type === 'conditioning') terms.add('Conditioning circuit');
+    else if (e.type === 'conditioning') terms.add(e.sessionType?.startsWith(GYM_STRENGTH_PREFIX) ? 'Strength session' : 'Conditioning circuit');
     else if (e.sessionType === 'Open water swim') terms.add('Open water / sea swim');
     else if (e.sessionType === 'Trail hill repeats') terms.add('Trail hill repeats');
     else {
@@ -916,6 +1080,35 @@ function buildOverview({ raceType, triathlon, trail, phases, phaseMode, holidays
     lines.push(`Health note: this plan includes injury-aware conditioning work, not a personalised treatment plan.${tailoredNote} Get a physio review before starting, and stop any exercise immediately if it increases pain, numbness, or tingling.`);
   }
   return lines.join('\n\n');
+}
+
+// "Why this plan" for road running — explains how many days were used and
+// why, where the hard sessions sit, where the long run starts, and where
+// paces came from, so the plan's choices are visible rather than implied.
+function buildRoadPlanMix({ runDays, availableRunDays, recommendedRuns, requestedRuns, longDay, sessions, strengthMode, paceSource, currentLongMin, longSeries, totalWeeks, phaseMode }) {
+  const cap = (d) => d.charAt(0).toUpperCase() + d.slice(1);
+  const n = runDays.length;
+  const parts = [];
+  const why = requestedRuns
+    ? 'as you asked'
+    : `recommended for your fitness level${phaseMode !== 'full' ? ` and the ${totalWeeks} weeks available` : ''}`;
+  const restCount = 7 - n;
+  parts.push(`You'll run ${n} day${n === 1 ? '' : 's'} a week (${runDays.map(cap).join(', ')}) out of the ${availableRunDays.length} you're available — ${why} — leaving ${restCount} day${restCount === 1 ? '' : 's'} without running for rest${strengthMode !== 'none' ? ' and strength' : ''}.`);
+  const all = Object.values(sessions).flat();
+  const maxQuality = Math.max(0, ...Object.values(
+    all.filter(e => e.type === 'run' && e.intensity !== 'Low').reduce((acc, e) => ({ ...acc, [e.week]: (acc[e.week] || 0) + 1 }), {})
+  ));
+  parts.push(`The long run is on ${cap(longDay)}${maxQuality ? `, with up to ${maxQuality} harder session${maxQuality === 1 ? '' : 's'} a week — never on back-to-back days or the day before your long run` : ''}; everything else is easy running.`);
+  const firstLong = longSeries[0], peakLong = Math.max(0, ...longSeries);
+  if (firstLong) {
+    parts.push(`Your long run starts at ${firstLong}min${currentLongMin ? ' — in line with what you run now' : ''} and builds to ${peakLong}min.`);
+  }
+  if (strengthMode === 'gym') parts.push('Gym strength sessions sit on easy or rest days, away from your long run and hard sessions.');
+  else if (strengthMode === 'bodyweight') parts.push('A bodyweight strength circuit sits on an easy or rest day.');
+  parts.push(paceSource === 'default'
+    ? 'Paces are estimates for your fitness level — add a recent 5K or 10K time to make them personal.'
+    : paceSource === 'target' ? 'Paces are based on your target finish time.' : 'Paces are based on your recent race times.');
+  return parts.join(' ');
 }
 
 function buildPlanMix({ trail, triathlon, runDays, bikeDays, swimDays, trailDistanceKm }) {

@@ -42,6 +42,7 @@ const PLAN_GLOSSARY = [
 
   // ── Conditioning ──
   { term: 'Conditioning circuit', discipline: 'Conditioning', description: 'A short bodyweight circuit run for 2–3 rounds, weighted toward strengthening and mobility work for any injury areas you declared (and never including exercises you asked to avoid) — the default is general hip/core work (glute bridge, bird dog, clamshell, dead bug, side plank) if none were declared. General injury-prevention support, not a personalised treatment plan.' },
+  { term: 'Strength session', discipline: 'Conditioning', description: 'A gym session of compound lower-body and core lifts (squat, Romanian deadlift, split squat, calf raise, plank). Pick a weight you could lift 2–3 more reps with — the aim is stronger, more resilient legs for running, not exhaustion. Scheduled away from your long run and hard run days.' },
 ];
 
 export default PLAN_GLOSSARY;
