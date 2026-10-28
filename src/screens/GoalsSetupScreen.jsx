@@ -270,7 +270,8 @@ export function GoalsSetupScreen({
   const raceDisciplines = disciplinesForRaceType(eventCfg.raceType);
   // [LOGIC] Road running (10K/Half/Marathon) gets the run-frequency, rest-day
   // and race-goal questions — triathlon and trail schedule every picked day.
-  const roadRace = isRaceGoal(selectedGoals) && isEngineSupportedRaceType(eventCfg.raceType) && !triathlon && !isTrailRaceType(eventCfg.raceType);
+  const engineRace = isRaceGoal(selectedGoals) && isEngineSupportedRaceType(eventCfg.raceType);
+  const roadRace = engineRace && !triathlon && !isTrailRaceType(eventCfg.raceType);
   const maxRunsPerWeek = Math.min((disciplineDays.run || []).length, MAX_RUNS_PER_WEEK);
   const recommendedRuns = Math.min(
     recommendedRunsPerWeek({ fitnessLevel: eventCfg.fitnessLevel, currentRunsPerWeek: intake.runBaseline.runsPerWeekCurrent }),
@@ -905,7 +906,9 @@ export function GoalsSetupScreen({
             <StepSub t={t}>{isRaceGoal(selectedGoals)
               ? (roadRace
                 ? 'Which days could you train? Tick every day you\'re free — we\'ll pick how many to actually run on and keep rest days.'
-                : 'Which days do you want to train each discipline?')
+                : triathlon
+                  ? 'Which days could you train each discipline? We\'ll always keep at least one full rest day.'
+                  : 'Which days do you want to train each discipline?')
               : 'Days you can train, and what you have access to.'}</StepSub>
 
             {isRaceGoal(selectedGoals) ? (
@@ -963,11 +966,11 @@ export function GoalsSetupScreen({
             </GField>
 
             {/* [UI] Explicit strength choice — gym access alone doesn't say whether they want it */}
-            {isRaceGoal(selectedGoals) && isEngineSupportedRaceType(eventCfg.raceType) && (
+            {engineRace && (
               <GField label="Do you want strength training in your plan?" t={t}>
                 <ChoiceRow options={STRENGTH_MODES} value={effectiveStrengthMode} testIdPrefix="strength-mode"
                   onChange={v => patchIntake('preferences', { strengthMode: v })} t={t} />
-                {roadRace && effectiveStrengthMode !== 'none' && (
+                {effectiveStrengthMode !== 'none' && (
                   <div style={{ marginTop: 10 }}>
                     <div style={miniLabelSt(t)}>Sessions per week</div>
                     <ChoiceRow options={[{ value: 1, label: '1' }, { value: 2, label: '2' }]} value={intake.preferences.strengthPerWeek || 1}
@@ -1237,10 +1240,12 @@ export function GoalsSetupScreen({
                 <DaySelect value={intake.preferences.conditioningDay} onChange={v => patchIntake('preferences', { conditioningDay: v })} t={t} />
               </DQField>
             )}
-            {/* [UI] Road running: guaranteed rest days + whether strength can share a day with a run */}
-            {roadRace && (
+            {/* [UI] Guaranteed rest days + whether strength can share a day with a session */}
+            {engineRace && (
               <>
-                <DQField label="Preferred rest day(s)" hint="We'll keep runs off these days where we can." t={t}>
+                <DQField label="Preferred rest day(s)" hint={isTrailRaceType(eventCfg.raceType)
+                  ? "We'll keep strength off these days — your run days stay the ones you picked."
+                  : "We'll keep training off these days where we can."} t={t}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
                     {DAYS.map((day, i) => {
                       const key = DAY_KEYS[i];
@@ -1257,7 +1262,7 @@ export function GoalsSetupScreen({
                   </div>
                 </DQField>
                 {effectiveStrengthMode !== 'none' && (
-                  <DQField label="Can you do two sessions in one day?" hint="e.g. an easy run in the morning and strength later. Yes keeps more full rest days." t={t}>
+                  <DQField label="Can you do two sessions in one day?" hint="e.g. an easy session in the morning and strength later. Yes keeps more full rest days." t={t}>
                     <YesNoRow value={intake.preferences.allowDoubleDays ?? null} onChange={v => patchIntake('preferences', { allowDoubleDays: v })} t={t} />
                   </DQField>
                 )}

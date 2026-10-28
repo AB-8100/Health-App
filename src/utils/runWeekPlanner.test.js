@@ -178,3 +178,23 @@ describe('session sizing and targets', () => {
     expect(target).toMatch(/\(est\.\)$/);
   });
 });
+
+describe('triathlon run paces and short sessions', () => {
+  it('ignores a triathlon run-leg target when inferring open-road 10K pace', () => {
+    expect(estimateTenKPace({ baselines: { run: { time10k: '48:00' } }, targetPaces: { run: 3000 }, raceType: 'Triathlon (Olympic)' }).source).toBe('race');
+  });
+  it('makes triathlon race pace slower than the open 10K equivalent (running off the bike)', () => {
+    const z = paceZones(300, 'Triathlon (Olympic)');
+    expect(z.race[0]).toBeGreaterThan(300);
+  });
+  it('scales warm-up/cool-down down for short quality sessions so the parts add up', () => {
+    const { target } = describeRunTarget({ sessionType: 'Tempo run', minutes: 20, zones: paceZones(300, '10K'), raceType: '10K' });
+    expect(target).toMatch(/^5' easy · 10' @ .* · 5' easy/);
+  });
+  it('avoids every long day when there is more than one', () => {
+    const roles = { tuesday: 'easy', saturday: 'long', sunday: 'long' };
+    const days = placeStrengthDays({ runDays: ['tuesday', 'saturday', 'sunday'], roles, availableDays: ALL_DAYS, count: 2 });
+    expect(days).not.toContain('saturday');
+    expect(days).not.toContain('sunday');
+  });
+});

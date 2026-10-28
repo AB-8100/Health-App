@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildTrainingPlan, isEngineSupportedRaceType, isTriathlonRace, isTrailRaceType,
-  determinePhaseMode, allocateWeeks,
+  determinePhaseMode, allocateWeeks, withTriathlonRestDays,
 } from './planEngine';
 
 function marathonIntake(overrides = {}) {
@@ -613,5 +613,72 @@ describe('buildTrainingPlan — road running week structure (10K tester feedback
   it('still respects the 10% weekly growth rule', () => {
     const plan = buildTrainingPlan(tenKIntake({ startDate: '2026-08-31' }));
     expect(plan.meta.planHealth.tenPercentRule).toMatch(/Violations \(excluding accepted exceptions\): 0\./);
+  });
+});
+
+describe('withTriathlonRestDays', () => {
+  const allSeven = { run: ['tuesday', 'thursday', 'saturday'], bike: ['wednesday', 'sunday'], swim: ['monday', 'friday'] };
+
+  it('frees one day when the picks cover the whole week, taking it from the discipline with most days to spare', () => {
+    const out = withTriathlonRestDays(allSeven, { longSessionDay: 'sunday' });
+    expect(new Set(Object.values(out).flat()).size).toBe(6);
+    expect(out.run).toHaveLength(2);
+    expect(out.swim).toHaveLength(2);
+    expect(out.bike).toHaveLength(2);
+  });
+
+  it('leaves picks alone when there is already a free day', () => {
+    const picks = { run: ['tuesday'], bike: ['sunday'], swim: ['friday'] };
+    expect(withTriathlonRestDays(picks, {})).toEqual(picks);
+  });
+
+  it('drops preferred rest days, but never a discipline\'s only day', () => {
+    const out = withTriathlonRestDays({ run: ['monday', 'thursday'], swim: ['monday'] }, { restDays: ['monday'] });
+    expect(out.run).toEqual(['thursday']);
+    expect(out.swim).toEqual(['monday']);
+  });
+});
+
+describe('buildTrainingPlan — triathlon and trail (rest days, strength, run targets)', () => {
+  const allSevenTri = (prefs = {}) => triIntake({
+    disciplineDays: { run: ['tuesday', 'thursday', 'saturday'], bike: ['wednesday', 'sunday'], swim: ['monday', 'friday'] },
+    preferences: { longSessionDay: 'sunday', ...prefs },
+  });
+
+  it('guarantees a rest day every full week even when every day is ticked', () => {
+    expect(buildTrainingPlan(allSevenTri()).meta.planHealth.weeksWithoutRest).toEqual([]);
+  });
+
+  it('gives triathlon runs a distance and pace line, with brick runs at race pace off the bike', () => {
+    const runs = Object.values(buildTrainingPlan(triIntake()).sessions).flat().filter(e => e.type === 'run' && e.type !== 'race');
+    runs.forEach(e => expect(e.target).toMatch(/≈[\d.]+ km/));
+    expect(runs.find(e => e.sessionType === 'Brick run').target).toMatch(/^Straight off the bike/);
+  });
+
+  it('honours two strength sessions a week for triathlon, never on a long or brick day', () => {
+    const plan = buildTrainingPlan(allSevenTri({ strengthMode: 'gym', strengthPerWeek: 2 }));
+    const buildWeek = plan.phases.find(p => p.label === 'Build').weeks[0];
+    const strengthDays = Object.values(plan.sessions).filter(es => es.some(e => e.week === buildWeek && e.type === 'conditioning'));
+    expect(strengthDays).toHaveLength(2);
+    Object.values(plan.sessions).forEach(es => {
+      if (!es.some(e => e.type === 'conditioning')) return;
+      expect(es.some(e => e.sessionType === 'Long run' || e.sessionType === 'Long ride' || e.flag?.includes('Brick'))).toBe(false);
+    });
+  });
+
+  it('keeps trail strength off preferred rest days and the long/hill days, and allows two a week', () => {
+    const plan = buildTrainingPlan(trailIntake({ preferences: { longSessionDay: 'sunday', hillDay: 'thursday', strengthPerWeek: 2, strengthMode: 'bodyweight', restDays: ['monday'] } }));
+    const week2 = Object.entries(plan.sessions).filter(([, es]) => es.some(e => e.week === 2 && e.type === 'conditioning'));
+    expect(week2).toHaveLength(2);
+    Object.entries(plan.sessions).forEach(([dk, es]) => {
+      if (!es.some(e => e.type === 'conditioning')) return;
+      expect(dowKey(dk)).not.toBe('monday');
+      expect(es.some(e => e.sessionType === 'Long run' || e.sessionType === 'Trail hill repeats')).toBe(false);
+    });
+  });
+
+  it('drops strength for triathlon and trail when the athlete says no', () => {
+    [buildTrainingPlan(triIntake({ preferences: { strengthMode: 'none' } })), buildTrainingPlan(trailIntake({ preferences: { strengthMode: 'none' } }))]
+      .forEach(plan => expect(Object.values(plan.sessions).flat().some(e => e.type === 'conditioning')).toBe(false));
   });
 });

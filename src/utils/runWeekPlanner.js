@@ -16,7 +16,20 @@
 //   5. turns the athlete's own race times into pace zones so every run
 //      carries a target pace and an approximate distance.
 
-import { RUN_RACE_DISTANCES_KM } from './raceTargets';
+import { RUN_RACE_DISTANCES_KM, TRIATHLON_LEG_DISTANCES_KM } from './raceTargets';
+
+// Run distance of the goal race: the whole race for a road race, the run
+// leg for a triathlon.
+function runRaceKm(raceType) {
+  return RUN_RACE_DISTANCES_KM[raceType] ?? TRIATHLON_LEG_DISTANCES_KM[raceType]?.run ?? null;
+}
+function isTriathlon(raceType) {
+  return TRIATHLON_LEG_DISTANCES_KM[raceType] !== undefined;
+}
+
+// Running straight off the bike is slower than an open run of the same
+// distance — used only when a triathlete gives no run-leg target.
+const OFF_BIKE_SLOWDOWN = 1.05;
 
 export const DAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -149,18 +162,19 @@ export function assignRunRoles(runDays, longDay, qualityCount, preferredQualityD
 // while at least one full rest day is left in the week.
 export function placeStrengthDays({ runDays, roles, availableDays = [], count, restDays = [], explicitDay = null, allowDoubleDays = null }) {
   if (!(count > 0)) return [];
-  const longDay = Object.keys(roles).find(d => roles[d] === 'long') || null;
-  const dayBeforeLong = longDay ? prevDay(longDay) : null;
+  // More than one 'long' day is possible (a triathlete's long ride and long run).
+  const longDays = Object.keys(roles).filter(d => roles[d] === 'long');
+  const daysBeforeLong = longDays.map(prevDay);
   const stackPreferred = allowDoubleDays !== false;
 
   const scored = [];
   DAY_ORDER.forEach(d => {
-    if (d === longDay || restDays.includes(d)) return;
+    if (longDays.includes(d) || restDays.includes(d)) return;
     const isRun = runDays.includes(d);
     if (!isRun && !availableDays.includes(d)) return;
     if (isRun && roles[d] === 'quality') return;
     let penalty = 0;
-    if (d === dayBeforeLong) penalty += 10;
+    if (daysBeforeLong.includes(d)) penalty += 10;
     if (isRun) penalty += stackPreferred ? 0 : 3;
     else penalty += stackPreferred ? 2 : 0;
     if (roles[nextDay(d)] === 'quality') penalty += 1;
@@ -179,7 +193,7 @@ export function placeStrengthDays({ runDays, roles, availableDays = [], count, r
   };
   const take = (c) => { picked.push(c.d); if (!c.isRun) separateDaysUsed++; };
 
-  if (explicitDay && explicitDay !== longDay && !restDays.includes(explicitDay)) {
+  if (explicitDay && !longDays.includes(explicitDay) && !restDays.includes(explicitDay)) {
     take({ d: explicitDay, isRun: runDays.includes(explicitDay) });
   }
   for (const minGap of [2, 1]) {
@@ -212,10 +226,11 @@ const DEFAULT_10K_PACE = { 'Beginner': 420, 'Fit but new to this': 375, 'Interme
 
 // Returns the athlete's equivalent 10K pace (sec/km) from, in order: their
 // target finish time for this race, their most race-specific recent race
-// time, or a fitness-level default.
+// time, or a fitness-level default. A triathlon run-leg target is run off
+// the bike, so it isn't used to infer open-road 10K pace.
 export function estimateTenKPace({ baselines = {}, targetPaces = null, raceType, fitnessLevel } = {}) {
   const raceKm = RUN_RACE_DISTANCES_KM[raceType];
-  if (targetPaces?.run > 0 && raceKm) {
+  if (targetPaces?.run > 0 && raceKm && !isTriathlon(raceType)) {
     return { secPerKm: riegelPace(targetPaces.run / raceKm, raceKm, 10), source: 'target' };
   }
   const run = baselines.run || {};
@@ -233,8 +248,10 @@ export function estimateTenKPace({ baselines = {}, targetPaces = null, raceType,
 // Zones as [fast, slow] sec/km, relative to 10K pace. `race` is the goal
 // race's own pace (target pace if given, otherwise predicted from 10K pace).
 export function paceZones(tenKPace, raceType, targetPaces = null) {
-  const raceKm = RUN_RACE_DISTANCES_KM[raceType] || 10;
-  const racePace = targetPaces?.run > 0 ? targetPaces.run / raceKm : riegelPace(tenKPace, 10, raceKm);
+  const raceKm = runRaceKm(raceType) || 10;
+  const racePace = targetPaces?.run > 0
+    ? targetPaces.run / raceKm
+    : riegelPace(tenKPace, 10, raceKm) * (isTriathlon(raceType) ? OFF_BIKE_SLOWDOWN : 1);
   return {
     recovery: [tenKPace * 1.30, tenKPace * 1.40],
     easy:     [tenKPace * 1.18, tenKPace * 1.30],
@@ -305,7 +322,10 @@ export function describeRunTarget({ sessionType, minutes, zones, raceType, estim
   const easyMid = zoneMid(zones.easy);
   const approx = estimated ? ' (est.)' : '';
   const easyKm = (mins) => (mins * 60) / easyMid;
-  const main = Math.max(10, minutes - WARMUP_MIN - COOLDOWN_MIN);
+  // Full 10' warm-up/cool-down from 35min up; shorter sessions (e.g. a
+  // triathlete's mid-week run) scale them down so the parts add up.
+  const wu = minutes >= 35 ? WARMUP_MIN : Math.max(5, Math.floor(minutes * 0.25));
+  const main = Math.max(8, minutes - 2 * wu);
 
   if (sessionType === 'Recovery run') {
     const km = roundKm((minutes * 60) / zoneMid(zones.recovery));
@@ -317,24 +337,28 @@ export function describeRunTarget({ sessionType, minutes, zones, raceType, estim
   }
   if (sessionType === 'Tempo run') {
     const block = main >= 24 ? `2×${Math.round(main / 2)}' (2' jog)` : `${main}'`;
-    const km = roundKm(easyKm(WARMUP_MIN + COOLDOWN_MIN) + (main * 60) / zoneMid(zones.tempo));
-    return { distanceKm: km, target: `10' easy · ${block} @ ${formatZone(zones.tempo)} · 10' easy · ≈${km} km${approx}` };
+    const km = roundKm(easyKm(2 * wu) + (main * 60) / zoneMid(zones.tempo));
+    return { distanceKm: km, target: `${wu}' easy · ${block} @ ${formatZone(zones.tempo)} · ${wu}' easy · ≈${km} km${approx}` };
   }
   if (sessionType === 'Fartlek session') {
     const reps = Math.max(4, Math.floor(main / 2));
-    const km = roundKm(easyKm(WARMUP_MIN + COOLDOWN_MIN + reps) + (reps * 60) / zoneMid(zones.fast));
-    return { distanceKm: km, target: `10' easy · ${reps}×(1' @ ${formatZone(zones.fast)} / 1' easy) · 10' easy · ≈${km} km${approx}` };
+    const km = roundKm(easyKm(2 * wu + reps) + (reps * 60) / zoneMid(zones.fast));
+    return { distanceKm: km, target: `${wu}' easy · ${reps}×(1' @ ${formatZone(zones.fast)} / 1' easy) · ${wu}' easy · ≈${km} km${approx}` };
   }
   if (sessionType === 'Race-pace intervals') {
     const repKm = RACE_PACE_REP_KM[raceType] || 1;
     const repSec = repKm * zoneMid(zones.race);
     const reps = Math.max(3, Math.round((main * 60) / (repSec + 90)));
-    const km = roundKm(easyKm(WARMUP_MIN + COOLDOWN_MIN) + reps * repKm);
-    return { distanceKm: km, target: `10' easy · ${reps}×${repKm} km @ ${formatZone(zones.race)} (90s jog) · 10' easy · ≈${km} km${approx}` };
+    const km = roundKm(easyKm(2 * wu) + reps * repKm);
+    return { distanceKm: km, target: `${wu}' easy · ${reps}×${repKm} km @ ${formatZone(zones.race)} (90s jog) · ${wu}' easy · ≈${km} km${approx}` };
   }
   if (sessionType === 'Short race-pace efforts') {
     const km = roundKm(easyKm(minutes - 8) + (8 * 60) / zoneMid(zones.race));
     return { distanceKm: km, target: `Easy with 4×2' @ ${formatZone(zones.race)} · ≈${km} km${approx}` };
+  }
+  if (sessionType === 'Brick run') {
+    const km = roundKm((minutes * 60) / zoneMid(zones.race));
+    return { distanceKm: km, target: `Straight off the bike · ≈${km} km @ ${formatZone(zones.race)}${approx}` };
   }
   // Easy run, Long run and anything else run at easy pace.
   const km = roundKm(easyKm(minutes));

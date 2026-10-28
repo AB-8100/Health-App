@@ -229,15 +229,29 @@ function pickAnchorDay(selectedDays, preferred, fallback) {
   return sorted[sorted.length - 1];
 }
 
-// Conditioning day defaults to a mid-week day when the athlete leaves the
-// preference blank, per the onboarding hint's promise ("Won't be placed on
-// the same day as a long or high-intensity session unless chosen here") —
-// mirrors the dropped "Default: mid-week day" rule from the original
-// AI-prompt spec (utils/planPrompt.js).
-function pickConditioningDay(explicit, avoidDays) {
-  if (explicit) return explicit;
-  const candidates = ['wednesday', 'tuesday', 'thursday', 'monday', 'friday', 'saturday', 'sunday'];
-  return candidates.find(d => !avoidDays.includes(d)) || 'wednesday';
+// Triathlon day picks are availability, not a promise to train every day:
+// preferred rest days are dropped from any discipline that still has
+// another day, and if the picks still cover all 7 days, one day is freed —
+// taken from whichever discipline has the most days to spare (so a 2x/week
+// swim isn't the one that loses a session), the day after the long session
+// winning ties, never a discipline's only day and never the long day.
+export function withTriathlonRestDays(disciplineDays, { restDays = [], longSessionDay } = {}) {
+  const result = Object.fromEntries(Object.entries(disciplineDays || {}).map(([d, days]) => [d, [...(days || [])]]));
+  const canFree = (day) => Object.values(result).every(days => !days.includes(day) || days.length > 1);
+  const free = (day) => Object.keys(result).forEach(d => {
+    if (result[d].includes(day) && result[d].length > 1) result[d] = result[d].filter(x => x !== day);
+  });
+  restDays.forEach(free);
+  if (new Set(Object.values(result).flat()).size < 7) return result;
+
+  const longDay = longSessionDay || 'sunday';
+  const afterLong = DAY_ORDER[(DAY_ORDER.indexOf(longDay) + 1) % 7];
+  const spare = (day) => Math.min(...Object.values(result).filter(days => days.includes(day)).map(days => days.length));
+  const day = DAY_ORDER
+    .filter(d => d !== longDay && canFree(d))
+    .sort((a, b) => spare(b) - spare(a) || (b === afterLong) - (a === afterLong) || DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))[0];
+  if (day) free(day);
+  return result;
 }
 
 // ── Volume/duration progression (STEP 6) ─────────────────────────────────────
@@ -524,8 +538,10 @@ export function buildTrainingPlan(intake) {
   const peak = PEAK_VOLUME_TABLE[raceType];
   const fitnessLevel = intake.fitnessLevel || 'Beginner';
   const baselines = intake.baselines || {};
-  const disciplineDays = intake.disciplineDays || {};
   const preferences = intake.preferences || {};
+  const disciplineDays = triathlon
+    ? withTriathlonRestDays(intake.disciplineDays, { restDays: preferences.restDays || [], longSessionDay: preferences.longSessionDay })
+    : (intake.disciplineDays || {});
   const targetPaces = intake.targetPaces || null;
   const holidays = intake.holidays || [];
   const oneOffEvents = intake.oneOffEvents || [];
@@ -542,7 +558,8 @@ export function buildTrainingPlan(intake) {
   // The day picker collects days the athlete *could* train; road running
   // uses only as many as preferences.runsPerWeek asks for (or the
   // fitness-based recommendation), never more than 6, spread around the
-  // long-run day. Triathlon/trail keep using every selected day.
+  // long-run day. Triathlon frees a rest day up front (withTriathlonRestDays);
+  // trail uses its own fixed 3-4 picked days.
   const availableRunDays = disciplineDays.run || [];
   let runDays = availableRunDays;
   let roadLongDay = null;
@@ -662,7 +679,6 @@ export function buildTrainingPlan(intake) {
   // 100% bodyweight, so there was never a real dependency on gym access
   // here. This affects every race type this engine generates, not just
   // trail — see PR description.
-  const conditioningDay = pickConditioningDay(preferences.conditioningDay, [runLongDay, trailAssignment?.hillDay, bikeLongDay, preferences.secondDisciplineDay].filter(Boolean));
   const conditioningExercises = selectConditioningExercises({
     areas: (injury.pastInjuries || []).map(p => p.area),
     avoidIds: injury.avoidExerciseIds || [],
@@ -816,8 +832,6 @@ export function buildTrainingPlan(intake) {
         if (roadTemplateFor(weekNum, phase).strengthDays.includes(dayKey)) {
           entries.push(buildStrengthEntry(weekNum, phase, strengthMode, conditioningExercises, gymExercises));
         }
-      } else if (strengthMode !== 'none' && conditioningDay === dayKey && phase.label !== 'Taper' && weekNum < totalWeeks) {
-        entries.push(buildStrengthEntry(weekNum, phase, strengthMode, conditioningExercises, gymExercises));
       }
     }
 
@@ -826,7 +840,61 @@ export function buildTrainingPlan(intake) {
     cursor = addDays(cursor, 1);
   }
 
+  // Triathlon/trail strength: placed per week from the sessions actually
+  // scheduled that week (long/brick days and any harder session are
+  // avoided), same rules as road running's placeStrengthDays.
+  if (!roadRun && strengthMode !== 'none') {
+    const weeks = new Map();
+    Object.keys(sessions).sort().forEach(dk => {
+      const w = sessions[dk][0].week;
+      if (!weeks.has(w)) weeks.set(w, []);
+      weeks.get(w).push(dk);
+    });
+    for (const [w, dks] of weeks) {
+      const phase = phaseForWeek(phases, w);
+      if (phase.label === 'Taper' || w >= totalWeeks) continue;
+      const roles = {}, trainingDays = [], dkByDay = {};
+      const availableDays = [];
+      dks.forEach(dk => {
+        const day = dayKeyOf(parseUTCDate(dk));
+        dkByDay[day] = dk;
+        const holiday = holidayByDate.get(dk);
+        if ((holiday && !holiday.limited) || oneOffByDate.has(dk)) return;
+        availableDays.push(day);
+        const real = sessions[dk].filter(e => e.type !== 'rest');
+        if (!real.length) return;
+        trainingDays.push(day);
+        const isLong = real.some(e => e.sessionType === RUN_LONG_TERM || e.sessionType === BIKE_LONG_TERM || e.flag?.includes('Brick'));
+        roles[day] = isLong ? 'long' : real.some(e => e.intensity !== 'Low') ? 'quality' : 'easy';
+      });
+      const strengthDays = placeStrengthDays({
+        runDays: trainingDays, roles, availableDays, restDays,
+        count: phase.label === 'Peak' ? Math.min(1, strengthPerWeek) : strengthPerWeek,
+        explicitDay: preferences.conditioningDay && availableDays.includes(preferences.conditioningDay) ? preferences.conditioningDay : null,
+        allowDoubleDays: preferences.allowDoubleDays ?? null,
+      });
+      strengthDays.forEach(day => {
+        const dk = dkByDay[day];
+        const kept = sessions[dk].filter(e => e.type !== 'rest');
+        sessions[dk] = [...kept, { ...buildStrengthEntry(w, phase, strengthMode, conditioningExercises, gymExercises), done: false }];
+      });
+    }
+  }
+
   applyOneOffEvents(sessions, oneOffByDate, startDate, raceDate);
+
+  // Triathlon runs get the same pace/distance line as road runs. Paces come
+  // from open-run race times (a run-leg target already accounts for running
+  // off the bike); swim and bike stay duration/distance only for now.
+  if (triathlon) {
+    const tenK = estimateTenKPace({ baselines, targetPaces, raceType, fitnessLevel });
+    const zones = paceZones(tenK.secPerKm, raceType, targetPaces);
+    Object.values(sessions).forEach(entries => entries.forEach(e => {
+      const minutes = parseInt(e.duration, 10);
+      if (e.type !== 'run' || e.target || !(minutes > 0)) return;
+      Object.assign(e, describeRunTarget({ sessionType: e.sessionType, minutes, zones, raceType, estimated: tenK.source === 'default' }));
+    }));
+  }
 
   // A trail plan's distance now comes from the athlete's own entered target
   // (§A trailDistanceKm) rather than a fixed per-race-type table — unlike
