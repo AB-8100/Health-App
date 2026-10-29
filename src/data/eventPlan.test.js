@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  getPlanWeekStart, getWeekNumberForDate,
+  getPlanWeekStart, getWeekNumberForDate, getCurrentPlanWeek, getPlanCalendarWeeks,
   getCurrentWeekStartDateKey, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff,
 } from './eventPlan';
 
@@ -109,5 +109,54 @@ describe('mergeEventPlanFromCutoff', () => {
     const newPlan = { meta: {}, sessions: { '2026-07-27': [{ type: 'run' }] } };
     const merged = mergeEventPlanFromCutoff(undefined, newPlan, '2026-07-20');
     expect(merged.sessions).toEqual({ '2026-07-27': [{ type: 'run' }] });
+  });
+});
+
+// "Calendar view should always start on a Monday regardless of when the plan
+// is set up": a plan started mid-week must still render Mon–Sun weeks.
+describe('Monday-anchored plan weeks', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const THURSDAY_START = '2026-10-29';
+
+  it('snaps week 1 back to the Monday of a mid-week start date', () => {
+    expect(getPlanWeekStart(1, THURSDAY_START).toISOString().slice(0, 10)).toBe('2026-10-26');
+    expect(getPlanWeekStart(2, THURSDAY_START).toISOString().slice(0, 10)).toBe('2026-11-02');
+  });
+
+  it('treats a Sunday start as the end of the week that began the Monday before', () => {
+    expect(getPlanWeekStart(1, '2026-11-01').toISOString().slice(0, 10)).toBe('2026-10-26');
+  });
+
+  it('leaves a Monday start date unchanged', () => {
+    expect(getPlanWeekStart(1, START_DATE).toISOString().slice(0, 10)).toBe(START_DATE);
+  });
+
+  it('every week starts on a Monday', () => {
+    for (let week = 1; week <= 20; week++) {
+      expect(getPlanWeekStart(week, THURSDAY_START).getUTCDay()).toBe(1);
+    }
+  });
+
+  it('getWeekNumberForDate counts weeks Mon–Sun from a mid-week start', () => {
+    expect(getWeekNumberForDate('2026-10-29', THURSDAY_START)).toBe(1); // Thu
+    expect(getWeekNumberForDate('2026-11-01', THURSDAY_START)).toBe(1); // Sun
+    expect(getWeekNumberForDate('2026-11-02', THURSDAY_START)).toBe(2); // Mon
+  });
+
+  it('getCurrentPlanWeek rolls over on Monday, not on the start weekday', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 1, 12)); // local Sun 1 Nov
+    expect(getCurrentPlanWeek(THURSDAY_START, 18)).toBe(1);
+    vi.setSystemTime(new Date(2026, 10, 2, 12)); // local Mon 2 Nov
+    expect(getCurrentPlanWeek(THURSDAY_START, 18)).toBe(2);
+  });
+
+  it('getPlanCalendarWeeks adds a week when the event spills past the plan\'s own week count', () => {
+    // Thu start + 18 seven-day blocks ends Wed 2027-03-03; a Monday 1 Mar race
+    // sits in calendar week 19 once weeks run Mon–Sun.
+    expect(getPlanCalendarWeeks(THURSDAY_START, '2027-03-01', 18)).toBe(19);
+    expect(getPlanCalendarWeeks(THURSDAY_START, '2027-02-28', 18)).toBe(18);
+    expect(getPlanCalendarWeeks(null, '2027-03-01', 18)).toBe(18);
   });
 });

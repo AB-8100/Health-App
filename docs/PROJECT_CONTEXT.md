@@ -299,7 +299,10 @@ onboarding applies directly instead (no prior history to preserve there),
 handled inline in `handleGoalsSetupComplete`. Plan dates are
 UTC-midnight-anchored throughout so a plan's "Monday" doesn't shift for
 users in different timezones; "today", by contrast, is computed from the
-local clock.
+local clock. Weekly Overview weeks always run Mon–Sun: `getPlanWeekStart`
+snaps week 1 back to the Monday of the plan's `startDate` (days before the
+start show as empty), and `getPlanCalendarWeeks` widens the week count by
+one when a mid-week start pushes the event date into an extra calendar week.
 
 ### 7.5 Food tracking (`FoodScreen.jsx`)
 Weekly view, 4 meal buckets (breakfast/lunch/dinner/snacks), a built-in

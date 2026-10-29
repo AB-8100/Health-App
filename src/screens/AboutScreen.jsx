@@ -1,6 +1,6 @@
 import React from 'react';
 import themes from '../data/themes';
-import { getCurrentPlanWeek, computeEventPhases, getPlanWeekStart } from '../data/eventPlan';
+import { getCurrentPlanWeek, computeEventPhases, getPlanWeekStart, getPlanCalendarWeeks } from '../data/eventPlan';
 import { getEventSessionsForDate } from '../utils/eventDaySessions';
 import { DraftPlanBanner } from '../components/SharedUI';
 import { parseTrainingPlanWorkbook } from '../utils/trainingPlanImport';
@@ -465,7 +465,7 @@ function AboutScreen({
   };
 
   const totalPlanWeeks   = eventPlan.meta?.totalWeeks || localProfile.eventTotalWeeks || 18;
-  const currentWeek      = getCurrentPlanWeek(eventPlan.meta?.startDate, totalPlanWeeks);
+  const currentWeek      = getCurrentPlanWeek(eventPlan.meta?.startDate, getPlanCalendarWeeks(eventPlan.meta?.startDate, eventPlan.meta?.eventDate, totalPlanWeeks));
   const phaseMeta        = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(totalPlanWeeks);
   const currentPhase     = phaseMeta.find(p => currentWeek >= p.weeks[0] && currentWeek <= p.weeks[1]) || phaseMeta[0];
   const planDone         = !!localProfile.goal;
