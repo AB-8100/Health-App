@@ -25,7 +25,7 @@ export function getTodayDateKey() {
 // date. Falls back to week 1 when no plan has been uploaded yet.
 export function getCurrentPlanWeek(startDate, totalWeeks = 18) {
   if (!startDate) return 1;
-  const start = parseUTCDate(startDate);
+  const start = getPlanWeekStart(1, startDate);
   const now = new Date();
   const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((todayUTC - start.getTime()) / 86400000);
@@ -33,8 +33,22 @@ export function getCurrentPlanWeek(startDate, totalWeeks = 18) {
   return Math.min(Math.max(week, 1), totalWeeks || 1);
 }
 
-// Returns the first day (UTC midnight) of the given plan week, relative to
-// the plan's start date. Without a start date, falls back to the Monday of
+// [LOGIC] Rolls a UTC-midnight date back to the Monday of its week (a
+// Sunday belongs to the week that started six days earlier). Mutates and
+// returns `d`.
+function snapToMonday(d) {
+  const day = d.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + mondayOffset);
+  return d;
+}
+
+// Returns the Monday (UTC midnight) that starts the given plan week. Week 1
+// is the calendar week containing the plan's start date — a plan set up on a
+// Thursday still shows Mon–Sun weeks, with the days before the start date
+// simply empty — so the Weekly Overview always reads Monday-first and its
+// row positions line up with weekday-indexed data (gym split schedule,
+// recurring activities). Without a start date, falls back to the Monday of
 // the current calendar week so the weekly planner still has something to
 // show before a plan is uploaded.
 export function getPlanWeekStart(weekNum, startDate) {
@@ -44,12 +58,20 @@ export function getPlanWeekStart(weekNum, startDate) {
   } else {
     const now = new Date();
     d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const day = d.getUTCDay();
-    const mondayOffset = day === 0 ? -6 : 1 - day;
-    d.setUTCDate(d.getUTCDate() + mondayOffset);
   }
+  snapToMonday(d);
   d.setUTCDate(d.getUTCDate() + (weekNum - 1) * 7);
   return d;
+}
+
+// [LOGIC] Number of Monday-anchored calendar weeks a plan spans. A plan's own
+// totalWeeks is counted in 7-day blocks from its start date, so when the
+// start isn't a Monday the event date can spill into one extra calendar
+// week — without this, the Weekly Overview's week stepper would stop a week
+// short and hide race week.
+export function getPlanCalendarWeeks(startDate, endDateKey, totalWeeks) {
+  if (!startDate || !endDateKey) return totalWeeks;
+  return Math.max(totalWeeks, getWeekNumberForDate(endDateKey, startDate));
 }
 
 // Inverse of getPlanWeekStart: given a date key, returns which plan week it

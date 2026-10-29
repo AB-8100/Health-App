@@ -17,10 +17,10 @@ import { isScheduleValidForSplit, reconcileScheduleWithSplitIds } from '../utils
 
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Plan weeks aren't always Monday-anchored (getPlanWeekStart only snaps to
-// Monday when there's no plan startDate — a real event plan's startDate can
-// be any weekday), so the day label must be derived from the row's actual
-// date rather than assumed from its position in the week. Same
+// Plan weeks are Monday-anchored (getPlanWeekStart snaps every plan's week 1
+// back to the Monday of its start date), but the day label is still derived
+// from the row's actual date rather than assumed from its position in the
+// week, so it can never drift from the date shown. Same
 // (getUTCDay() + 6) % 7 rotation planEngine.js's dayKeyOf() uses.
 export function dayShortLabel(d) {
   return DAY_SHORT[(d.getUTCDay() + 6) % 7];

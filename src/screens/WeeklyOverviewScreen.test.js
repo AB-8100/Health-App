@@ -12,9 +12,8 @@ function utcDate(dateStr) {
 
 describe('dayShortLabel', () => {
   it('derives the label from the actual date, not a fixed Mon-start position', () => {
-    // A plan startDate need not be a Monday (getPlanWeekStart only snaps to
-    // Monday when there's no startDate at all) — the label must still match
-    // the real weekday, e.g. 2026-08-12 is actually a Wednesday.
+    // The label must match the real weekday of the date passed in, e.g.
+    // 2026-08-12 is actually a Wednesday.
     expect(dayShortLabel(utcDate('2026-08-12'))).toBe('Wed');
   });
 

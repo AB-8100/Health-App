@@ -18,7 +18,7 @@ import { SPLITS, GymHubScreen, SplitPickerScreen, SessionEditorScreen, DayActivi
 import { ExerciseLibraryScreen } from './screens/ExerciseScreens';
 import { WeeklyOverviewScreen, buildWeekData } from './screens/WeeklyOverviewScreen';
 import { SessionDetailScreen } from './screens/SessionDetailScreen';
-import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
+import { computeEventPhases, getTodayDateKey, getWeekNumberForDate, getPlanCalendarWeeks, getNextWeekStartDateKey, pickBeforeCutoff, mergeEventPlanFromCutoff } from './data/eventPlan';
 import { shiftActivityWeekday, shiftEventPlanWeekday } from './utils/sessionPositionShift';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { GoalsSetupScreen } from './screens/GoalsSetupScreen';
@@ -1113,8 +1113,18 @@ function App() {
   };
 
   const eventPhasePlan = React.useMemo(() => {
-    const totalWeeks = eventPlan.meta?.totalWeeks || profile.eventTotalWeeks || 18;
-    const phases = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(totalWeeks);
+    const planWeeks = eventPlan.meta?.totalWeeks || profile.eventTotalWeeks || 18;
+    // [LOGIC] Weekly Overview weeks run Mon–Sun (see getPlanWeekStart), so a
+    // plan started mid-week can span one more calendar week than its own
+    // totalWeeks — widen to that, and stretch the final phase to cover it so
+    // PhaseBar doesn't fall back to the first phase on race week.
+    const totalWeeks = getPlanCalendarWeeks(eventPlan.meta?.startDate, eventPlan.meta?.eventDate, planWeeks);
+    const basePhases = eventPlan.phases?.length ? eventPlan.phases : computeEventPhases(planWeeks);
+    const phases = totalWeeks > planWeeks && basePhases.length
+      ? basePhases.map((ph, i) => (i === basePhases.length - 1 && ph.weeks[1] === planWeeks
+          ? { ...ph, weeks: [ph.weeks[0], totalWeeks] }
+          : ph))
+      : basePhases;
     return { phases, totalWeeks, startDate: eventPlan.meta?.startDate || null, sessions: eventPlan.sessions || {} };
   }, [eventPlan, profile.eventTotalWeeks]);
 
